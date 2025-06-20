@@ -20,11 +20,8 @@ export class MemStorage implements IStorage {
     this.sessions = new Map();
     this.currentUserId = 1;
     
-    // Create default admin user with password "admin"
-    this.createUser({
-      username: "admin",
-      password: "$2b$10$8K1p/a0dL8/jz1Q5E.SBfuI5tMY5fwFfFjq8YjFhH5vZ5UQF.IqKy" // "admin" hashed
-    });
+    // Create default admin user with password "admin" - initialize synchronously
+    this.initializeAdminUser();
   }
 
   async getUser(id: number): Promise<User | undefined> {
@@ -72,6 +69,16 @@ export class MemStorage implements IStorage {
 
   async deleteSession(sessionId: string): Promise<void> {
     this.sessions.delete(sessionId);
+  }
+
+  private initializeAdminUser(): void {
+    // Use the fresh hash we just generated for "admin"
+    const adminUser: User = {
+      id: 1,
+      username: "admin",
+      password: "$2b$10$hAevPiEi8nM5HzWk4VcJteq3NIQb3GgHIfDu/aeMCUImiuVfApa8C" // "admin"
+    };
+    this.users.set(1, adminUser);
   }
 
   async cleanExpiredSessions(): Promise<void> {
