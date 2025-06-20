@@ -36,18 +36,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes
   app.post("/api/auth/login", async (req, res) => {
     try {
-      console.log("Login attempt received:", req.body);
       const { password } = loginSchema.parse(req.body);
       
       const isValid = await AuthService.validatePassword(password);
-      console.log("Password validation result:", isValid);
-      
       if (!isValid) {
         return res.status(401).json({ message: "Invalid password" });
       }
 
       (req.session as any).authenticated = true;
-      console.log("Session authenticated successfully");
       res.json({ message: "Login successful" });
     } catch (error) {
       if (error instanceof z.ZodError) {
