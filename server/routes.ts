@@ -27,7 +27,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Auth middleware
   const requireAuth = (req: any, res: any, next: any) => {
-    if (!req.session?.authenticated) {
+    if (!(req.session as any)?.authenticated) {
       return res.status(401).json({ message: "Authentication required" });
     }
     next();
@@ -43,7 +43,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Invalid password" });
       }
 
-      req.session.authenticated = true;
+      (req.session as any).authenticated = true;
       res.json({ message: "Login successful" });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -65,7 +65,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/auth/me", (req, res) => {
-    if (req.session?.authenticated) {
+    if ((req.session as any)?.authenticated) {
       res.json({ authenticated: true });
     } else {
       res.json({ authenticated: false });
