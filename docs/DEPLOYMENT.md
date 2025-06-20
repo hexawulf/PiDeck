@@ -4,14 +4,26 @@ Quick deployment instructions for various environments.
 
 ## Local Development
 
+Run the following commands to get PiDeck running locally. These steps clone the
+repository into `~/projects`, install dependencies and start the development
+server on port **5006**.
+
 ```bash
+mkdir -p ~/projects && cd ~/projects
 git clone https://github.com/hexawulf/PiDeck.git
 cd PiDeck
 npm install
+
+# Optional: use a custom port
+echo "PORT=5006" > .env
+
 npm run dev
 ```
 
-Access at http://localhost:5006 with password: `admin`
+
+Access the interface at [http://localhost:5006](http://localhost:5006) with
+password: `admin`
+
 
 ## Production on Raspberry Pi
 
@@ -80,9 +92,19 @@ sudo systemctl restart nginx
 ```
 
 ### SSL with Let's Encrypt
+
+After enabling the NGINX site configuration, obtain an SSL certificate for
+`pideck.piapps.dev` using Certbot:
+
 ```bash
 sudo apt install certbot python3-certbot-nginx -y
-sudo certbot --nginx -d your-domain.com
+
+# Ensure the config is linked
+sudo ln -s /etc/nginx/sites-available/pideck /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# Request the certificate
+sudo certbot --nginx -d pideck.piapps.dev
 ```
 
 ## Docker Deployment
