@@ -186,10 +186,10 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 ## 📞 Support
 
-- 📧 **Email**: [your-email@example.com](mailto:your-email@example.com)
+- 📧 **Email**: [dev@0xwulf.dev](mailto:dev@0xwulf.dev)
 - 🐛 **Issues**: [GitHub Issues](https://github.com/hexawulf/PiDeck/issues)
 - 💬 **Discussions**: [GitHub Discussions](https://github.com/hexawulf/PiDeck/discussions)
 
 ---
 
-**Made with ❤️ for the Raspberry Pi community**
+**Made with ❤️ for the Raspberry Pi community by 0xWulf**
