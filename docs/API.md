@@ -5,7 +5,7 @@ RESTful API documentation for PiDeck admin dashboard backend.
 ## Base URL
 
 ```
-http://localhost:5000/api
+http://localhost:5006/api
 ```
 
 ## Authentication
@@ -113,7 +113,7 @@ GET /api/logs/{filename}
 **Response:**
 ```json
 {
-  "content": "2025-06-20 12:30:15 INFO Application started\n2025-06-20 12:30:16 INFO Server listening on port 5000\n..."
+  "content": "2025-06-20 12:30:15 INFO Application started\n2025-06-20 12:30:16 INFO Server listening on port 5006\n..."
 }
 ```
 
@@ -327,7 +327,7 @@ Future versions may include WebSocket support for real-time updates:
 
 ```javascript
 // Example WebSocket connection
-const ws = new WebSocket('ws://localhost:5000/api/ws');
+const ws = new WebSocket('ws://localhost:5006/api/ws');
 
 ws.on('system-update', (data) => {
   console.log('System metrics updated:', data);
@@ -339,7 +339,7 @@ ws.on('system-update', (data) => {
 ### JavaScript/Node.js
 ```javascript
 class PiDeckAPI {
-  constructor(baseURL = 'http://localhost:5000/api') {
+  constructor(baseURL = 'http://localhost:5006/api') {
     this.baseURL = baseURL;
     this.sessionCookie = null;
   }
@@ -376,7 +376,7 @@ class PiDeckAPI {
 import requests
 
 class PiDeckAPI:
-    def __init__(self, base_url='http://localhost:5000/api'):
+    def __init__(self, base_url='http://localhost:5006/api'):
         self.base_url = base_url
         self.session = requests.Session()
 
@@ -397,16 +397,16 @@ class PiDeckAPI:
 ### cURL Examples
 ```bash
 # Login
-curl -X POST http://localhost:5000/api/auth/login \
+curl -X POST http://localhost:5006/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"password": "admin"}' \
   -c cookies.txt
 
 # Get system info
-curl -X GET http://localhost:5000/api/system/info \
+curl -X GET http://localhost:5006/api/system/info \
   -b cookies.txt
 
 # Restart container
-curl -X POST http://localhost:5000/api/docker/containers/abc123/restart \
+curl -X POST http://localhost:5006/api/docker/containers/abc123/restart \
   -b cookies.txt
 ```
