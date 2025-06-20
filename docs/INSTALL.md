@@ -95,7 +95,7 @@ Create environment file (optional):
 # Create .env file
 cat > .env << EOF
 NODE_ENV=development
-PORT=5000
+PORT=5006
 SESSION_SECRET=your-secure-session-secret-here
 EOF
 ```
@@ -117,11 +117,11 @@ echo "Another log entry $(date)" > /home/zk/logs/app.log
 npm run dev
 
 # The application will be available at:
-# http://localhost:5000
+# http://localhost:5006
 ```
 
 ### 6. Access the Dashboard
-1. Open your browser to `http://localhost:5000`
+1. Open your browser to `http://localhost:5006`
 2. Login with password: `admin`
 3. Navigate through the different sections
 
@@ -161,7 +161,7 @@ npm run build
 # Create production environment file
 cat > .env << EOF
 NODE_ENV=production
-PORT=5000
+PORT=5006
 SESSION_SECRET=$(openssl rand -base64 32)
 EOF
 
@@ -214,7 +214,7 @@ server {
 
     # Rate limiting
     location / {
-        proxy_pass http://localhost:5000;
+        proxy_pass http://localhost:5006;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -271,7 +271,7 @@ Type=simple
 User=pideck
 WorkingDirectory=/home/pideck/PiDeck
 Environment=NODE_ENV=production
-Environment=PORT=5000
+Environment=PORT=5006
 ExecStart=/usr/bin/node dist/index.js
 Restart=always
 RestartSec=10
@@ -358,10 +358,10 @@ sudo chmod +x /usr/local/bin/pideck-backup.sh
 
 ### Common Issues
 
-#### 1. Port 5000 Already in Use
+#### 1. Port 5006 Already in Use
 ```bash
-# Find process using port 5000
-sudo lsof -i :5000
+# Find process using port 5006
+sudo lsof -i :5006
 
 # Kill the process if needed
 sudo kill -9 <PID>
@@ -410,7 +410,7 @@ sudo tail -f /var/log/nginx/error.log
 #### Health Check
 ```bash
 # Check if application is running
-curl http://localhost:5000/api/auth/me
+curl http://localhost:5006/api/auth/me
 
 # Check system resources
 htop

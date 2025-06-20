@@ -20,8 +20,10 @@ echo "PORT=5006" > .env
 npm run dev
 ```
 
+
 Access the interface at [http://localhost:5006](http://localhost:5006) with
 password: `admin`
+
 
 ## Production on Raspberry Pi
 
@@ -70,7 +72,7 @@ server {
     server_name your-domain.com;
 
     location / {
-        proxy_pass http://localhost:5000;
+        proxy_pass http://localhost:5006;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -114,7 +116,7 @@ docker build -t pideck .
 # Run container
 docker run -d \
   --name pideck \
-  -p 5000:5000 \
+  -p 5006:5006 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /home/zk/logs:/home/zk/logs \
   pideck
@@ -125,7 +127,7 @@ docker run -d \
 Create `.env` file:
 ```bash
 NODE_ENV=production
-PORT=5000
+PORT=5006
 SESSION_SECRET=your-secure-secret-here
 ```
 
@@ -143,7 +145,7 @@ Check application status:
 ```bash
 pm2 status
 pm2 logs pideck
-curl http://localhost:5000/api/auth/me
+curl http://localhost:5006/api/auth/me
 ```
 
 For detailed installation instructions, see [docs/INSTALL.md](./INSTALL.md)

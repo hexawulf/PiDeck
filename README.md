@@ -99,7 +99,7 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
    ```
 
 4. **Access the dashboard**
-   - Open http://localhost:5000
+   - Open http://localhost:5006
    - Login with password: `admin`
 
 ## 📖 Usage
