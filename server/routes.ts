@@ -200,6 +200,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/system/update", requireAuth, async (_req, res) => {
+    try {
+      const output = await SystemService.updateSystem();
+      res.json({ message: "System updated", output });
+    } catch (error) {
+      console.error("System update error:", error);
+      res.status(500).json({ message: "Failed to update system" });
+    }
+  });
+
   // Log routes
   app.get("/api/logs", requireAuth, async (req, res) => {
     try {

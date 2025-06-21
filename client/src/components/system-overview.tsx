@@ -20,7 +20,14 @@ import {
 import { DiskIOGraph, NetworkBandwidthGraph } from "./resource-graphs";
 import ProcessList from "./process-list";
 
-export default function SystemOverview() {
+interface OverviewProps {
+  onOpenApps?: () => void;
+  onOpenLogs?: () => void;
+  onUpdateSystem?: () => void;
+  isSystemUpdating?: boolean;
+}
+
+export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem, isSystemUpdating }: OverviewProps) {
   const { systemInfo, refreshAll, historicalData } = useSystemData();
 
   if (systemInfo.isLoading || historicalData.isLoading) {
@@ -214,34 +221,35 @@ export default function SystemOverview() {
               <span>Quick Actions</span>
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="flex flex-col items-center space-y-2 p-4 h-auto bg-pi-darker hover:bg-pi-card-hover border-pi-border"
                 onClick={refreshAll}
               >
                 <RefreshCw className="w-6 h-6 text-pi-accent" />
                 <span className="text-sm pi-text">Refresh Data</span>
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="flex flex-col items-center space-y-2 p-4 h-auto bg-pi-darker hover:bg-pi-card-hover border-pi-border"
-                disabled
+                onClick={onUpdateSystem}
+                disabled={isSystemUpdating}
               >
-                <Download className="w-6 h-6 text-green-400" />
+                <Download className={`w-6 h-6 text-green-400 ${isSystemUpdating ? 'animate-spin' : ''}`} />
                 <span className="text-sm pi-text">Update System</span>
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="flex flex-col items-center space-y-2 p-4 h-auto bg-pi-darker hover:bg-pi-card-hover border-pi-border"
-                disabled
+                onClick={onOpenApps}
               >
                 <ListChecks className="w-6 h-6 text-purple-400" />
                 <span className="text-sm pi-text">Manage Apps</span>
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="flex flex-col items-center space-y-2 p-4 h-auto bg-pi-darker hover:bg-pi-card-hover border-pi-border"
-                disabled
+                onClick={onOpenLogs}
               >
                 <BarChart3 className="w-6 h-6 text-orange-400" />
                 <span className="text-sm pi-text">View Logs</span>
