@@ -31,14 +31,30 @@ export function useAuth() {
     },
   });
 
+  const changePasswordMutation = useMutation({
+    mutationFn: async (data: { currentPassword?: string; newPassword?: string; confirmNewPassword?: string }) => {
+      // The backend expects currentPassword and newPassword. confirmNewPassword is for client-side validation.
+      return apiRequest("POST", "/api/user/change-password", {
+        currentPassword: data.currentPassword,
+        newPassword: data.newPassword,
+        confirmNewPassword: data.confirmNewPassword, // Send it for Zod validation on backend too
+      });
+    },
+    // No specific onSuccess needed here unless we want to invalidate user queries or show global toast.
+    // Component-level feedback is usually better for password change.
+  });
+
   return {
-    user,
+    user, // Contains { authenticated: boolean, userId?: number }
     isLoading,
     isAuthenticated: user?.authenticated === true,
     login: loginMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,
+    changePassword: changePasswordMutation.mutateAsync,
     isLoginPending: loginMutation.isPending,
     isLogoutPending: logoutMutation.isPending,
+    isChangingPassword: changePasswordMutation.isPending,
     loginError: loginMutation.error?.message,
+    changePasswordError: changePasswordMutation.error?.message,
   };
 }

@@ -5,7 +5,10 @@ import { z } from "zod";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+  password_hash: text("password_hash").notNull(), // Renamed from password to password_hash
+  last_password_change: timestamp("last_password_change").defaultNow(),
+  failed_login_attempts: integer("failed_login_attempts").default(0),
+  account_locked_until: timestamp("account_locked_until"), // Nullable
 });
 
 export const sessions = pgTable("sessions", {
@@ -16,7 +19,7 @@ export const sessions = pgTable("sessions", {
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
-  password: true,
+  password_hash: true,
 });
 
 export const loginSchema = z.object({

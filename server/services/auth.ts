@@ -6,24 +6,50 @@ export class AuthService {
     const user = await storage.getUserByUsername("admin");
     if (!user) {
       console.error("[AuthService.validatePassword] Admin user not found in storage.");
-      return false;
+      return { isValid: false, user: null, error: "user_not_found" };
+    }
+
+    // Check if account is locked
+    if (user.account_locked_until && new Date(user.account_locked_until) > new Date()) {
+      console.warn(`[AuthService.validatePassword] Account for user ${user.username} is locked until ${user.account_locked_until}.`);
+      return { isValid: false, user, error: "account_locked" };
     }
     
-    console.log(`[AuthService.validatePassword] Attempting to validate password. Input: "${password}", Stored Hash: "${user.password}"`);
+    console.log(`[AuthService.validatePassword] Attempting to validate password. Input: "${password}", Stored Hash: "${user.password_hash}"`);
 
     try {
-      const result = await bcrypt.compare(password, user.password);
+      const result = await bcrypt.compare(password, user.password_hash);
       console.log(`[AuthService.validatePassword] bcrypt.compare result: ${result}`);
-      return result;
+
+      if (result) {
+        // Password is valid, reset failed attempts if any
+        if (user.failed_login_attempts && user.failed_login_attempts > 0) {
+          user.failed_login_attempts = 0;
+          user.account_locked_until = null;
+          await storage.updateUser(user);
+        }
+        return { isValid: true, user, error: null };
+      } else {
+        // Password is not valid, handle failed attempt
+        user.failed_login_attempts = (user.failed_login_attempts || 0) + 1;
+        if (user.failed_login_attempts >= 5) { // 5 failed attempts
+          const lockoutDuration = 15 * 60 * 1000; // 15 minutes
+          user.account_locked_until = new Date(Date.now() + lockoutDuration);
+          console.warn(`[AuthService.validatePassword] User ${user.username} account locked due to too many failed attempts.`);
+        }
+        await storage.updateUser(user);
+        return { isValid: false, user, error: "invalid_password" };
+      }
     } catch (error) {
       console.error("[AuthService.validatePassword] Error during bcrypt.compare:", error);
-      return false; // Or rethrow, depending on desired error handling
+      return { isValid: false, user, error: "bcrypt_error" };
     }
   }
 
   static async createSession(): Promise<string> {
+    // For now, session creation is still tied to 'admin'. This might need generalization later.
     const user = await storage.getUserByUsername("admin");
-    if (!user) throw new Error("Admin user not found");
+    if (!user) throw new Error("Admin user not found for session creation");
     
     const session = await storage.createSession(user.id);
     return session.id;
@@ -36,5 +62,29 @@ export class AuthService {
 
   static async deleteSession(sessionId: string): Promise<void> {
     await storage.deleteSession(sessionId);
+  }
+
+  static async hashPassword(password: string): Promise<string> {
+    const saltRounds = 10; // Standard practice
+    return bcrypt.hash(password, saltRounds);
+  }
+
+  static validatePasswordStrength(password: string): { isValid: boolean; message?: string } {
+    if (password.length < 8) {
+      return { isValid: false, message: "Password must be at least 8 characters long." };
+    }
+    if (!/[a-z]/.test(password)) {
+      return { isValid: false, message: "Password must contain at least one lowercase letter." };
+    }
+    if (!/[A-Z]/.test(password)) {
+      return { isValid: false, message: "Password must contain at least one uppercase letter." };
+    }
+    if (!/[0-9]/.test(password)) {
+      return { isValid: false, message: "Password must contain at least one number." };
+    }
+    if (!/[^a-zA-Z0-9]/.test(password)) {
+      return { isValid: false, message: "Password must contain at least one special character." };
+    }
+    return { isValid: true };
   }
 }

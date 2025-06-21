@@ -34,11 +34,27 @@ export class MemStorage implements IStorage {
     );
   }
 
+  async updateUser(user: User): Promise<User> {
+    if (!this.users.has(user.id)) {
+      throw new Error(`User with id ${user.id} not found.`);
+    }
+    this.users.set(user.id, user);
+    return user;
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentUserId++;
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+    // Ensure all fields are present, providing defaults for new ones
+    const newUser: User = {
+      id,
+      username: insertUser.username,
+      password_hash: insertUser.password_hash,
+      last_password_change: new Date(),
+      failed_login_attempts: 0,
+      account_locked_until: null, // Explicitly null
+    };
+    this.users.set(id, newUser);
+    return newUser;
   }
 
   async createSession(userId: number): Promise<Session> {
@@ -74,11 +90,15 @@ export class MemStorage implements IStorage {
   private initializeAdminUser(): void {
     // Use the fresh hash we just generated for "admin"
     const adminUser: User = {
-      id: 1,
+      id: 1, // Assuming admin user always has ID 1 in MemStorage
       username: "admin",
-      password: "$2b$10$hAevPiEi8nM5HzWk4VcJteq3NIQb3GgHIfDu/aeMCUImiuVfApa8C" // "admin"
+      password_hash: "$2b$10$hAevPiEi8nM5HzWk4VcJteq3NIQb3GgHIfDu/aeMCUImiuVfApa8C", // "admin"
+      last_password_change: new Date(),
+      failed_login_attempts: 0,
+      account_locked_until: null, // Explicitly null for Date type compatibility
     };
-    this.users.set(1, adminUser);
+    this.users.set(adminUser.id, adminUser);
+    this.currentUserId = Math.max(this.currentUserId, adminUser.id + 1); // Ensure currentUserId is ahead
   }
 
   async cleanExpiredSessions(): Promise<void> {
