@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useSystemData } from "@/hooks/use-system-data";
 import { useTheme } from "@/components/theme-provider";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import SystemOverview from "@/components/system-overview";
 import LogViewer from "@/components/log-viewer";
@@ -24,8 +26,34 @@ type Tab = "dashboard" | "logs" | "apps" | "cron";
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const { logout, isLogoutPending } = useAuth();
-  const { systemInfo, refreshAll } = useSystemData();
+  const { systemInfo, systemAlerts, refreshAll } = useSystemData();
   const { theme, setTheme } = useTheme();
+  const { toast } = useToast();
+  const displayedAlertIds = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (systemAlerts.data) {
+      systemAlerts.data.forEach(alert => {
+        if (!displayedAlertIds.current.has(alert.id)) {
+          toast({
+            title: "System Alert",
+            description: alert.message,
+            variant: "destructive", // Or a custom 'warning' variant if available/needed
+            duration: 10000, // Show for 10 seconds
+          });
+          displayedAlertIds.current.add(alert.id);
+        }
+      });
+
+      // Clean up old alert IDs from the ref if they are no longer active
+      const activeAlertIds = new Set(systemAlerts.data.map(a => a.id));
+      displayedAlertIds.current.forEach(id => {
+        if (!activeAlertIds.has(id)) {
+          displayedAlertIds.current.delete(id);
+        }
+      });
+    }
+  }, [systemAlerts.data, toast]);
 
   const handleLogout = async () => {
     await logout();

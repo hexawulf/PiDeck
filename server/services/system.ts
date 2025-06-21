@@ -2,14 +2,31 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import type { SystemInfo, LogFile, DockerContainer, PM2Process, CronJob } from "@shared/schema";
+import type { SystemInfo, LogFile, DockerContainer, PM2Process, CronJob, DiskIO, NetworkBandwidth, ProcessInfo, InsertHistoricalMetric } from "@shared/schema";
+import { historicalMetrics } from "@shared/schema";
+import { db } from '../db'; // Assuming db connection is exported from here
+import { sql } from "drizzle-orm";
+
 
 const execAsync = promisify(exec);
+
+// To store the previous network stats for calculating bandwidth
+let previousNetworkStats: { rx: number, tx: number, timestamp: number } | null = null;
+
+// In-memory store for active alerts
+interface ActiveAlert {
+  id: string;
+  message: string;
+  timestamp: Date;
+  type: 'temperature'; // Can be expanded later
+}
+let activeAlerts: ActiveAlert[] = [];
+const TEMPERATURE_THRESHOLD = 70; // Celsius
 
 export class SystemService {
   static async getSystemInfo(): Promise<SystemInfo> {
     try {
-      const [hostname, os, kernel, arch, uptime, cpu, memory, temp, ip] = await Promise.all([
+      const [hostname, os, kernel, arch, uptime, cpu, memory, temp, ip, diskIO, networkBandwidth, processes] = await Promise.all([
         this.getHostname(),
         this.getOS(),
         this.getKernel(),
@@ -19,9 +36,12 @@ export class SystemService {
         this.getMemoryUsage(),
         this.getTemperature(),
         this.getIPAddress(),
+        this.getDiskIO(),
+        this.getNetworkBandwidth(),
+        this.getProcessList(),
       ]);
 
-      return {
+      const systemData: SystemInfo = {
         hostname,
         os,
         kernel,
@@ -33,13 +53,175 @@ export class SystemService {
         network: {
           ip,
           status: "Connected"
-        }
+        },
+        diskIO,
+        networkBandwidth,
+        processes
       };
+
+      // Log historical data asynchronously
+      this.logHistoricalData(systemData).catch(err => console.error("Failed to log historical data:", err));
+
+      // Check for temperature alerts
+      this.checkTemperatureAlert(systemData.temperature);
+
+      return systemData;
     } catch (error) {
       console.error("Error getting system info:", error);
       throw new Error("Failed to retrieve system information");
     }
   }
+
+  private static checkTemperatureAlert(currentTemperature: number): void {
+    const existingAlert = activeAlerts.find(alert => alert.type === 'temperature');
+    if (currentTemperature > TEMPERATURE_THRESHOLD) {
+      if (!existingAlert) {
+        const newAlert: ActiveAlert = {
+          id: `temp-${Date.now()}`,
+          message: `Temperature exceeded ${TEMPERATURE_THRESHOLD}°C: Currently ${currentTemperature.toFixed(1)}°C`,
+          timestamp: new Date(),
+          type: 'temperature',
+        };
+        activeAlerts.push(newAlert);
+        // Here you could also emit an event if using a more complex event system
+      } else {
+        // Optionally update the existing alert message or timestamp if it's still active
+        existingAlert.message = `Temperature remains above ${TEMPERATURE_THRESHOLD}°C: Currently ${currentTemperature.toFixed(1)}°C`;
+        existingAlert.timestamp = new Date();
+      }
+    } else {
+      if (existingAlert) {
+        // Temperature is back to normal, remove the alert
+        activeAlerts = activeAlerts.filter(alert => alert.type !== 'temperature');
+      }
+    }
+  }
+
+  static getActiveAlerts(): ActiveAlert[] {
+    return activeAlerts;
+  }
+
+  private static async getDiskIO(): Promise<DiskIO> {
+    try {
+      // -d: Display device utilization report
+      // -k: Display statistics in kilobytes per second
+      // 1 1: Report 1 time, 1 second interval to get current rates
+      const { stdout } = await execAsync("iostat -dk 1 1 | awk 'NF == 6 {print $3,$4,$6}' | tail -n1");
+      const parts = stdout.trim().split(/\s+/);
+      if (parts.length === 3) {
+        return {
+          readSpeed: parseFloat(parts[0]) || 0,
+          writeSpeed: parseFloat(parts[1]) || 0,
+          utilization: parseFloat(parts[2]) || 0,
+        };
+      }
+      return { readSpeed: 0, writeSpeed: 0, utilization: 0 };
+    } catch (error) {
+      console.error("Error getting disk I/O:", error);
+      return { readSpeed: 0, writeSpeed: 0, utilization: 0 };
+    }
+  }
+
+  private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
+    try {
+      // Get total bytes received (rx) and transmitted (tx) for all interfaces
+      // Summing up all interfaces. For a Pi, 'eth0' or 'wlan0' might be specific.
+      // Using '/sys/class/net/*/statistics/rx_bytes' and 'tx_bytes' for more reliability than vnstat output parsing.
+      const interfaces = (await fs.readdir('/sys/class/net')).filter(iface => iface !== 'lo');
+      let currentRx = 0;
+      let currentTx = 0;
+
+      for (const iface of interfaces) {
+        try {
+          const rxBytesPath = `/sys/class/net/${iface}/statistics/rx_bytes`;
+          const txBytesPath = `/sys/class/net/${iface}/statistics/tx_bytes`;
+          currentRx += parseInt(await fs.readFile(rxBytesPath, 'utf-8'), 10);
+          currentTx += parseInt(await fs.readFile(txBytesPath, 'utf-8'), 10);
+        } catch (e) {
+          // Ignore interfaces that might not have stats (e.g., virtual ones)
+        }
+      }
+
+      const now = Date.now();
+      let rxSpeed = 0;
+      let txSpeed = 0;
+
+      if (previousNetworkStats) {
+        const timeDiffSeconds = (now - previousNetworkStats.timestamp) / 1000;
+        if (timeDiffSeconds > 0) {
+          rxSpeed = Math.max(0, (currentRx - previousNetworkStats.rx) / timeDiffSeconds / 1024); // KB/s
+          txSpeed = Math.max(0, (currentTx - previousNetworkStats.tx) / timeDiffSeconds / 1024); // KB/s
+        }
+      }
+
+      previousNetworkStats = { rx: currentRx, tx: currentTx, timestamp: now };
+
+      return { rx: parseFloat(rxSpeed.toFixed(2)), tx: parseFloat(txSpeed.toFixed(2)) };
+    } catch (error) {
+      console.error("Error getting network bandwidth:", error);
+      return { rx: 0, tx: 0 };
+    }
+  }
+
+  private static async getProcessList(): Promise<ProcessInfo[]> {
+    try {
+      // Using ps to get PID, command name, %CPU, %MEM
+      // -eo pid,comm,%cpu,%mem: specify output format
+      // --sort=-%cpu: sort by CPU usage in descending order
+      // | head -n 6: take top 5 processes (plus header)
+      // | tail -n 5: remove header
+      const { stdout } = await execAsync("ps -eo pid,comm,%cpu,%mem --sort=-%cpu | head -n 6 | tail -n 5");
+      const lines = stdout.trim().split("\n");
+      return lines.map(line => {
+        const parts = line.trim().split(/\s+/);
+        return {
+          pid: parseInt(parts[0]) || 0,
+          name: parts[1] || "unknown",
+          cpuUsage: parseFloat(parts[2]) || 0,
+          memUsage: parseFloat(parts[3]) || 0,
+        };
+      }).filter(p => p.pid > 0);
+    } catch (error) {
+      console.error("Error getting process list:", error);
+      return [];
+    }
+  }
+
+  private static async logHistoricalData(data: SystemInfo): Promise<void> {
+    try {
+      const metricRecord: InsertHistoricalMetric = {
+        timestamp: new Date(), // Drizzle handles defaultNow, but explicit is fine
+        cpuUsage: Math.round(data.cpu),
+        memoryUsage: Math.round(data.memory.percentage),
+        temperature: Math.round(data.temperature),
+        diskReadSpeed: Math.round(data.diskIO?.readSpeed ?? 0),
+        diskWriteSpeed: Math.round(data.diskIO?.writeSpeed ?? 0),
+        networkRx: Math.round(data.networkBandwidth?.rx ?? 0),
+        networkTx: Math.round(data.networkBandwidth?.tx ?? 0),
+      };
+      await db.insert(historicalMetrics).values(metricRecord);
+
+      // Prune old data (older than 24 hours)
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      await db.delete(historicalMetrics).where(sql`${historicalMetrics.timestamp} < ${twentyFourHoursAgo}`);
+
+    } catch (error) {
+      console.error("Error logging historical data:", error);
+    }
+  }
+
+  static async getHistoricalData(): Promise<HistoricalMetric[]> {
+    try {
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      return await db.select().from(historicalMetrics)
+        .where(sql`${historicalMetrics.timestamp} >= ${twentyFourHoursAgo}`)
+        .orderBy(historicalMetrics.timestamp);
+    } catch (error) {
+      console.error("Error retrieving historical data:", error);
+      return [];
+    }
+  }
+
 
   private static async getHostname(): Promise<string> {
     try {
