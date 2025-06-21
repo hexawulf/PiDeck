@@ -1,13 +1,23 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import type { SystemInfo, LogFile, DockerContainer, PM2Process, CronJob } from "@shared/schema";
+import type { SystemInfo, LogFile, DockerContainer, PM2Process, CronJob, HistoricalMetric, ActiveAlert } from "@shared/schema";
 
 export function useSystemData() {
   const queryClient = useQueryClient();
 
   const systemInfo = useQuery<SystemInfo>({
     queryKey: ["/api/system/info"],
-    refetchInterval: 5000, // Refresh every 5 seconds
+    refetchInterval: 5000, // Refresh every 5 seconds. This also triggers alert checks on backend.
+  });
+
+  const historicalData = useQuery<HistoricalMetric[]>({
+    queryKey: ["/api/system/history"],
+    refetchInterval: 60000, // Refresh every 60 seconds
+  });
+
+  const systemAlerts = useQuery<ActiveAlert[]>({
+    queryKey: ["/api/system/alerts"],
+    refetchInterval: 7000, // Poll slightly offset from systemInfo to catch updates
   });
 
   const logFiles = useQuery<LogFile[]>({
@@ -84,6 +94,8 @@ export function useSystemData() {
 
   const refreshAll = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/system/info"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/system/history"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/system/alerts"] });
     queryClient.invalidateQueries({ queryKey: ["/api/logs"] });
     queryClient.invalidateQueries({ queryKey: ["/api/docker/containers"] });
     queryClient.invalidateQueries({ queryKey: ["/api/pm2/processes"] });
@@ -92,6 +104,8 @@ export function useSystemData() {
 
   return {
     systemInfo,
+    historicalData,
+    systemAlerts,
     logFiles,
     dockerContainers,
     pm2Processes,

@@ -75,6 +75,54 @@ export type CronJob = {
   status: string;
 };
 
+// New data types for additional metrics
+export type DiskIO = {
+  readSpeed: number; // KB/s
+  writeSpeed: number; // KB/s
+  utilization: number; // Percentage
+};
+
+export type NetworkBandwidth = {
+  rx: number; // KB/s
+  tx: number; // KB/s
+};
+
+export type ProcessInfo = {
+  pid: number;
+  name: string;
+  cpuUsage: number; // Percentage
+  memUsage: number; // Percentage
+};
+
+// Historical data table
+export const historicalMetrics = pgTable("historical_metrics", {
+  id: serial("id").primaryKey(),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  cpuUsage: integer("cpu_usage"),
+  memoryUsage: integer("memory_usage"), // Percentage
+  temperature: integer("temperature"),
+  diskReadSpeed: integer("disk_read_speed"), // KB/s
+  diskWriteSpeed: integer("disk_write_speed"), // KB/s
+  networkRx: integer("network_rx"), // KB/s
+  networkTx: integer("network_tx"), // KB/s
+});
+
+export type HistoricalMetric = typeof historicalMetrics.$inferSelect;
+export type InsertHistoricalMetric = typeof historicalMetrics.$inferInsert;
+
+export type SystemInfo = SystemInfo & {
+  diskIO?: DiskIO;
+  networkBandwidth?: NetworkBandwidth;
+  processes?: ProcessInfo[];
+};
+
+export interface ActiveAlert {
+  id: string;
+  message: string;
+  timestamp: Date;
+  type: 'temperature';
+}
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;

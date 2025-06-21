@@ -83,6 +83,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/system/history", requireAuth, async (req, res) => {
+    try {
+      const historicalData = await SystemService.getHistoricalData();
+      res.json(historicalData);
+    } catch (error) {
+      console.error("System history error:", error);
+      res.status(500).json({ message: "Failed to get system historical data" });
+    }
+  });
+
+  app.get("/api/system/alerts", requireAuth, (req, res) => {
+    try {
+      const alerts = SystemService.getActiveAlerts();
+      res.json(alerts);
+    } catch (error) {
+      console.error("System alerts error:", error);
+      res.status(500).json({ message: "Failed to get system alerts" });
+    }
+  });
+
   // Log routes
   app.get("/api/logs", requireAuth, async (req, res) => {
     try {

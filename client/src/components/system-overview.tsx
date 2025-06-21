@@ -12,13 +12,18 @@ import {
   RefreshCw,
   Download,
   List,
-  HardDrive
+  HardDrive,
+  Activity,
+  BarChart3,
+  ListChecks
 } from "lucide-react";
+import { DiskIOGraph, NetworkBandwidthGraph } from "./resource-graphs";
+import ProcessList from "./process-list";
 
 export default function SystemOverview() {
-  const { systemInfo, refreshAll } = useSystemData();
+  const { systemInfo, refreshAll, historicalData } = useSystemData();
 
-  if (systemInfo.isLoading) {
+  if (systemInfo.isLoading || historicalData.isLoading) {
     return (
       <div className="space-y-8">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
@@ -155,10 +160,16 @@ export default function SystemOverview() {
         </Card>
       </div>
 
-      {/* System Information */}
+      {/* Resource Graphs */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <DiskIOGraph />
+        <NetworkBandwidthGraph />
+      </div>
+
+      {/* System Information & Processes */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* System Details */}
-        <Card className="bg-pi-card border-pi-border">
+        <Card className="bg-pi-card border-pi-border lg:col-span-2">
           <CardContent className="p-6">
             <h3 className="text-lg font-semibold pi-text mb-4 flex items-center space-x-2">
               <Info className="w-5 h-5" />
@@ -167,36 +178,42 @@ export default function SystemOverview() {
             <div className="space-y-3">
               <div className="flex justify-between items-center py-2 border-b border-pi-border last:border-b-0">
                 <span className="pi-text-muted">Hostname</span>
-                <span className="pi-text font-mono">{data.hostname}</span>
+                <span className="pi-text font-mono text-sm">{data.hostname}</span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-pi-border last:border-b-0">
                 <span className="pi-text-muted">OS</span>
-                <span className="pi-text font-mono">{data.os}</span>
+                <span className="pi-text font-mono text-sm">{data.os}</span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-pi-border last:border-b-0">
                 <span className="pi-text-muted">Kernel</span>
-                <span className="pi-text font-mono">{data.kernel}</span>
+                <span className="pi-text font-mono text-sm">{data.kernel}</span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-pi-border last:border-b-0">
                 <span className="pi-text-muted">Architecture</span>
-                <span className="pi-text font-mono">{data.architecture}</span>
+                <span className="pi-text font-mono text-sm">{data.architecture}</span>
               </div>
               <div className="flex justify-between items-center py-2">
                 <span className="pi-text-muted">Uptime</span>
-                <span className="pi-text font-mono">{data.uptime}</span>
+                <span className="pi-text font-mono text-sm">{data.uptime}</span>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Quick Actions */}
-        <Card className="bg-pi-card border-pi-border">
+        {/* Process List */}
+        <div className="lg:col-span-1">
+          <ProcessList />
+        </div>
+      </div>
+
+      {/* Quick Actions - Kept for completeness, can be removed or repurposed */}
+       <Card className="bg-pi-card border-pi-border">
           <CardContent className="p-6">
             <h3 className="text-lg font-semibold pi-text mb-4 flex items-center space-x-2">
               <Settings className="w-5 h-5" />
               <span>Quick Actions</span>
             </h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Button 
                 variant="outline" 
                 className="flex flex-col items-center space-y-2 p-4 h-auto bg-pi-darker hover:bg-pi-card-hover border-pi-border"
@@ -218,21 +235,20 @@ export default function SystemOverview() {
                 className="flex flex-col items-center space-y-2 p-4 h-auto bg-pi-darker hover:bg-pi-card-hover border-pi-border"
                 disabled
               >
-                <List className="w-6 h-6 text-purple-400" />
-                <span className="text-sm pi-text">View Processes</span>
+                <ListChecks className="w-6 h-6 text-purple-400" />
+                <span className="text-sm pi-text">Manage Apps</span>
               </Button>
               <Button 
                 variant="outline" 
                 className="flex flex-col items-center space-y-2 p-4 h-auto bg-pi-darker hover:bg-pi-card-hover border-pi-border"
                 disabled
               >
-                <HardDrive className="w-6 h-6 text-orange-400" />
-                <span className="text-sm pi-text">Disk Usage</span>
+                <BarChart3 className="w-6 h-6 text-orange-400" />
+                <span className="text-sm pi-text">View Logs</span>
               </Button>
             </div>
           </CardContent>
         </Card>
-      </div>
     </div>
   );
 }
