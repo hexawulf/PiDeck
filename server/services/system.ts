@@ -13,6 +13,9 @@ const execAsync = promisify(exec);
 // To store the previous network stats for calculating bandwidth
 let previousNetworkStats: { rx: number, tx: number, timestamp: number } | null = null;
 
+// To store the previous disk stats for calculating I/O speed
+let previousDiskStats: { read: number; write: number; timestamp: number } | null = null;
+
 // In-memory store for active alerts
 interface ActiveAlert {
   id: string;
@@ -157,18 +160,32 @@ private static async getDiskIO(): Promise<DiskIO> {
           }
         }
       }
+      const now = Date.now();
+      let readSpeed = 0;
+      let writeSpeed = 0;
 
-      // Convert sectors to KB (assuming 512 bytes per sector)
-      // This gives total since boot, so we'll return small values for demo
-      const readSpeed = Math.min(totalReadSectors / 2048, 1000); // Convert to KB, cap at 1MB/s
-      const writeSpeed = Math.min(totalWriteSectors / 2048, 1000);
+      if (previousDiskStats) {
+        const timeDiffSeconds = (now - previousDiskStats.timestamp) / 1000;
+        if (timeDiffSeconds > 0 && timeDiffSeconds < 10) {
+          const readDiff = totalReadSectors - previousDiskStats.read;
+          const writeDiff = totalWriteSectors - previousDiskStats.write;
 
-      console.log(`Disk I/O (diskstats): Read=${readSpeed.toFixed(1)} KB/s, Write=${writeSpeed.toFixed(1)} KB/s`);
-      return {
-        readSpeed: parseFloat(readSpeed.toFixed(1)),
-        writeSpeed: parseFloat(writeSpeed.toFixed(1)),
-        utilization: Math.min((readSpeed + writeSpeed) / 10, 100)
-      };
+          readSpeed = Math.max(0, (readDiff * 512) / 1024 / timeDiffSeconds);
+          writeSpeed = Math.max(0, (writeDiff * 512) / 1024 / timeDiffSeconds);
+        }
+      }
+
+      previousDiskStats = { read: totalReadSectors, write: totalWriteSectors, timestamp: now };
+
+      if (readSpeed > 0 || writeSpeed > 0) {
+        const utilization = Math.min((readSpeed + writeSpeed) / 10, 100);
+        console.log(`Disk I/O (diskstats): Read=${readSpeed.toFixed(1)} KB/s, Write=${writeSpeed.toFixed(1)} KB/s`);
+        return {
+          readSpeed: parseFloat(readSpeed.toFixed(1)),
+          writeSpeed: parseFloat(writeSpeed.toFixed(1)),
+          utilization: parseFloat(utilization.toFixed(1))
+        };
+      }
     } catch (error) {
       console.log('diskstats method failed:', error.message);
     }
