@@ -219,8 +219,8 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
         const rxBytesPath = `/sys/class/net/${iface}/statistics/rx_bytes`;
         const txBytesPath = `/sys/class/net/${iface}/statistics/tx_bytes`;
 
-        const rxBytes = parseInt(await fs.readFile(rxBytesPath, 'utf-8'), 10);
-        const txBytes = parseInt(await fs.readFile(txBytesPath, 'utf-8'), 10);
+        const rxBytes = parseInt(await fs.readFile(rxBytesPath, 'utf8'), 10);
+        const txBytes = parseInt(await fs.readFile(txBytesPath, 'utf8'), 10);
 
         if (!isNaN(rxBytes)) currentRx += rxBytes;
         if (!isNaN(txBytes)) currentTx += txBytes;
@@ -512,7 +512,7 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
         throw new Error("Access denied");
       }
       
-      const content = await fs.readFile(filePath, "utf-8");
+      const content = await fs.readFile(filePath, "utf8");
       // Return last 1000 lines
       const lines = content.split("\n");
       return lines.slice(-1000).join("\n");
