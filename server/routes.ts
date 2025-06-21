@@ -30,10 +30,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     secret: process.env.SESSION_SECRET || "pideck-secret-key",
     resave: false,
     saveUninitialized: false,
+    rolling: true, // Extends session on each request
     cookie: {
       secure: false, // Set to true in production with HTTPS
       httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: 'lax' // Better cookie handling for same-site requests
     }
   }));
 
@@ -67,10 +69,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Invalid username or password." }); // Generic message
       }
 
-      // Successfully authenticated
+      // Successfully authenticated - set session data
       (req.session as any).authenticated = true;
-      (req.session as any).userId = validationResult.user?.id; // Store userId in session
-      res.json({ message: "Login successful" });
+      (req.session as any).userId = validationResult.user?.id;
+      
+      // Explicitly save the session before responding
+      req.session.save((err) => {
+        if (err) {
+          console.error("Session save error:", err);
+          return res.status(500).json({ message: "Session save failed" });
+        }
+        
+        // Session saved successfully, send response
+        res.json({ 
+          message: "Login successful",
+          authenticated: true,
+          userId: validationResult.user?.id 
+        });
+      });
+      
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid input", errors: error.errors });
