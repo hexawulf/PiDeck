@@ -39,7 +39,7 @@ interface TabDefinition {
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const { logout, isLogoutPending } = useAuth();
-  const { systemInfo, systemAlerts, refreshAll } = useSystemData();
+  const { systemInfo, systemAlerts, refreshAll, updateSystem, isSystemUpdating } = useSystemData();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const displayedAlertIds = useRef<Set<string>>(new Set());
@@ -72,6 +72,19 @@ export default function Dashboard() {
     await logout();
   };
 
+  const handleUpdateSystem = async () => {
+    try {
+      await updateSystem();
+      toast({ title: "Success", description: "System updated successfully" });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update system",
+        variant: "destructive",
+      });
+    }
+  };
+
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   };
@@ -88,10 +101,27 @@ export default function Dashboard() {
     const currentTab = tabs.find(tab => tab.id === activeTab);
     if (currentTab) {
       const TabComponent = currentTab.component;
+      if (currentTab.id === 'dashboard') {
+        return (
+          <SystemOverview
+            onOpenApps={() => setActiveTab('apps')}
+            onOpenLogs={() => setActiveTab('logs')}
+            onUpdateSystem={handleUpdateSystem}
+            isSystemUpdating={isSystemUpdating}
+          />
+        );
+      }
       return <TabComponent />;
     }
     // Fallback to dashboard if tab not found, though this shouldn't happen
-    return <SystemOverview />;
+    return (
+      <SystemOverview
+        onOpenApps={() => setActiveTab('apps')}
+        onOpenLogs={() => setActiveTab('logs')}
+        onUpdateSystem={handleUpdateSystem}
+        isSystemUpdating={isSystemUpdating}
+      />
+    );
   };
 
   return (

@@ -658,4 +658,16 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
       throw new Error("Failed to execute cron job");
     }
   }
+
+  static async updateSystem(): Promise<string> {
+    try {
+      const { stdout, stderr } = await execAsync(
+        "sudo apt-get update && sudo apt-get upgrade -y"
+      );
+      return stdout || stderr;
+    } catch (error) {
+      console.error("Error updating system:", error);
+      throw new Error("System update failed");
+    }
+  }
 }

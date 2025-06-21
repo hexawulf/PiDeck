@@ -92,6 +92,12 @@ export function useSystemData() {
     },
   });
 
+  const updateSystemMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/system/update");
+    },
+  });
+
   const refreshAll = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/system/info"] });
     queryClient.invalidateQueries({ queryKey: ["/api/system/history"] });
@@ -116,10 +122,12 @@ export function useSystemData() {
     restartProcess: restartProcessMutation.mutateAsync,
     stopProcess: stopProcessMutation.mutateAsync,
     runCronJob: runCronJobMutation.mutateAsync,
+    updateSystem: updateSystemMutation.mutateAsync,
     refreshAll,
     isContainerActionPending: restartContainerMutation.isPending || stopContainerMutation.isPending || startContainerMutation.isPending,
     isProcessActionPending: restartProcessMutation.isPending || stopProcessMutation.isPending,
     isCronJobPending: runCronJobMutation.isPending,
+    isSystemUpdating: updateSystemMutation.isPending,
   };
 }
 
