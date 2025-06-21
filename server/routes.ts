@@ -1,13 +1,25 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
+import bcrypt from "bcrypt"; // Added bcrypt import
 import MemoryStore from "memorystore";
 import { AuthService } from "./services/auth";
 import { SystemService } from "./services/system";
-import { loginSchema } from "@shared/schema";
+import { loginSchema, User } from "@shared/schema"; // Added User
+import { storage } from "./storage"; // Added storage import
 import { z } from "zod";
 
 const MemStore = MemoryStore(session);
+
+// Schema for password change
+const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(1, "New password is required"),
+  confirmNewPassword: z.string().min(1, "Confirm new password is required"),
+}).refine(data => data.newPassword === data.confirmNewPassword, {
+  message: "New passwords do not match",
+  path: ["confirmNewPassword"], // Path to field that should display error
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Session configuration
@@ -38,12 +50,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { password } = loginSchema.parse(req.body);
       
-      const isValid = await AuthService.validatePassword(password);
-      if (!isValid) {
-        return res.status(401).json({ message: "Invalid password" });
+      const validationResult = await AuthService.validatePassword(password);
+
+      if (!validationResult.isValid) {
+        if (validationResult.error === "account_locked") {
+          // Determine remaining lockout time for a more informative message
+          let message = "Account is locked due to too many failed login attempts.";
+          if (validationResult.user && validationResult.user.account_locked_until) {
+            const remainingTime = new Date(validationResult.user.account_locked_until).getTime() - Date.now();
+            if (remainingTime > 0) {
+              message += ` Please try again in about ${Math.ceil(remainingTime / (60 * 1000))} minutes.`;
+            }
+          }
+          return res.status(403).json({ message });
+        }
+        return res.status(401).json({ message: "Invalid username or password." }); // Generic message
       }
 
+      // Successfully authenticated
       (req.session as any).authenticated = true;
+      (req.session as any).userId = validationResult.user?.id; // Store userId in session
       res.json({ message: "Login successful" });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -66,11 +92,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/auth/me", (req, res) => {
     if ((req.session as any)?.authenticated) {
-      res.json({ authenticated: true });
+      res.json({ authenticated: true, userId: (req.session as any).userId });
     } else {
       res.json({ authenticated: false });
     }
   });
+
+  // User routes (for things like password change)
+  app.post("/api/user/change-password", requireAuth, async (req: any, res: any) => {
+    try {
+      const { currentPassword, newPassword } = passwordChangeSchema.parse(req.body);
+      const userId = req.session.userId;
+
+      if (!userId) {
+        // Should not happen if requireAuth is working, but good for safety
+        return res.status(401).json({ message: "User not authenticated." });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found." });
+      }
+
+      // 1. Validate current password
+      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password_hash);
+      if (!isCurrentPasswordValid) {
+        return res.status(400).json({ message: "Incorrect current password." });
+      }
+
+      // 2. Validate new password strength
+      const strengthValidation = AuthService.validatePasswordStrength(newPassword);
+      if (!strengthValidation.isValid) {
+        return res.status(400).json({ message: strengthValidation.message || "New password does not meet strength requirements." });
+      }
+
+      // 3. Hash new password and update user
+      const newPasswordHash = await AuthService.hashPassword(newPassword);
+
+      user.password_hash = newPasswordHash;
+      user.last_password_change = new Date();
+      user.failed_login_attempts = 0; // Reset failed attempts on successful password change
+      user.account_locked_until = null; // Unlock account if it was locked
+
+      await storage.updateUser(user);
+
+      // Optional: Re-issue session or update session details if needed, though often not necessary for password change.
+      // Forcing logout on other devices is a more advanced feature.
+
+      console.log(`[API /user/change-password] User ${user.username} (ID: ${userId}) changed their password successfully.`);
+      res.json({ message: "Password changed successfully." });
+
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid input", errors: error.errors });
+      }
+      console.error("Password change error:", error);
+      res.status(500).json({ message: "Internal server error during password change." });
+    }
+  });
+
 
   // System routes
   app.get("/api/system/info", requireAuth, async (req, res) => {

@@ -18,13 +18,26 @@ import {
   Activity,
   FileText,
   Grid,
-  Clock
+  Clock,
+  SettingsIcon // Added SettingsIcon
 } from "lucide-react";
 
-type Tab = "dashboard" | "logs" | "apps" | "cron";
+// Forward ref for components used in tabs
+import React from 'react'; // Already here, but good to note
+import SettingsPanel from '@/components/settings-panel'; // Import the new component
+
+type TabId = "dashboard" | "logs" | "apps" | "cron" | "settings";
+
+interface TabDefinition {
+  id: TabId;
+  label: string;
+  icon: React.ElementType; // Lucide icons are components
+  component: React.ComponentType<any>; // The component to render for this tab
+}
+
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>("dashboard");
+  const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const { logout, isLogoutPending } = useAuth();
   const { systemInfo, systemAlerts, refreshAll } = useSystemData();
   const { theme, setTheme } = useTheme();
@@ -63,26 +76,22 @@ export default function Dashboard() {
     setTheme(theme === "dark" ? "light" : "dark");
   };
 
-  const tabs = [
-    { id: "dashboard" as Tab, label: "Dashboard", icon: Activity },
-    { id: "logs" as Tab, label: "Logs", icon: FileText },
-    { id: "apps" as Tab, label: "Apps", icon: Grid },
-    { id: "cron" as Tab, label: "Cron", icon: Clock },
+  const tabs: TabDefinition[] = [
+    { id: "dashboard", label: "Dashboard", icon: Activity, component: SystemOverview },
+    { id: "logs", label: "Logs", icon: FileText, component: LogViewer },
+    { id: "apps", label: "Apps", icon: Grid, component: AppMonitor },
+    { id: "cron", label: "Cron", icon: Clock, component: CronManager },
+    { id: "settings", label: "Settings", icon: SettingsIcon, component: SettingsPanel }, // Use actual SettingsPanel
   ];
 
   const renderTabContent = () => {
-    switch (activeTab) {
-      case "dashboard":
-        return <SystemOverview />;
-      case "logs":
-        return <LogViewer />;
-      case "apps":
-        return <AppMonitor />;
-      case "cron":
-        return <CronManager />;
-      default:
-        return <SystemOverview />;
+    const currentTab = tabs.find(tab => tab.id === activeTab);
+    if (currentTab) {
+      const TabComponent = currentTab.component;
+      return <TabComponent />;
     }
+    // Fallback to dashboard if tab not found, though this shouldn't happen
+    return <SystemOverview />;
   };
 
   return (
