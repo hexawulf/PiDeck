@@ -3,21 +3,21 @@ import { storage } from "../storage";
 
 export class AuthService {
   static async validatePassword(password: string): Promise<boolean> {
-    const user = await storage.getUserByUsername("admin");
-    if (!user) {
-      console.error("[AuthService.validatePassword] Admin user not found in storage.");
-      return false;
-    }
-
-    // Check if account is locked
-    if (user.account_locked_until && new Date(user.account_locked_until) > new Date()) {
-      console.warn(`[AuthService.validatePassword] Account for user ${user.username} is locked until ${user.account_locked_until}.`);
-      return false;
-    }
-    
-    console.log(`[AuthService.validatePassword] Attempting to validate password. Input: "${password}", Stored Hash: "${user.password_hash}"`);
-
     try {
+      const user = await storage.getUserByUsername("admin");
+      if (!user) {
+        console.error("[AuthService.validatePassword] Admin user not found in storage.");
+        return false;
+      }
+
+      // Check if account is locked
+      if (user.account_locked_until && new Date(user.account_locked_until) > new Date()) {
+        console.warn(`[AuthService.validatePassword] Account for user ${user.username} is locked until ${user.account_locked_until}.`);
+        return false;
+      }
+      
+      console.log(`[AuthService.validatePassword] Attempting to validate password. Input: "${password}", Stored Hash: "${user.password_hash}"`);
+
       const result = await bcrypt.compare(password, user.password_hash);
       console.log(`[AuthService.validatePassword] bcrypt.compare result: ${result}`);
 
