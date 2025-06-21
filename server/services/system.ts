@@ -293,17 +293,54 @@ export class SystemService {
 
   private static async getTemperature(): Promise<number> {
     try {
-      const { stdout } = await execAsync("vcgencmd measure_temp | cut -d= -f2 | cut -d\\' -f1");
-      return parseFloat(stdout.trim()) || 0;
-    } catch {
-      // Fallback for non-Pi systems
-      try {
-        const { stdout } = await execAsync("sensors | grep 'Core 0' | awk '{print $3}' | cut -d+ -f2 | cut -d° -f1");
-        return parseFloat(stdout.trim()) || 0;
-      } catch {
-        return 0;
+      // Method 1: Linux thermal zone (most reliable on all Linux distros)
+      // fs is already imported at the top of the file
+      const thermalPath = '/sys/class/thermal/thermal_zone0/temp';
+
+      const tempData = await fs.readFile(thermalPath, 'utf8');
+      const temperatureMilliC = parseInt(tempData.trim(), 10);
+
+      if (!isNaN(temperatureMilliC)) {
+        const temperatureC = temperatureMilliC / 1000.0;
+
+        // Validate temperature reading (should be between 0-100°C for Raspberry Pi)
+        if (temperatureC > 0 && temperatureC < 100) {
+          console.log(`CPU temperature: ${temperatureC.toFixed(1)}°C (thermal zone)`);
+          return Math.round(temperatureC * 10) / 10; // Round to 1 decimal place
+        } else {
+          console.warn(`Invalid temperature reading: ${temperatureC}°C`);
+        }
       }
+    } catch (error) {
+      console.log('Thermal zone method failed:', error.message);
     }
+
+    // Method 2: Fallback to vcgencmd if thermal zone fails
+    try {
+      const { stdout } = await execAsync("vcgencmd measure_temp | cut -d= -f2 | cut -d\\' -f1");
+      const temp = parseFloat(stdout.trim());
+      if (!isNaN(temp) && temp > 0) {
+        console.log(`CPU temperature: ${temp.toFixed(1)}°C (vcgencmd)`);
+        return temp;
+      }
+    } catch (error) {
+      console.log('vcgencmd method failed:', error.message);
+    }
+
+    // Method 3: Fallback to sensors command
+    try {
+      const { stdout } = await execAsync("sensors | grep -E '(Core 0|Package id 0|Tctl)' | head -1 | awk '{print $3}' | cut -d+ -f2 | cut -d° -f1");
+      const temp = parseFloat(stdout.trim());
+      if (!isNaN(temp) && temp > 0) {
+        console.log(`CPU temperature: ${temp.toFixed(1)}°C (sensors)`);
+        return temp;
+      }
+    } catch (error) {
+      console.log('sensors method failed:', error.message);
+    }
+
+    console.warn('All temperature reading methods failed, returning 0');
+    return 0;
   }
 
   private static async getIPAddress(): Promise<string> {
