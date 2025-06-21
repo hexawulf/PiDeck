@@ -110,11 +110,29 @@ export const historicalMetrics = pgTable("historical_metrics", {
 export type HistoricalMetric = typeof historicalMetrics.$inferSelect;
 export type InsertHistoricalMetric = typeof historicalMetrics.$inferInsert;
 
-export type SystemInfo = SystemInfo & {
+export type SystemInfoExtended = {
+  hostname: string;
+  os: string;
+  kernel: string;
+  architecture: string;
+  uptime: string;
+  cpu: number;
+  memory: {
+    used: number;
+    total: number;
+    percentage: number;
+  };
+  temperature: number;
+  network: {
+    ip: string;
+    status: string;
+  };
   diskIO?: DiskIO;
   networkBandwidth?: NetworkBandwidth;
   processes?: ProcessInfo[];
 };
+
+export type SystemInfo = SystemInfoExtended;
 
 export interface ActiveAlert {
   id: string;
