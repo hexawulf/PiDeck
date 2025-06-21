@@ -1,19 +1,25 @@
 import bcrypt from "bcrypt";
 import { storage } from "../storage";
 
+interface ValidationResult {
+  isValid: boolean;
+  user?: any;
+  error?: string;
+}
+
 export class AuthService {
-  static async validatePassword(password: string): Promise<boolean> {
+  static async validatePassword(password: string): Promise<ValidationResult> {
     try {
       const user = await storage.getUserByUsername("admin");
       if (!user) {
         console.error("[AuthService.validatePassword] Admin user not found in storage.");
-        return false;
+        return { isValid: false, user: null, error: "user_not_found" };
       }
 
       // Check if account is locked
       if (user.account_locked_until && new Date(user.account_locked_until) > new Date()) {
         console.warn(`[AuthService.validatePassword] Account for user ${user.username} is locked until ${user.account_locked_until}.`);
-        return false;
+        return { isValid: false, user, error: "account_locked" };
       }
       
       console.log(`[AuthService.validatePassword] Attempting to validate password. Input: "${password}", Stored Hash: "${user.password_hash}"`);
@@ -28,7 +34,7 @@ export class AuthService {
           user.account_locked_until = null;
           await storage.updateUser(user);
         }
-        return true;
+        return { isValid: true, user, error: null };
       } else {
         // Password is not valid, handle failed attempt
         user.failed_login_attempts = (user.failed_login_attempts || 0) + 1;
@@ -38,11 +44,11 @@ export class AuthService {
           console.warn(`[AuthService.validatePassword] User ${user.username} account locked due to too many failed attempts.`);
         }
         await storage.updateUser(user);
-        return false;
+        return { isValid: false, user, error: "invalid_password" };
       }
     } catch (error) {
       console.error("[AuthService.validatePassword] Error during bcrypt.compare:", error);
-      return false;
+      return { isValid: false, user: null, error: "bcrypt_error" };
     }
   }
 
