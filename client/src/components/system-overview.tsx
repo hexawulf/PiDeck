@@ -25,6 +25,7 @@ import { ThermalZoneBox } from "./widgets/ThermalZoneBox";
 import { PowerStatusBox } from "./widgets/PowerStatusBox";
 import { FilesystemUsageBox } from "./widgets/FilesystemUsageBox";
 import { MountInfoBox } from "./widgets/MountInfoBox";
+import { FilesystemDiskRow } from "./filesystem-disk-row";
 
 interface OverviewProps {
   onOpenApps?: () => void;
@@ -179,10 +180,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
       </div>
 
       {/* Additional Metrics */}
-      <div className="flex flex-wrap gap-6 mt-6">
-        <FilesystemUsageBox />
-        <MountInfoBox />
-      </div>
+      <FilesystemDiskRow />
 
       {/* Resource Graphs */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
