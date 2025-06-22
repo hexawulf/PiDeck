@@ -13,10 +13,15 @@ export function useAuth() {
 
   const loginMutation = useMutation({
     mutationFn: async (password: string) => {
-      return apiRequest("POST", "/api/auth/login", { password });
+      const res = await apiRequest("POST", "/api/auth/login", { password });
+      return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    onSuccess: (data: { authenticated: boolean; userId?: number }) => {
+      if (data?.authenticated) {
+        queryClient.setQueryData(["/api/auth/me"], data);
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      }
       setLocation("/dashboard");
     },
   });
