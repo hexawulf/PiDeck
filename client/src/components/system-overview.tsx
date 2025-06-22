@@ -23,6 +23,7 @@ import { NvmeHealthBox } from "./widgets/NvmeHealthBox";
 import { CpuFreqBox } from "./widgets/CpuFreqBox";
 import { ThermalZoneBox } from "./widgets/ThermalZoneBox";
 import { PowerStatusBox } from "./widgets/PowerStatusBox";
+import { FilesystemUsageBox } from "./widgets/FilesystemUsageBox";
 
 interface OverviewProps {
   onOpenApps?: () => void;
@@ -174,6 +175,11 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
         <CpuFreqBox />
         <ThermalZoneBox />
         <PowerStatusBox />
+      </div>
+
+      {/* Additional Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        <FilesystemUsageBox />
       </div>
 
       {/* Resource Graphs */}
