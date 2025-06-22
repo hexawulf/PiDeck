@@ -78,9 +78,24 @@ GET /api/system/info
   "network": {
     "ip": "192.168.1.100",
     "status": "Connected"
+  },
+  "diskIO": {
+    "readSpeed": 256,
+    "writeSpeed": 128,
+    "utilization": 5
+  },
+  "networkBandwidth": {
+    "rx": 64,
+    "tx": 32
   }
 }
 ```
+
+- **diskIO.readSpeed** – disk read speed in KiB/s.
+- **diskIO.writeSpeed** – disk write speed in KiB/s.
+- **diskIO.utilization** – disk utilization percentage.
+- **networkBandwidth.rx** – receive rate in KiB/s.
+- **networkBandwidth.tx** – transmit rate in KiB/s.
 
 ## Log Management
 
