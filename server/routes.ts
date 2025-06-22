@@ -210,6 +210,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/reboot-check", requireAuth, async (_req, res) => {
+    try {
+      const rebootRequired = await SystemService.checkRebootRequired();
+      res.json({ rebootRequired });
+    } catch (error) {
+      console.error("Reboot check error:", error);
+      res.status(500).json({ message: "Failed to check reboot status" });
+    }
+  });
+
   // Log routes
   app.get("/api/logs", requireAuth, async (req, res) => {
     try {
