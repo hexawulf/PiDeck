@@ -10,6 +10,7 @@ import mountsRoute from "./routes/mounts";
 import memoryRoute from "./routes/memory";
 import topProcessesRoute from "./routes/topProcesses";
 import networkRoute from "./routes/network";
+import firewallRoute from "./routes/firewall";
 
 const app = express();
 app.use(express.json());
@@ -22,6 +23,7 @@ app.use(mountsRoute);
 app.use(memoryRoute);
 app.use(topProcessesRoute);
 app.use(networkRoute);
+app.use(firewallRoute);
 
 app.use((req, res, next) => {
   const start = Date.now();
