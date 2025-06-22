@@ -20,6 +20,7 @@ import {
 import { DiskIOGraph, NetworkBandwidthGraph } from "./resource-graphs";
 import ProcessList from "./process-list";
 import { NvmeHealthBox } from "./widgets/NvmeHealthBox";
+import { CpuFreqBox } from "./widgets/CpuFreqBox";
 
 interface OverviewProps {
   onOpenApps?: () => void;
@@ -168,6 +169,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
         </Card>
 
         <NvmeHealthBox />
+        <CpuFreqBox />
       </div>
 
       {/* Resource Graphs */}
