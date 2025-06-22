@@ -24,6 +24,7 @@ import { CpuFreqBox } from "./widgets/CpuFreqBox";
 import { ThermalZoneBox } from "./widgets/ThermalZoneBox";
 import { PowerStatusBox } from "./widgets/PowerStatusBox";
 import { FilesystemUsageBox } from "./widgets/FilesystemUsageBox";
+import { MountInfoBox } from "./widgets/MountInfoBox";
 
 interface OverviewProps {
   onOpenApps?: () => void;
@@ -178,8 +179,9 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
       </div>
 
       {/* Additional Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+      <div className="flex flex-wrap gap-6 mt-6">
         <FilesystemUsageBox />
+        <MountInfoBox />
       </div>
 
       {/* Resource Graphs */}
