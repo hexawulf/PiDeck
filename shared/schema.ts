@@ -130,7 +130,10 @@ export type SystemInfoExtended = {
   processes?: ProcessInfo[];
 };
 
-export type SystemInfo = SystemInfoExtended;
+export interface SystemInfo extends Omit<SystemInfoExtended, 'diskIO' | 'networkBandwidth'> {
+  diskIO: DiskIO;
+  networkBandwidth: NetworkBandwidth;
+}
 
 export interface ActiveAlert {
   id: string;
