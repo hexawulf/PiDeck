@@ -235,16 +235,16 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
 
   private static async logHistoricalData(data: SystemInfo): Promise<void> {
     try {
-      const metricRecord: InsertHistoricalMetric = {
-        timestamp: new Date(), // Drizzle handles defaultNow, but explicit is fine
-        cpuUsage: Math.round(data.cpu),
-        memoryUsage: Math.round(data.memory.percentage),
-        temperature: Math.round(data.temperature),
-        diskReadSpeed: Math.round(data.diskIO?.readSpeed ?? 0),
-        diskWriteSpeed: Math.round(data.diskIO?.writeSpeed ?? 0),
-        networkRx: Math.round(data.networkBandwidth?.rx ?? 0),
-        networkTx: Math.round(data.networkBandwidth?.tx ?? 0),
-      };
+        const metricRecord: InsertHistoricalMetric = {
+          timestamp: new Date(), // Drizzle handles defaultNow, but explicit is fine
+          cpuUsage: Math.round(data.cpu ?? 0),
+          memoryUsage: Math.round(data.memory?.percentage ?? 0),
+          temperature: Math.round(data.temperature ?? 0),
+          diskReadSpeed: Math.round(data.diskIO?.readSpeed ?? 0),
+          diskWriteSpeed: Math.round(data.diskIO?.writeSpeed ?? 0),
+          networkRx: Math.round(data.networkBandwidth?.rx ?? 0),
+          networkTx: Math.round(data.networkBandwidth?.tx ?? 0),
+        };
       await db.insert(historicalMetrics).values(metricRecord);
 
       // Prune old data (older than 24 hours)
