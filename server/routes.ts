@@ -4,6 +4,7 @@ import session from "express-session";
 import bcrypt from "bcrypt"; // Added bcrypt import
 import MemoryStore from "memorystore";
 import { AuthService } from "./services/auth";
+import nvmeRouter from "./routes/nvme";
 import { SystemService } from "./services/system";
 import { loginSchema, User } from "@shared/schema"; // Added User
 import { storage } from "./storage"; // Added storage import
@@ -38,6 +39,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       sameSite: 'lax' // Better cookie handling for same-site requests
     }
   }));
+
+  // NVMe metrics route
+  app.use(nvmeRouter);
 
   // Auth middleware
   const requireAuth = (req: any, res: any, next: any) => {
