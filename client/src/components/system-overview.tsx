@@ -26,6 +26,7 @@ import { PowerStatusBox } from "./widgets/PowerStatusBox";
 import { FilesystemUsageBox } from "./widgets/FilesystemUsageBox";
 import { MountInfoBox } from "./widgets/MountInfoBox";
 import { FilesystemDiskRow } from "./filesystem-disk-row";
+import { MemoryProcessRow } from "./memory-process-row";
 
 interface OverviewProps {
   onOpenApps?: () => void;
@@ -181,6 +182,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
 
       {/* Additional Metrics */}
       <FilesystemDiskRow />
+      <MemoryProcessRow />
 
       {/* Resource Graphs */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

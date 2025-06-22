@@ -7,6 +7,8 @@ import thermalZonesRoute from "./routes/thermalZones";
 import powerStatusRoute from "./routes/powerStatus";
 import filesystemRoute from "./routes/filesystem";
 import mountsRoute from "./routes/mounts";
+import memoryRoute from "./routes/memory";
+import topProcessesRoute from "./routes/topProcesses";
 
 const app = express();
 app.use(express.json());
@@ -16,6 +18,8 @@ app.use(thermalZonesRoute);
 app.use(powerStatusRoute);
 app.use(filesystemRoute);
 app.use(mountsRoute);
+app.use(memoryRoute);
+app.use(topProcessesRoute);
 
 app.use((req, res, next) => {
   const start = Date.now();
