@@ -128,7 +128,7 @@ pm2 start dist/index.js --name pideck
 
 ## 🔄 Live Demo
 
-🌐 **[View Live Demo](https://piapps.dev/pideck)** *(Coming Soon)*
+🌐 **[View Live Demo](https://pideck.piapps.dev)** *(pideck.piapps.dev)*
 
 ## 📚 Documentation
 
