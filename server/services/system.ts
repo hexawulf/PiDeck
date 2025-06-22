@@ -165,37 +165,40 @@ private static async getDiskIO(): Promise<DiskIO> {
 }
 private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
   try {
-    const readStats = async () => {
-      const interfaces = (await fs.readdir('/sys/class/net')).filter(i => i !== 'lo');
-      let rx = 0;
-      let tx = 0;
-      for (const iface of interfaces) {
-        try {
-          const rxPath = `/sys/class/net/${iface}/statistics/rx_bytes`;
-          const txPath = `/sys/class/net/${iface}/statistics/tx_bytes`;
-          rx += parseInt(await fs.readFile(rxPath, 'utf8'), 10) || 0;
-          tx += parseInt(await fs.readFile(txPath, 'utf8'), 10) || 0;
-        } catch (err) {
-          console.log(`Failed to read stats for interface ${iface}:`, err);
-        }
+    const interfaces = (await fs.readdir('/sys/class/net')).filter(i => i !== 'lo');
+    let rx = 0;
+    let tx = 0;
+    for (const iface of interfaces) {
+      try {
+        const rxPath = `/sys/class/net/${iface}/statistics/rx_bytes`;
+        const txPath = `/sys/class/net/${iface}/statistics/tx_bytes`;
+        rx += parseInt(await fs.readFile(rxPath, 'utf8'), 10) || 0;
+        tx += parseInt(await fs.readFile(txPath, 'utf8'), 10) || 0;
+      } catch (err) {
+        console.log(`Failed to read stats for interface ${iface}:`, err);
       }
-      return { rx, tx };
-    };
-
-    const first = await readStats();
-    await new Promise(res => setTimeout(res, 500));
-    const second = await readStats();
-
-    const diffSec = 0.5;
-    let rxSpeed = Math.max(0, (second.rx - first.rx) / 1024 / diffSec);
-    let txSpeed = Math.max(0, (second.tx - first.tx) / 1024 / diffSec);
-
-    if (!isFinite(rxSpeed) || !isFinite(txSpeed)) {
-      rxSpeed = 0;
-      txSpeed = 0;
     }
 
-    previousNetworkStats = { rx: second.rx, tx: second.tx, timestamp: Date.now() };
+    const now = Date.now();
+    let rxSpeed = 0;
+    let txSpeed = 0;
+
+    if (previousNetworkStats) {
+      const diffSec = (now - previousNetworkStats.timestamp) / 1000;
+      if (diffSec > 0) {
+        const rxDiff = rx - previousNetworkStats.rx;
+        const txDiff = tx - previousNetworkStats.tx;
+        rxSpeed = Math.max(0, rxDiff / 1024 / diffSec);
+        txSpeed = Math.max(0, txDiff / 1024 / diffSec);
+      }
+    } else {
+      // First call - sample again after a short delay for immediate data
+      previousNetworkStats = { rx, tx, timestamp: now };
+      await new Promise(res => setTimeout(res, 500));
+      return this.getNetworkBandwidth();
+    }
+
+    previousNetworkStats = { rx, tx, timestamp: now };
 
     const result: NetworkBandwidth = {
       rx: Math.round(rxSpeed),
