@@ -21,7 +21,7 @@ export function MountInfoBox() {
       ) : error || !data ? (
         <p className="text-red-400">Unavailable</p>
       ) : (
-        <div className="overflow-y-auto max-h-[300px]">
+        <div className="overflow-y-auto max-h-[160px] custom-scrollbar">
           <table className="text-sm w-full table-fixed">
             <thead className="text-gray-400 sticky top-0 bg-[#0f172a] z-10">
               <tr>
