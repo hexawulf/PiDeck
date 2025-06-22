@@ -33,11 +33,11 @@ router.get('/api/metrics/listening-ports', async (_req, res) => {
     const ports = lines.map(line => {
       const portMatch = line.match(/:(\d+)/)
       const protoMatch = line.match(/^(tcp|udp)/)
-      const serviceMatch = line.match(/users:\(\\(\"([^\",]+)/)
+      const serviceMatch = line.match(/users:\(\("([^"]+)/)
       return portMatch && protoMatch ? {
         port: parseInt(portMatch[1], 10),
         protocol: protoMatch[1],
-        service: serviceMatch ? serviceMatch[2] : ''
+        service: serviceMatch ? serviceMatch[1] : ''
       } : null
     }).filter(Boolean)
     res.json(ports)
