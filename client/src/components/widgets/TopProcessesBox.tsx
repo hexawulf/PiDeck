@@ -35,8 +35,8 @@ export function TopProcessesBox() {
               <tr key={p.pid}>
                 <td>{p.pid}</td>
                 <td>{p.name}</td>
-                <td className="text-right">{p.cpu.toFixed(1)}</td>
-                <td className="text-right">{p.mem.toFixed(1)}</td>
+                <td className="text-right">{p.cpu !== null && p.cpu !== undefined ? p.cpu.toFixed(1) : 'N/A'}</td>
+                <td className="text-right">{p.mem !== null && p.mem !== undefined ? p.mem.toFixed(1) : 'N/A'}</td>
               </tr>
             ))}
           </tbody>
