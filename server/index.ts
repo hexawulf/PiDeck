@@ -5,6 +5,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import cpuFreqRoute from "./routes/cpuFreq";
 import thermalZonesRoute from "./routes/thermalZones";
 import powerStatusRoute from "./routes/powerStatus";
+import filesystemRoute from "./routes/filesystem";
 
 const app = express();
 app.use(express.json());
@@ -12,6 +13,7 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cpuFreqRoute);
 app.use(thermalZonesRoute);
 app.use(powerStatusRoute);
+app.use(filesystemRoute);
 
 app.use((req, res, next) => {
   const start = Date.now();
