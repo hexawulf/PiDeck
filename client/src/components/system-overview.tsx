@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { DiskIOGraph, NetworkBandwidthGraph } from "./resource-graphs";
 import ProcessList from "./process-list";
+import { NvmeHealthBox } from "./widgets/NvmeHealthBox";
 
 interface OverviewProps {
   onOpenApps?: () => void;
@@ -165,6 +166,8 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
             </div>
           </CardContent>
         </Card>
+
+        <NvmeHealthBox />
       </div>
 
       {/* Resource Graphs */}
