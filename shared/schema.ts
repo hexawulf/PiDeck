@@ -65,10 +65,25 @@ export type DiskIO = {
   utilization: number; // Percentage
 };
 
+export const diskIOSchema = z.object({
+  readSpeed: z.number().int().nonnegative().max(100000),
+  writeSpeed: z.number().int().nonnegative().max(100000),
+  utilization: z.number().int().min(0).max(100),
+});
+
+export type DiskIOData = z.infer<typeof diskIOSchema>;
+
 export type NetworkBandwidth = {
   rx: number; // KB/s
   tx: number; // KB/s
 };
+
+export const networkBandwidthSchema = z.object({
+  rx: z.number().int().nonnegative().max(1000000),
+  tx: z.number().int().nonnegative().max(1000000),
+});
+
+export type NetworkBandwidthData = z.infer<typeof networkBandwidthSchema>;
 
 export type ProcessInfo = {
   pid: number;
