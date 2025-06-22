@@ -592,6 +592,17 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
     }
   }
 
+  static async checkRebootRequired(): Promise<boolean> {
+    try {
+      const { stdout } = await execAsync("/home/zk/bin/check-reboot.sh");
+      const result = JSON.parse(stdout.trim());
+      return Boolean(result.reboot_required);
+    } catch (error) {
+      console.error("Error checking reboot requirement:", error);
+      throw new Error("Failed to check reboot status");
+    }
+  }
+
   static async updateSystem(): Promise<string> {
     try {
       const { stdout, stderr } = await execAsync(

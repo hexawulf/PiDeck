@@ -38,11 +38,19 @@ interface TabDefinition {
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const [rebootRequired, setRebootRequired] = useState(false);
   const { logout, isLogoutPending } = useAuth();
   const { systemInfo, systemAlerts, refreshAll, updateSystem, isSystemUpdating } = useSystemData();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const displayedAlertIds = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    fetch("/api/reboot-check", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => setRebootRequired(Boolean(data.rebootRequired)))
+      .catch((err) => console.error("Failed to check reboot status", err));
+  }, []);
 
   useEffect(() => {
     if (systemAlerts.data) {
@@ -195,6 +203,12 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
+
+      {rebootRequired && (
+        <div className="bg-red-700 text-white px-4 py-2 rounded-xl text-center shadow-lg animate-pulse mx-4 mt-4">
+          ⚠️ System reboot required to activate latest kernel updates
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
