@@ -12,13 +12,7 @@ export function PowerStatusBox() {
     queryFn: fetchPowerStatus,
     refetchInterval: 10000,
   })
-
-  let status = '✅ Normal'
-  if (data?.undervoltageNow || data?.throttlingNow) {
-    status = '🔴 Throttling Now'
-  } else if (data?.undervoltageOccurred || data?.throttlingOccurred) {
-    status = '⚠️ Throttled Previously'
-  }
+  const statusLabel = data?.status ?? 'Unavailable'
 
   return (
     <div className="rounded-2xl border p-4 shadow bg-[#0f172a] text-white w-full max-w-sm">
@@ -29,8 +23,10 @@ export function PowerStatusBox() {
         <p className="text-red-400">Unavailable</p>
       ) : (
         <div className="space-y-1 text-sm">
-          <p>{status}</p>
-          <p className="text-xs text-gray-400">Hex Code: 0x{data.hex}</p>
+          <p>{statusLabel}</p>
+          <p className="text-xs text-gray-400">
+            Voltage: {data.voltage !== null && data.voltage !== undefined ? data.voltage.toFixed(2) + 'V' : 'N/A'}
+          </p>
         </div>
       )}
     </div>
