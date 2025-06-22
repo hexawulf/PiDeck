@@ -2,7 +2,18 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import type { SystemInfo, LogFile, DockerContainer, PM2Process, CronJob, DiskIO, NetworkBandwidth, ProcessInfo, InsertHistoricalMetric } from "@shared/schema";
+import type {
+  SystemInfo,
+  LogFile,
+  DockerContainer,
+  PM2Process,
+  CronJob,
+  DiskIO,
+  NetworkBandwidth,
+  ProcessInfo,
+  InsertHistoricalMetric,
+  HistoricalMetric,
+} from "@shared/schema";
 import { historicalMetrics } from "@shared/schema";
 import { db } from '../db'; // Assuming db connection is exported from here
 import { sql } from "drizzle-orm";
@@ -106,172 +117,94 @@ export class SystemService {
 
 private static async getDiskIO(): Promise<DiskIO> {
   try {
-    // Method 1: Try iostat if available
-    try {
-      const { stdout } = await execAsync("iostat -d -k 1 1");
-      console.log('iostat raw output:', stdout); // Debug logging
-
-      // Parse iostat output - look for device lines (excluding headers)
-      const lines = stdout.split('\n');
-      let dataLine = '';
-
-      for (const line of lines) {
-        // Look for lines that contain device data (typically start with device name)
-        if (line.includes(' ') && !line.includes('Device') && !line.includes('Linux') && line.trim().length > 0) {
-          const parts = line.trim().split(/\s+/);
-          if (parts.length >= 6 && !isNaN(parseFloat(parts[2]))) {
-            dataLine = line;
-            break;
-          }
-        }
-      }
-
-      if (dataLine) {
-        const parts = dataLine.trim().split(/\s+/);
-        if (parts.length >= 6) {
-          const readSpeed = parseFloat(parts[2]) || 0;
-          const writeSpeed = parseFloat(parts[3]) || 0;
-          const utilization = parseFloat(parts[parts.length - 1]) || 0;
-
-          console.log(`Disk I/O: Read=${readSpeed} KB/s, Write=${writeSpeed} KB/s, Util=${utilization}%`);
-          return { readSpeed, writeSpeed, utilization };
-        }
-      }
-    } catch (error) {
-      console.log('iostat method failed, trying fallback:', error.message);
+    const content = await fs.readFile('/proc/diskstats', 'utf8');
+    let readSectors = 0;
+    let writeSectors = 0;
+    for (const line of content.trim().split('\n')) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 14) continue;
+      const name = parts[2];
+      if (name.startsWith('loop') || name.startsWith('ram')) continue;
+      readSectors += parseInt(parts[5]) || 0;
+      writeSectors += parseInt(parts[9]) || 0;
     }
 
-    // Method 2: Fallback using /proc/diskstats
-    try {
-      const diskstats = await fs.readFile('/proc/diskstats', 'utf8');
-      const lines = diskstats.split('\n');
+    const now = Date.now();
+    let readSpeed = 0;
+    let writeSpeed = 0;
 
-      let totalReadSectors = 0;
-      let totalWriteSectors = 0;
-
-      for (const line of lines) {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length >= 14) {
-          const deviceName = parts[2];
-          // Skip loop devices and ram devices
-          if (!deviceName.startsWith('loop') && !deviceName.startsWith('ram')) {
-            totalReadSectors += parseInt(parts[5]) || 0;  // Read sectors
-            totalWriteSectors += parseInt(parts[9]) || 0; // Write sectors
-          }
-        }
+    if (previousDiskStats) {
+      const diffSec = (now - previousDiskStats.timestamp) / 1000;
+      if (diffSec > 0) {
+        const readDiff = readSectors - previousDiskStats.read;
+        const writeDiff = writeSectors - previousDiskStats.write;
+        readSpeed = Math.max(0, (readDiff * 512) / 1024 / diffSec);
+        writeSpeed = Math.max(0, (writeDiff * 512) / 1024 / diffSec);
       }
-      const now = Date.now();
-      let readSpeed = 0;
-      let writeSpeed = 0;
-
-      if (previousDiskStats) {
-        const timeDiffSeconds = (now - previousDiskStats.timestamp) / 1000;
-        if (timeDiffSeconds > 0 && timeDiffSeconds < 10) {
-          const readDiff = totalReadSectors - previousDiskStats.read;
-          const writeDiff = totalWriteSectors - previousDiskStats.write;
-
-          readSpeed = Math.max(0, (readDiff * 512) / 1024 / timeDiffSeconds);
-          writeSpeed = Math.max(0, (writeDiff * 512) / 1024 / timeDiffSeconds);
-        }
-      }
-
-      previousDiskStats = { read: totalReadSectors, write: totalWriteSectors, timestamp: now };
-
-      if (readSpeed > 0 || writeSpeed > 0) {
-        const utilization = Math.min((readSpeed + writeSpeed) / 10, 100);
-        console.log(`Disk I/O (diskstats): Read=${readSpeed.toFixed(1)} KB/s, Write=${writeSpeed.toFixed(1)} KB/s`);
-        return {
-          readSpeed: parseFloat(readSpeed.toFixed(1)),
-          writeSpeed: parseFloat(writeSpeed.toFixed(1)),
-          utilization: parseFloat(utilization.toFixed(1))
-        };
-      }
-    } catch (error) {
-      console.log('diskstats method failed:', error.message);
+    } else {
+      // First call - sample again after a short delay for immediate data
+      previousDiskStats = { read: readSectors, write: writeSectors, timestamp: now };
+      await new Promise(r => setTimeout(r, 500));
+      return this.getDiskIO();
     }
 
-    // Method 3: Generate realistic demo data
-    const readSpeed = Math.random() * 50 + 10; // 10-60 KB/s
-    const writeSpeed = Math.random() * 30 + 5;  // 5-35 KB/s
-    const utilization = Math.min((readSpeed + writeSpeed) / 2, 100);
+    previousDiskStats = { read: readSectors, write: writeSectors, timestamp: now };
 
-    console.log(`Disk I/O (demo): Read=${readSpeed.toFixed(1)} KB/s, Write=${writeSpeed.toFixed(1)} KB/s`);
-    return {
-      readSpeed: parseFloat(readSpeed.toFixed(1)),
-      writeSpeed: parseFloat(writeSpeed.toFixed(1)),
-      utilization: parseFloat(utilization.toFixed(1))
+    const utilization = Math.min((readSpeed + writeSpeed) / 10, 100);
+    const result: DiskIO = {
+      readSpeed: Math.round(readSpeed),
+      writeSpeed: Math.round(writeSpeed),
+      utilization: Math.round(utilization),
     };
-
+    console.log('Disk I/O:', result);
+    return result;
   } catch (error) {
-    console.error("Error getting disk I/O:", error);
+    console.error('Error getting disk I/O:', error);
     return { readSpeed: 0, writeSpeed: 0, utilization: 0 };
   }
 }
 private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
   try {
-    const interfaces = (await fs.readdir('/sys/class/net')).filter(iface => iface !== 'lo');
-    let currentRx = 0;
-    let currentTx = 0;
-
-    // Read current network stats
-    for (const iface of interfaces) {
-      try {
-        const rxBytesPath = `/sys/class/net/${iface}/statistics/rx_bytes`;
-        const txBytesPath = `/sys/class/net/${iface}/statistics/tx_bytes`;
-
-        const rxBytes = parseInt(await fs.readFile(rxBytesPath, 'utf8'), 10);
-        const txBytes = parseInt(await fs.readFile(txBytesPath, 'utf8'), 10);
-
-        if (!isNaN(rxBytes)) currentRx += rxBytes;
-        if (!isNaN(txBytes)) currentTx += txBytes;
-
-        console.log(`Interface ${iface}: RX=${rxBytes} TX=${txBytes}`);
-      } catch (e) {
-        console.log(`Failed to read stats for interface ${iface}`);
+    const readStats = async () => {
+      const interfaces = (await fs.readdir('/sys/class/net')).filter(i => i !== 'lo');
+      let rx = 0;
+      let tx = 0;
+      for (const iface of interfaces) {
+        try {
+          const rxPath = `/sys/class/net/${iface}/statistics/rx_bytes`;
+          const txPath = `/sys/class/net/${iface}/statistics/tx_bytes`;
+          rx += parseInt(await fs.readFile(rxPath, 'utf8'), 10) || 0;
+          tx += parseInt(await fs.readFile(txPath, 'utf8'), 10) || 0;
+        } catch (err) {
+          console.log(`Failed to read stats for interface ${iface}:`, err);
+        }
       }
-    }
-
-    const now = Date.now();
-    let rxSpeed = 0;
-    let txSpeed = 0;
-
-    if (previousNetworkStats) {
-      const timeDiffSeconds = (now - previousNetworkStats.timestamp) / 1000;
-
-      if (timeDiffSeconds > 0 && timeDiffSeconds < 10) { // Reasonable time difference
-        const rxDiff = currentRx - previousNetworkStats.rx;
-        const txDiff = currentTx - previousNetworkStats.tx;
-
-        // Calculate speed in KB/s
-        rxSpeed = Math.max(0, rxDiff / timeDiffSeconds / 1024);
-        txSpeed = Math.max(0, txDiff / timeDiffSeconds / 1024);
-
-        console.log(`Network bandwidth: RX=${rxSpeed.toFixed(2)} KB/s, TX=${txSpeed.toFixed(2)} KB/s`);
-      } else {
-        console.log(`Time difference too large or invalid: ${timeDiffSeconds}s, resetting`);
-      }
-    } else {
-      console.log('No previous network stats, initializing');
-    }
-
-    // Update previous stats
-    previousNetworkStats = { rx: currentRx, tx: currentTx, timestamp: now };
-
-    // For initial readings or errors, provide some demo data
-    if (rxSpeed === 0 && txSpeed === 0 && previousNetworkStats.rx > 1000000) {
-      // Generate realistic network activity
-      rxSpeed = Math.random() * 100 + 20; // 20-120 KB/s
-      txSpeed = Math.random() * 50 + 10;   // 10-60 KB/s
-      console.log(`Network bandwidth (demo): RX=${rxSpeed.toFixed(2)} KB/s, TX=${txSpeed.toFixed(2)} KB/s`);
-    }
-
-    return {
-      rx: parseFloat(rxSpeed.toFixed(2)),
-      tx: parseFloat(txSpeed.toFixed(2))
+      return { rx, tx };
     };
 
+    const first = await readStats();
+    await new Promise(res => setTimeout(res, 500));
+    const second = await readStats();
+
+    const diffSec = 0.5;
+    let rxSpeed = Math.max(0, (second.rx - first.rx) / 1024 / diffSec);
+    let txSpeed = Math.max(0, (second.tx - first.tx) / 1024 / diffSec);
+
+    if (!isFinite(rxSpeed) || !isFinite(txSpeed)) {
+      rxSpeed = 0;
+      txSpeed = 0;
+    }
+
+    previousNetworkStats = { rx: second.rx, tx: second.tx, timestamp: Date.now() };
+
+    const result: NetworkBandwidth = {
+      rx: Math.round(rxSpeed),
+      tx: Math.round(txSpeed),
+    };
+    console.log('Network bandwidth:', result);
+    return result;
   } catch (error) {
-    console.error("Error getting network bandwidth:", error);
+    console.error('Error getting network bandwidth:', error);
     return { rx: 0, tx: 0 };
   }
 }
