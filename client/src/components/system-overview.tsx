@@ -27,6 +27,7 @@ import { FilesystemUsageBox } from "./widgets/FilesystemUsageBox";
 import { MountInfoBox } from "./widgets/MountInfoBox";
 import { FilesystemDiskRow } from "./filesystem-disk-row";
 import { MemoryProcessRow } from "./memory-process-row";
+import { NetworkRow } from "./network-row";
 
 interface OverviewProps {
   onOpenApps?: () => void;
@@ -189,6 +190,8 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
         <DiskIOGraph />
         <NetworkBandwidthGraph />
       </div>
+
+      <NetworkRow />
 
       {/* System Information & Processes */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
