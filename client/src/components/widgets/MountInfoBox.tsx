@@ -21,26 +21,28 @@ export function MountInfoBox() {
       ) : error || !data ? (
         <p className="text-red-400">Unavailable</p>
       ) : (
-        <table className="text-sm w-full">
-          <thead>
-            <tr className="text-gray-400">
-              <th className="text-left">Mount</th>
-              <th className="text-left">Type</th>
-              <th className="text-left">Flags</th>
-              <th className="text-left">Device</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((mnt: any, i: number) => (
-              <tr key={i}>
-                <td>{mnt.mountpoint}</td>
-                <td>{mnt.fstype}</td>
-                <td>{mnt.options}</td>
-                <td>{mnt.device}</td>
+        <div className="overflow-y-auto max-h-[300px]">
+          <table className="text-sm w-full table-fixed">
+            <thead className="text-gray-400 sticky top-0 bg-[#0f172a] z-10">
+              <tr>
+                <th className="text-left w-1/4">Mount</th>
+                <th className="text-left w-1/5">Type</th>
+                <th className="text-left w-2/5">Flags</th>
+                <th className="text-left w-1/4">Device</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-700">
+              {data.map((mnt: any, i: number) => (
+                <tr key={i}>
+                  <td className="pr-2">{mnt.mountpoint}</td>
+                  <td className="pr-2">{mnt.fstype}</td>
+                  <td className="pr-2">{mnt.options}</td>
+                  <td>{mnt.device}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
