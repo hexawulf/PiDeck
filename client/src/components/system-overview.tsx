@@ -21,6 +21,7 @@ import { DiskIOGraph, NetworkBandwidthGraph } from "./resource-graphs";
 import ProcessList from "./process-list";
 import { NvmeHealthBox } from "./widgets/NvmeHealthBox";
 import { CpuFreqBox } from "./widgets/CpuFreqBox";
+import { ThermalZoneBox } from "./widgets/ThermalZoneBox";
 
 interface OverviewProps {
   onOpenApps?: () => void;
@@ -170,6 +171,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
 
         <NvmeHealthBox />
         <CpuFreqBox />
+        <ThermalZoneBox />
       </div>
 
       {/* Resource Graphs */}
