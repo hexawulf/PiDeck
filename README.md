@@ -54,24 +54,6 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 - **In-memory storage** for development
 - **Session-based authentication**
 
-## 📸 Screenshots
-
-### Dashboard Overview
-![Dashboard](./docs/screenshots/dashboard-placeholder.png)
-*System monitoring with real-time metrics*
-
-### Log Viewer
-![Log Viewer](./docs/screenshots/logs-placeholder.png)
-*Browse and view system logs with syntax highlighting*
-
-### Service Management
-![Apps Monitor](./docs/screenshots/apps-placeholder.png)
-*Manage Docker containers and PM2 processes*
-
-### Cron Manager
-![Cron Jobs](./docs/screenshots/cron-placeholder.png)
-*View and execute scheduled tasks*
-
 ## 🔧 Quick Start
 
 ### Prerequisites
