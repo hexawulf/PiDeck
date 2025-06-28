@@ -1,4 +1,10 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card'
 
 interface UnderVoltageBoxProps {
   undervoltage: boolean
@@ -18,7 +24,13 @@ export function UnderVoltageBox({ undervoltage, throttleRaw }: UnderVoltageBoxPr
           <p className={isWarning ? 'text-red-400' : 'text-green-400'}>
             {isWarning ? 'Undervoltage Detected' : 'Normal'}
           </p>
-          <p className="text-xs text-gray-400">{throttleRaw}</p>
+          {throttleRaw === 'Unavailable' ? (
+            <CardDescription className="text-muted-foreground">
+              Undervoltage data is not supported on Ubuntu
+            </CardDescription>
+          ) : (
+            <p className="text-xs text-gray-400">{throttleRaw}</p>
+          )}
         </div>
       </CardContent>
     </Card>

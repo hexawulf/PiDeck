@@ -10,15 +10,11 @@ router.get('/api/system/boot-info', async (_req, res) => {
     const { stdout: bootOut } = await execAsync('findmnt /boot -n -o SOURCE')
     const { stdout: rootOut } = await execAsync('findmnt / -n -o SOURCE')
 
-    const { stdout: throttleOut } = await execAsync('/usr/bin/vcgencmd get_throttled', {
-      env: { ...process.env, PATH: `${process.env.PATH ?? ''}:/usr/bin` },
-    })
-    const throttleRaw = throttleOut.trim()
-    let undervoltage = false
-    const match = throttleRaw.match(/0x([0-9a-fA-F]+)/)
-    if (match) {
-      undervoltage = parseInt(match[1], 16) !== 0
-    }
+    // The `vcgencmd` tool is not available on some distros (e.g. Ubuntu 25.04).
+    // Instead of failing the entire route, return fallback values so the
+    // frontend widgets continue to render.
+    const throttleRaw = 'Unavailable'
+    const undervoltage = false
 
     const nvme = {
       temp: null as string | null,
