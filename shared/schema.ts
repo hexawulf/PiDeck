@@ -146,3 +146,17 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type LoginData = z.infer<typeof loginSchema>;
+
+export interface BootInfo {
+  bootDevice: string;
+  rootDevice: string;
+  undervoltage: boolean;
+  throttleRaw: string;
+  nvme: {
+    temp: string | null;
+    percentUsed: string | null;
+    powerCycles: number | null;
+    mediaErrors: number | null;
+    warningTempExceeded: number | null;
+  };
+}
