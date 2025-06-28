@@ -1,18 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
-const fetchBootInfo = async () => {
-  const res = await fetch('/api/system/boot-info')
-  if (!res.ok) throw new Error('Failed to fetch')
-  return res.json()
+interface BootDeviceBoxProps {
+  bootDevice: string
+  rootDevice: string
 }
 
-export function BootDeviceBox() {
-  const { data, error, isLoading, refetch } = useQuery({
-    queryKey: ['boot-info'],
-    queryFn: fetchBootInfo,
-    refetchInterval: 60000,
-  })
+export function BootDeviceBox({ bootDevice, rootDevice }: BootDeviceBoxProps) {
 
   return (
     <Card className="bg-pi-card border-pi-border h-full">
@@ -20,15 +13,9 @@ export function BootDeviceBox() {
         <CardTitle className="text-lg">Boot Source</CardTitle>
       </CardHeader>
       <CardContent className="pt-0 text-sm">
-        {isLoading ? (
-          <p>Loading...</p>
-        ) : error || !data ? (
-          <p className="text-red-400">Unavailable</p>
-        ) : (
-          <p className="font-mono">
-            {data.bootDevice} → {data.rootDevice}
-          </p>
-        )}
+        <p className="font-mono">
+          {bootDevice} → {rootDevice}
+        </p>
       </CardContent>
     </Card>
   )
