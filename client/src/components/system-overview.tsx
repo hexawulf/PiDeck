@@ -28,6 +28,7 @@ import { MountInfoBox } from "./widgets/MountInfoBox";
 import { FilesystemDiskRow } from "./filesystem-disk-row";
 import { MemoryProcessRow } from "./memory-process-row";
 import { NetworkRow } from "./network-row";
+import { BootInfoRow } from "./boot-info-row";
 
 interface OverviewProps {
   onOpenApps?: () => void;
@@ -180,6 +181,8 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
         <ThermalZoneBox />
         <PowerStatusBox />
       </div>
+
+      <BootInfoRow />
 
       {/* Additional Metrics */}
       <FilesystemDiskRow />

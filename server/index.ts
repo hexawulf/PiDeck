@@ -11,6 +11,7 @@ import memoryRoute from "./routes/memory";
 import topProcessesRoute from "./routes/topProcesses";
 import networkRoute from "./routes/network";
 import firewallRoute from "./routes/firewall";
+import bootInfoRoute from "./routes/bootInfo";
 
 const app = express();
 app.use(express.json());
@@ -24,6 +25,7 @@ app.use(memoryRoute);
 app.use(topProcessesRoute);
 app.use(networkRoute);
 app.use(firewallRoute);
+app.use(bootInfoRoute);
 
 app.use((req, res, next) => {
   const start = Date.now();
