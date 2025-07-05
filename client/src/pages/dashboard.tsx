@@ -142,7 +142,9 @@ export default function Dashboard() {
                 <Server className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold pi-text">PiDeck</h1>
+                <Link href="/dashboard">
+                  <h1 className="text-xl font-bold pi-text cursor-pointer hover:text-primary">PiDeck</h1>
+                </Link>
                 <p className="text-sm pi-text-muted">Raspberry Pi Admin</p>
               </div>
             </div>

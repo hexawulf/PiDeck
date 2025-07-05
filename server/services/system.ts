@@ -239,7 +239,7 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
   private static async logHistoricalData(data: SystemInfo): Promise<void> {
     try {
         const metricRecord: InsertHistoricalMetric = {
-          timestamp: new Date().toISOString(), // store as ISO string
+          timestamp: new Date(), // ensure Date instance for PgTimestamp
           cpuUsage: Math.round(data.cpu ?? 0),
           memoryUsage: Math.round(data.memory?.percentage ?? 0),
           temperature: Math.round(data.temperature ?? 0),
@@ -251,7 +251,7 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
       await db.insert(historicalMetrics).values(metricRecord);
 
       // Prune old data (older than 24 hours)
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       await db.delete(historicalMetrics).where(sql`${historicalMetrics.timestamp} < ${twentyFourHoursAgo}`);
 
     } catch (error) {
@@ -261,7 +261,7 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
 
   static async getHistoricalData(): Promise<HistoricalMetric[]> {
     try {
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       return await db.select().from(historicalMetrics)
         .where(sql`${historicalMetrics.timestamp} >= ${twentyFourHoursAgo}`)
         .orderBy(historicalMetrics.timestamp);
