@@ -10,13 +10,13 @@ import SystemOverview from "@/components/system-overview";
 import LogViewer from "@/components/log-viewer";
 import AppMonitor from "@/components/app-monitor";
 import CronManager from "@/components/cron-manager";
-import { 
-  Server, 
-  Sun, 
-  Moon, 
+import {
+  Server,
+  Sun,
+  Moon,
   RefreshCw,
   LogOut,
-  LogIn,
+  Lock,
   Activity,
   FileText,
   Grid,
@@ -77,10 +77,6 @@ export default function Dashboard() {
       });
     }
   }, [systemAlerts.data, toast]);
-
-  const handleLogout = async () => {
-    await logout();
-  };
 
   const handleUpdateSystem = async () => {
     try {
@@ -194,22 +190,22 @@ export default function Dashboard() {
               {/* Auth Button */}
               {isAuthenticated ? (
                 <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleLogout}
+                  variant="ghost"
+                  onClick={logout}
+                  className="ml-2"
+                  aria-label="Logout"
                   disabled={isLogoutPending}
-                  className="p-2 bg-transparent hover:bg-pi-card-hover border-pi-border text-pi-error hover:text-pi-error"
                 >
                   <LogOut className="w-5 h-5" />
                 </Button>
               ) : (
                 <Link href="/login">
                   <Button
-                    variant="outline"
-                    size="sm"
-                    className="p-2 bg-transparent hover:bg-pi-card-hover border-pi-border"
+                    variant="ghost"
+                    className="ml-2"
+                    aria-label="Login"
                   >
-                    <LogIn className="w-5 h-5" />
+                    <Lock className="w-5 h-5" />
                   </Button>
                 </Link>
               )}
