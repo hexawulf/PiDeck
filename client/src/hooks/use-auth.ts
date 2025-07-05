@@ -2,12 +2,29 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 
+interface AuthStatus {
+  authenticated: boolean;
+  userId?: number;
+}
+
 export function useAuth() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
 
-  const { data: user, isLoading } = useQuery({
+  const { data: user, isLoading } = useQuery<AuthStatus>({
     queryKey: ["/api/auth/me"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/auth/me"); // Assuming apiRequest fetches and returns a Response
+      if (!res.ok) {
+        // Handle non-ok responses, e.g., if /api/auth/me returns 401 when not authenticated
+        // Depending on your apiRequest, it might already throw an error for non-ok responses.
+        // If it returns a default AuthStatus for unauthenticated users, that's also fine.
+        // For example, if it returns { authenticated: false }
+        if (res.status === 401) return { authenticated: false }; // Or handle as error
+        throw new Error('Network response was not ok for /api/auth/me');
+      }
+      return res.json();
+    },
     retry: false,
   });
 

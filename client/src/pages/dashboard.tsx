@@ -22,7 +22,9 @@ import {
   Grid,
   Clock,
   SettingsIcon,
+  KeySquare, // Using KeySquare as KeyIcon is often a generic key
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"; // Moved import here
 
 // Forward ref for components used in tabs
 import React from 'react'; // Already here, but good to note
@@ -177,12 +179,33 @@ export default function Dashboard() {
                   <Moon className="w-5 h-5" />
                 )}
               </Button>
+
+              {/* Change Password Button */}
+              {isAuthenticated && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link href="/change-password">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="p-2 bg-transparent hover:bg-pi-card-hover border-pi-border"
+                        aria-label="Change Password"
+                      >
+                        <KeySquare className="w-5 h-5" />
+                      </Button>
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Change Password</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
               
               {/* Auth Button */}
               {isAuthenticated ? (
                 <Button
                   variant="ghost"
-                  onClick={logout}
+                  onClick={() => logout()}
                   className="ml-2"
                   aria-label="Logout"
                   disabled={isLogoutPending}

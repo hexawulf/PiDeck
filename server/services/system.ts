@@ -361,7 +361,11 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
         }
       }
     } catch (error) {
-      console.log('Thermal zone method failed:', error.message);
+      if (error instanceof Error) {
+        console.log('Thermal zone method failed:', error.message);
+      } else {
+        console.log('Thermal zone method failed with an unknown error type:', error);
+      }
     }
 
     // Method 2: Fallback to vcgencmd if thermal zone fails
@@ -373,7 +377,11 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
         return temp;
       }
     } catch (error) {
-      console.log('vcgencmd method failed:', error.message);
+      if (error instanceof Error) {
+        console.log('vcgencmd method failed:', error.message);
+      } else {
+        console.log('vcgencmd method failed with an unknown error type:', error);
+      }
     }
 
     // Method 3: Fallback to sensors command
@@ -385,7 +393,11 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
         return temp;
       }
     } catch (error) {
-      console.log('sensors method failed:', error.message);
+      if (error instanceof Error) {
+        console.log('sensors method failed:', error.message);
+      } else {
+        console.log('sensors method failed with an unknown error type:', error);
+      }
     }
 
     console.warn('All temperature reading methods failed, returning 0');
