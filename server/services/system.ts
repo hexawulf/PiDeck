@@ -238,8 +238,9 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
 
   private static async logHistoricalData(data: SystemInfo): Promise<void> {
     try {
+        const timestamp = new Date();
         const metricRecord: InsertHistoricalMetric = {
-          timestamp: new Date(), // ensure Date instance for PgTimestamp
+          timestamp: timestamp.toISOString(),
           cpuUsage: Math.round(data.cpu ?? 0),
           memoryUsage: Math.round(data.memory?.percentage ?? 0),
           temperature: Math.round(data.temperature ?? 0),
@@ -249,9 +250,10 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
           networkTx: Math.round(data.networkBandwidth?.tx ?? 0),
         };
       await db.insert(historicalMetrics).values(metricRecord);
+      console.log("[db] Inserted historical record @", timestamp.toISOString());
 
       // Prune old data (older than 24 hours)
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       await db.delete(historicalMetrics).where(sql`${historicalMetrics.timestamp} < ${twentyFourHoursAgo}`);
 
     } catch (error) {
@@ -261,7 +263,7 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
 
   static async getHistoricalData(): Promise<HistoricalMetric[]> {
     try {
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       return await db.select().from(historicalMetrics)
         .where(sql`${historicalMetrics.timestamp} >= ${twentyFourHoursAgo}`)
         .orderBy(historicalMetrics.timestamp);

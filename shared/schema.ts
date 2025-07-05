@@ -95,7 +95,8 @@ export type ProcessInfo = {
 // Historical data table
 export const historicalMetrics = pgTable("historical_metrics", {
   id: serial("id").primaryKey(),
-  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  // store timestamp as ISO string for postgres.js compatibility
+  timestamp: timestamp("timestamp", { mode: 'string' }).notNull().defaultNow(),
   cpuUsage: integer("cpu_usage"),
   memoryUsage: integer("memory_usage"), // Percentage
   temperature: integer("temperature"),
