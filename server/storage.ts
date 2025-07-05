@@ -1,4 +1,5 @@
-import { Pool } from "pg";
+import pkg from "pg";
+const { Pool } = pkg;
 import { users, sessions, type User, type InsertUser, type Session } from "@shared/schema";
 import dotenv from 'dotenv';
 
