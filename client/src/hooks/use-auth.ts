@@ -39,7 +39,7 @@ export function useAuth() {
   const changePasswordMutation = useMutation({
     mutationFn: async (data: { currentPassword?: string; newPassword?: string; confirmNewPassword?: string }) => {
       // The backend expects currentPassword and newPassword. confirmNewPassword is for client-side validation.
-      return apiRequest("POST", "/api/user/change-password", {
+      return apiRequest("POST", "/api/auth/change-password", {
         currentPassword: data.currentPassword,
         newPassword: data.newPassword,
         confirmNewPassword: data.confirmNewPassword, // Send it for Zod validation on backend too

@@ -119,8 +119,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // User routes (for things like password change)
-  app.post("/api/user/change-password", requireAuth, async (req: any, res: any) => {
+  // Password change route
+  app.post("/api/auth/change-password", requireAuth, async (req: any, res: any) => {
     try {
       const { currentPassword, newPassword } = passwordChangeSchema.parse(req.body);
       const userId = req.session.userId;
@@ -160,7 +160,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Optional: Re-issue session or update session details if needed, though often not necessary for password change.
       // Forcing logout on other devices is a more advanced feature.
 
-      console.log(`[API /user/change-password] User ${user.username} (ID: ${userId}) changed their password successfully.`);
+      console.log(`[API /auth/change-password] User ${user.username} (ID: ${userId}) changed their password successfully.`);
       res.json({ message: "Password changed successfully." });
 
     } catch (error) {
