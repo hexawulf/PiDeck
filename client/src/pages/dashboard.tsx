@@ -16,12 +16,12 @@ import {
   Moon,
   RefreshCw,
   LogOut,
-  Lock,
+  LogIn,
   Activity,
   FileText,
   Grid,
   Clock,
-  SettingsIcon // Added SettingsIcon
+  SettingsIcon,
 } from "lucide-react";
 
 // Forward ref for components used in tabs
@@ -176,17 +176,6 @@ export default function Dashboard() {
                 )}
               </Button>
               
-              {/* Refresh */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={refreshAll}
-                className="p-2 bg-transparent hover:bg-pi-card-hover border-pi-border"
-                disabled={systemInfo.isLoading}
-              >
-                <RefreshCw className={`w-5 h-5 ${systemInfo.isLoading ? 'animate-spin' : ''}`} />
-              </Button>
-              
               {/* Auth Button */}
               {isAuthenticated ? (
                 <Button
@@ -205,10 +194,21 @@ export default function Dashboard() {
                     className="ml-2"
                     aria-label="Login"
                   >
-                    <Lock className="w-5 h-5" />
+                    <LogIn className="w-5 h-5" />
                   </Button>
                 </Link>
               )}
+
+              {/* Refresh */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={refreshAll}
+                className="p-2 bg-transparent hover:bg-pi-card-hover border-pi-border"
+                disabled={systemInfo.isLoading}
+              >
+                <RefreshCw className={`w-5 h-5 ${systemInfo.isLoading ? 'animate-spin' : ''}`} />
+              </Button>
             </div>
           </div>
         </div>

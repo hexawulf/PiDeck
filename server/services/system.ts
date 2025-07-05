@@ -31,7 +31,7 @@ let previousDiskStats: { read: number; write: number; timestamp: number } | null
 interface ActiveAlert {
   id: string;
   message: string;
-  timestamp: Date;
+  timestamp: string;
   type: 'temperature'; // Can be expanded later
 }
 let activeAlerts: ActiveAlert[] = [];
@@ -93,7 +93,7 @@ export class SystemService {
         const newAlert: ActiveAlert = {
           id: `temp-${Date.now()}`,
           message: `Temperature exceeded ${TEMPERATURE_THRESHOLD}°C: Currently ${currentTemperature.toFixed(1)}°C`,
-          timestamp: new Date(),
+          timestamp: new Date().toISOString(),
           type: 'temperature',
         };
         activeAlerts.push(newAlert);
@@ -101,7 +101,7 @@ export class SystemService {
       } else {
         // Optionally update the existing alert message or timestamp if it's still active
         existingAlert.message = `Temperature remains above ${TEMPERATURE_THRESHOLD}°C: Currently ${currentTemperature.toFixed(1)}°C`;
-        existingAlert.timestamp = new Date();
+        existingAlert.timestamp = new Date().toISOString();
       }
     } else {
       if (existingAlert) {

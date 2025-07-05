@@ -138,7 +138,7 @@ export interface SystemInfo extends Omit<SystemInfoExtended, 'diskIO' | 'network
 export interface ActiveAlert {
   id: string;
   message: string;
-  timestamp: Date;
+  timestamp: string;
   type: 'temperature';
 }
 
