@@ -21,7 +21,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
-    return <Redirect to="/" />;
+    return <Redirect to="/login" />;
   }
 
   return <>{children}</>;
@@ -30,7 +30,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Login} />
+      <Route path="/login" component={Login} />
+      <Route path="/" component={() => <Redirect to="/login" />} />
       <Route path="/dashboard">
         <ProtectedRoute>
           <Dashboard />

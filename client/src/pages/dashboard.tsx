@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { Link } from "wouter";
 import { useSystemData } from "@/hooks/use-system-data";
 import { useTheme } from "@/components/theme-provider";
 import { useToast } from "@/hooks/use-toast";
@@ -13,8 +14,9 @@ import {
   Server, 
   Sun, 
   Moon, 
-  RefreshCw, 
+  RefreshCw,
   LogOut,
+  LogIn,
   Activity,
   FileText,
   Grid,
@@ -39,7 +41,7 @@ interface TabDefinition {
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [rebootRequired, setRebootRequired] = useState(false);
-  const { logout, isLogoutPending } = useAuth();
+  const { logout, isLogoutPending, isAuthenticated } = useAuth();
   const { systemInfo, systemAlerts, refreshAll, updateSystem, isSystemUpdating } = useSystemData();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
@@ -189,16 +191,28 @@ export default function Dashboard() {
                 <RefreshCw className={`w-5 h-5 ${systemInfo.isLoading ? 'animate-spin' : ''}`} />
               </Button>
               
-              {/* Logout */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLogout}
-                disabled={isLogoutPending}
-                className="p-2 bg-transparent hover:bg-pi-card-hover border-pi-border text-pi-error hover:text-pi-error"
-              >
-                <LogOut className="w-5 h-5" />
-              </Button>
+              {/* Auth Button */}
+              {isAuthenticated ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLogout}
+                  disabled={isLogoutPending}
+                  className="p-2 bg-transparent hover:bg-pi-card-hover border-pi-border text-pi-error hover:text-pi-error"
+                >
+                  <LogOut className="w-5 h-5" />
+                </Button>
+              ) : (
+                <Link href="/login">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="p-2 bg-transparent hover:bg-pi-card-hover border-pi-border"
+                  >
+                    <LogIn className="w-5 h-5" />
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
         </div>

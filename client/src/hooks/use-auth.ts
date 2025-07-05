@@ -32,7 +32,7 @@ export function useAuth() {
     },
     onSuccess: () => {
       queryClient.clear();
-      setLocation("/");
+      setLocation("/login");
     },
   });
 
