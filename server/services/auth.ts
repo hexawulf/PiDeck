@@ -1,10 +1,11 @@
 import bcrypt from "bcrypt";
 import { storage } from "../storage";
+import type { User } from "@shared/schema"; // Import User type
 
 interface ValidationResult {
   isValid: boolean;
-  user?: any;
-  error?: string;
+  user?: User | null; // Use specific User type, allow null
+  error?: string;     // Implicitly string | undefined
 }
 
 export class AuthService {
@@ -31,10 +32,10 @@ export class AuthService {
         // Password is valid, reset failed attempts if any
         if (user.failed_login_attempts && user.failed_login_attempts > 0) {
           user.failed_login_attempts = 0;
-          user.account_locked_until = null;
+          user.account_locked_until = null; // This is fine as account_locked_until can be null in DB
           await storage.updateUser(user);
         }
-        return { isValid: true, user, error: null };
+        return { isValid: true, user, error: undefined }; // Changed null to undefined
       } else {
         // Password is not valid, handle failed attempt
         user.failed_login_attempts = (user.failed_login_attempts || 0) + 1;
@@ -52,23 +53,23 @@ export class AuthService {
     }
   }
 
-  static async createSession(): Promise<string> {
-    // For now, session creation is still tied to 'admin'. This might need generalization later.
-    const user = await storage.getUserByUsername("admin");
-    if (!user) throw new Error("Admin user not found for session creation");
+  // static async createSession(): Promise<string> {
+  //   // For now, session creation is still tied to 'admin'. This might need generalization later.
+  //   const user = await storage.getUserByUsername("admin");
+  //   if (!user) throw new Error("Admin user not found for session creation");
     
-    const session = await storage.createSession(user.id);
-    return session.id;
-  }
+  //   const session = await storage.createSession(user.id);
+  //   return session.id;
+  // }
 
-  static async validateSession(sessionId: string): Promise<boolean> {
-    const session = await storage.getSession(sessionId);
-    return !!session;
-  }
+  // static async validateSession(sessionId: string): Promise<boolean> {
+  //   const session = await storage.getSession(sessionId);
+  //   return !!session;
+  // }
 
-  static async deleteSession(sessionId: string): Promise<void> {
-    await storage.deleteSession(sessionId);
-  }
+  // static async deleteSession(sessionId: string): Promise<void> {
+  //   await storage.deleteSession(sessionId);
+  // }
 
   static async hashPassword(password: string): Promise<string> {
     const saltRounds = 10; // Standard practice

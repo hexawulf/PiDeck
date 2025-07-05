@@ -6,7 +6,8 @@ const router = Router()
 router.get('/api/metrics/mounts', (_req, res) => {
   exec('mount | grep -v snap', (err, stdout, stderr) => {
     if (err || stderr) {
-      return res.status(500).json({ error: 'Failed to run mount', details: stderr || err.message })
+      const details = stderr || (err ? err.message : "Unknown exec error");
+      return res.status(500).json({ error: 'Failed to run mount', details });
     }
 
     const lines = stdout.trim().split('\n')

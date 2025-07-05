@@ -6,7 +6,8 @@ const router = Router()
 router.get('/api/metrics/nvme', (_req, res) => {
   exec('sudo smartctl -a /dev/nvme0', (err, stdout, stderr) => {
     if (err || stderr) {
-      return res.status(500).json({ error: 'SMART data unavailable', details: stderr || err.message })
+      const details = stderr || (err ? err.message : "Unknown exec error");
+      return res.status(500).json({ error: 'SMART data unavailable', details });
     }
 
     const lines = stdout.split('\n')
