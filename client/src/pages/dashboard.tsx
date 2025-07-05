@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useSystemData } from "@/hooks/use-system-data";
 import { useTheme } from "@/components/theme-provider";
 import { useToast } from "@/hooks/use-toast";
@@ -48,6 +48,13 @@ export default function Dashboard() {
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const displayedAlertIds = useRef<Set<string>>(new Set());
+  const [location, navigate] = useLocation();
+
+  useEffect(() => {
+    if (location === "/dashboard") {
+      setActiveTab("dashboard");
+    }
+  }, [location]);
 
   useEffect(() => {
     fetch("/api/reboot-check", { credentials: "include" })
@@ -144,9 +151,15 @@ export default function Dashboard() {
                 <Server className="w-5 h-5 text-white" />
               </div>
               <div>
-                <Link href="/dashboard">
-                  <h1 className="text-xl font-bold pi-text cursor-pointer hover:text-primary">PiDeck</h1>
-                </Link>
+                <h1
+                  onClick={() => {
+                    setActiveTab("dashboard"); // Reset active tab
+                    navigate("/dashboard", { replace: true }); // Force re-navigation
+                  }}
+                  className="text-xl font-bold pi-text cursor-pointer hover:text-primary"
+                >
+                  PiDeck
+                </h1>
                 <p className="text-sm pi-text-muted">Raspberry Pi Admin</p>
               </div>
             </div>
