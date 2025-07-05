@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Server, Eye, EyeOff } from "lucide-react";
+import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Login() {
@@ -51,7 +52,9 @@ export default function Login() {
                   <Server className="w-6 h-6 text-white" />
                 </div>
               </div>
-              <h1 className="text-2xl font-bold pi-text mb-2">PiDeck</h1>
+              <Link href="/dashboard">
+                <h1 className="text-2xl font-bold pi-text mb-2 cursor-pointer hover:text-primary">PiDeck</h1>
+              </Link>
               <p className="pi-text-muted">Raspberry Pi Admin Dashboard</p>
             </div>
             
