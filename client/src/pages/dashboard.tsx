@@ -17,6 +17,7 @@ import {
   RefreshCw,
   LogOut,
   LogIn,
+  Info,
   Activity,
   FileText,
   Grid,
@@ -25,6 +26,8 @@ import {
   KeySquare, // Using KeySquare as KeyIcon is often a generic key
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"; // Moved import here
+
+import AboutModal from "@/components/modals/about-modal";
 
 // Forward ref for components used in tabs
 import React from 'react'; // Already here, but good to note
@@ -179,6 +182,9 @@ export default function Dashboard() {
 
             {/* Actions */}
             <div className="flex items-center space-x-3">
+              {/* About Modal */}
+              <AboutModal />
+
               {/* Theme Toggle */}
               <Button
                 variant="outline"
@@ -214,29 +220,6 @@ export default function Dashboard() {
                 </Tooltip>
               )}
               
-              {/* Auth Button */}
-              {isAuthenticated ? (
-                <Button
-                  variant="ghost"
-                  onClick={() => logout()}
-                  className="ml-2"
-                  aria-label="Logout"
-                  disabled={isLogoutPending}
-                >
-                  <LogOut className="w-5 h-5" />
-                </Button>
-              ) : (
-                <Link href="/login">
-                  <Button
-                    variant="ghost"
-                    className="ml-2"
-                    aria-label="Login"
-                  >
-                    <LogIn className="w-5 h-5" />
-                  </Button>
-                </Link>
-              )}
-
               {/* Refresh */}
               <Button
                 variant="outline"
@@ -247,6 +230,29 @@ export default function Dashboard() {
               >
                 <RefreshCw className={`w-5 h-5 ${systemInfo.isLoading ? 'animate-spin' : ''}`} />
               </Button>
+
+              {/* Auth Button */}
+              {isAuthenticated ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => logout()}
+                  aria-label="Logout"
+                  className="p-2 bg-transparent hover:bg-pi-card-hover border-pi-border"
+                  disabled={isLogoutPending}
+                >
+                  <LogOut className="w-5 h-5" />
+                </Button>
+              ) : (
+                <Link href="/login">
+                  <Button
+                    variant="ghost"
+                    aria-label="Login"
+                  >
+                    <LogIn className="w-5 h-5" />
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
         </div>
