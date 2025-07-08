@@ -337,12 +337,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/cron/run", requireAuth, async (req, res) => {
     try {
-      const { command } = req.body;
-      if (!command) {
+      const { command: requestedCommand } = req.body;
+      if (!requestedCommand) {
         return res.status(400).json({ message: "Command is required" });
       }
+
+      // Get the list of existing cron jobs to validate against
+      const existingJobs = await SystemService.getCronJobs();
+      const isValidCommand = existingJobs.some(job => job.command === requestedCommand);
+
+      if (!isValidCommand) {
+        return res.status(403).json({ message: "Invalid or not allowed cron command." });
+      }
       
-      await SystemService.runCronJob(command);
+      await SystemService.runCronJob(requestedCommand);
       res.json({ message: "Cron job executed successfully" });
     } catch (error) {
       console.error("Run cron job error:", error);

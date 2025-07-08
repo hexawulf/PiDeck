@@ -156,7 +156,7 @@ private static async getDiskIO(): Promise<DiskIO> {
       writeSpeed: Math.round(writeSpeed),
       utilization: Math.round(utilization),
     };
-    console.log('Disk I/O:', result);
+    // console.log('Disk I/O:', result);
     return result;
   } catch (error) {
     console.error('Error getting disk I/O:', error);
@@ -175,7 +175,7 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
         rx += parseInt(await fs.readFile(rxPath, 'utf8'), 10) || 0;
         tx += parseInt(await fs.readFile(txPath, 'utf8'), 10) || 0;
       } catch (err) {
-        console.log(`Failed to read stats for interface ${iface}:`, err);
+        // console.log(`Failed to read stats for interface ${iface}:`, err); // Potentially noisy if an interface is down
       }
     }
 
@@ -204,7 +204,7 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
       rx: Math.round(rxSpeed),
       tx: Math.round(txSpeed),
     };
-    console.log('Network bandwidth:', result);
+    // console.log('Network bandwidth:', result);
     return result;
   } catch (error) {
     console.error('Error getting network bandwidth:', error);
@@ -250,7 +250,7 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
           networkTx: Math.round(data.networkBandwidth?.tx ?? 0),
         };
       await db.insert(historicalMetrics).values(metricRecord);
-      console.log("[db] Inserted historical record @", timestamp.toISOString());
+      // console.log("[db] Inserted historical record @", timestamp.toISOString());
 
       // Prune old data (older than 24 hours)
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -356,53 +356,48 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
 
         // Validate temperature reading (should be between 0-100°C for Raspberry Pi)
         if (temperatureC > 0 && temperatureC < 100) {
-          console.log(`CPU temperature: ${temperatureC.toFixed(1)}°C (thermal zone)`);
+          // console.log(`CPU temperature: ${temperatureC.toFixed(1)}°C (thermal zone)`);
           return Math.round(temperatureC * 10) / 10; // Round to 1 decimal place
         } else {
-          console.warn(`Invalid temperature reading: ${temperatureC}°C`);
+          console.warn(`Invalid temperature reading from thermal_zone0: ${temperatureC}°C`);
         }
       }
     } catch (error) {
-      if (error instanceof Error) {
-        console.log('Thermal zone method failed:', error.message);
-      } else {
-        console.log('Thermal zone method failed with an unknown error type:', error);
-      }
+      // Silently try next method, or log minimally if desired for debugging
+      // console.log('Thermal zone method failed:', error instanceof Error ? error.message : String(error));
     }
 
     // Method 2: Fallback to vcgencmd if thermal zone fails
     try {
       const { stdout } = await execAsync("vcgencmd measure_temp | cut -d= -f2 | cut -d\\' -f1");
       const temp = parseFloat(stdout.trim());
-      if (!isNaN(temp) && temp > 0) {
-        console.log(`CPU temperature: ${temp.toFixed(1)}°C (vcgencmd)`);
+      if (!isNaN(temp) && temp > 0 && temp < 100) { // Added validation
+        // console.log(`CPU temperature: ${temp.toFixed(1)}°C (vcgencmd)`);
         return temp;
+      } else if (!isNaN(temp)) {
+        console.warn(`Invalid temperature reading from vcgencmd: ${temp}°C`);
       }
     } catch (error) {
-      if (error instanceof Error) {
-        console.log('vcgencmd method failed:', error.message);
-      } else {
-        console.log('vcgencmd method failed with an unknown error type:', error);
-      }
+      // Silently try next method
+      // console.log('vcgencmd method failed:', error instanceof Error ? error.message : String(error));
     }
 
     // Method 3: Fallback to sensors command
     try {
       const { stdout } = await execAsync("sensors | grep -E '(Core 0|Package id 0|Tctl)' | head -1 | awk '{print $3}' | cut -d+ -f2 | cut -d° -f1");
       const temp = parseFloat(stdout.trim());
-      if (!isNaN(temp) && temp > 0) {
-        console.log(`CPU temperature: ${temp.toFixed(1)}°C (sensors)`);
+      if (!isNaN(temp) && temp > 0 && temp < 100) { // Added validation
+        // console.log(`CPU temperature: ${temp.toFixed(1)}°C (sensors)`);
         return temp;
+      } else if (!isNaN(temp)) {
+        console.warn(`Invalid temperature reading from sensors: ${temp}°C`);
       }
     } catch (error) {
-      if (error instanceof Error) {
-        console.log('sensors method failed:', error.message);
-      } else {
-        console.log('sensors method failed with an unknown error type:', error);
-      }
+      // Silently try next method
+      // console.log('sensors method failed:', error instanceof Error ? error.message : String(error));
     }
 
-    console.warn('All temperature reading methods failed, returning 0');
+    console.warn('All temperature reading methods failed or returned invalid data, returning 0');
     return 0;
   }
 
@@ -582,7 +577,17 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
     }
   }
 
+  private static isValidProcessNameOrId(nameOrId: string): boolean {
+    // Allow alphanumeric, hyphens, underscores. Commonly used for names.
+    // PM2 also allows numeric IDs.
+    return /^[a-zA-Z0-9_.-]+$/.test(nameOrId);
+  }
+
   static async restartPM2Process(processName: string): Promise<void> {
+    if (!this.isValidProcessNameOrId(processName)) {
+      console.error(`Invalid PM2 process name/ID for restart: ${processName}`);
+      throw new Error("Invalid process name or ID format");
+    }
     try {
       await execAsync(`pm2 restart ${processName}`);
     } catch (error) {
@@ -592,6 +597,10 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
   }
 
   static async stopPM2Process(processName: string): Promise<void> {
+    if (!this.isValidProcessNameOrId(processName)) {
+      console.error(`Invalid PM2 process name/ID for stop: ${processName}`);
+      throw new Error("Invalid process name or ID format");
+    }
     try {
       await execAsync(`pm2 stop ${processName}`);
     } catch (error) {

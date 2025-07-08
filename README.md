@@ -105,10 +105,15 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 
 ## 🔐 Security Notes
 
-- **Default Password**: Change the default `admin` password in production
-- **Network Access**: Configure firewall rules for external access
-- **HTTPS**: Use reverse proxy (NGINX) with SSL certificates for production
-- **Session Security**: Sessions are HTTP-only and expire after 24 hours
+- **Default Password**: It is crucial to change the default `admin` password immediately after the first login, especially in a production environment. This can be done via the user settings panel in the UI.
+- **Environment Variables**: Sensitive configuration, such as the `DATABASE_URL` (for PostgreSQL connection) and `SESSION_SECRET` (for securing user sessions), must be managed using environment variables.
+    - A `.env.example` file is provided as a template. Copy it to a `.env` file and populate it with your actual secrets.
+    - The `.env` file is included in `.gitignore` and should never be committed to the repository.
+- **Command Execution**: The application uses `child_process` to execute certain system commands for monitoring and management. This functionality has been reviewed to prevent command injection vulnerabilities (e.g., by validating inputs for PM2 process names and ensuring only predefined cron jobs can be executed).
+- **Network Access**: By default, the application server binds to `0.0.0.0`, making it accessible on your local network. Configure firewall rules (e.g., `ufw`) to restrict access as needed, especially if the device is connected to a public network.
+- **HTTPS**: For production deployments, always use a reverse proxy like NGINX or Caddy to enable HTTPS with valid SSL certificates. This encrypts traffic between clients and the server. See `docs/nginx/pideck.piapps.dev.conf` for an example NGINX configuration.
+- **Session Security**: Sessions are configured to be HTTP-only (reducing XSS risk) and use `SameSite=Lax` cookies. Ensure your `SESSION_SECRET` is strong and unique. Sessions expire after 24 hours of inactivity.
+- **Dependencies**: Regularly update dependencies (`npm update`) and audit them (`npm audit`) to patch known vulnerabilities. While this cleanup addressed some issues, ongoing vigilance is required.
 
 ## 🚀 Production Deployment
 

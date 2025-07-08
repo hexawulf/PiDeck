@@ -23,10 +23,10 @@ export class AuthService {
         return { isValid: false, user, error: "account_locked" };
       }
       
-      console.log(`[AuthService.validatePassword] Attempting to validate password. Input: "${password}", Stored Hash: "${user.password_hash}"`);
+      // console.log(`[AuthService.validatePassword] Attempting to validate password. Input: "${password}", Stored Hash: "${user.password_hash}"`);
 
       const result = await bcrypt.compare(password, user.password_hash);
-      console.log(`[AuthService.validatePassword] bcrypt.compare result: ${result}`);
+      // console.log(`[AuthService.validatePassword] bcrypt.compare result: ${result}`);
 
       if (result) {
         // Password is valid, reset failed attempts if any
