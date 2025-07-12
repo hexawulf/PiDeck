@@ -21,8 +21,6 @@ import { DiskIOGraph, NetworkBandwidthGraph } from "./resource-graphs";
 import ProcessList from "./process-list";
 import { NvmeHealthBox } from "./widgets/NvmeHealthBox";
 import { CpuFreqBox } from "./widgets/CpuFreqBox";
-import { ThermalZoneBox } from "./widgets/ThermalZoneBox";
-import { PowerStatusBox } from "./widgets/PowerStatusBox";
 import { FilesystemUsageBox } from "./widgets/FilesystemUsageBox";
 import { MountInfoBox } from "./widgets/MountInfoBox";
 import { FilesystemDiskRow } from "./filesystem-disk-row";
@@ -176,8 +174,6 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
       {/* NvmeHealthBox, CpuFreqBox, ThermalZoneBox, PowerStatusBox will be wrapped by their own Card with new styling */}
       <div className="pi-card p-4 rounded-lg border pi-border shadow-sm min-h-[150px]"><NvmeHealthBox /></div>
       <div className="pi-card p-4 rounded-lg border pi-border shadow-sm min-h-[150px]"><CpuFreqBox /></div>
-      <div className="pi-card p-4 rounded-lg border pi-border shadow-sm min-h-[150px]"><ThermalZoneBox /></div>
-      <div className="pi-card p-4 rounded-lg border pi-border shadow-sm min-h-[150px]"><PowerStatusBox /></div>
 
       {/* FilesystemDiskRow, MemoryProcessRow, NetworkRow are likely full-width or wider components */}
       {/* These might need lg:col-span-3 or specific handling if they are not simple cards */}
@@ -185,8 +181,22 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
       <div className="pi-card p-4 rounded-lg border pi-border shadow-sm min-h-[150px] lg:col-span-3"><MemoryProcessRow /></div>
 
       {/* Resource Graphs */}
-      <div className="pi-card p-4 rounded-lg border pi-border shadow-sm min-h-[150px] lg:col-span-1"><DiskIOGraph /></div> {/* Explicitly lg:col-span-1 for clarity */}
-      <div className="pi-card p-4 rounded-lg border pi-border shadow-sm min-h-[150px] lg:col-span-1"><NetworkBandwidthGraph /></div> {/* Explicitly lg:col-span-1 */}
+      <div className="pi-card p-4 rounded-lg border pi-border shadow-sm min-h-[200px] lg:col-span-1"><DiskIOGraph /></div> {/* Explicitly lg:col-span-1 for clarity */}
+      <div className="pi-card p-4 rounded-lg border pi-border shadow-sm min-h-[200px] lg:col-span-1"><NetworkBandwidthGraph /></div> {/* Explicitly lg:col-span-1 */}
+      <Card className="pi-card p-4 rounded-lg border pi-border shadow-sm min-h-[200px]">
+        <div className="text-sm font-semibold text-pi-text-muted mb-2">Thermal & Power</div>
+        <div className="flex flex-col space-y-3 text-sm">
+          <div>
+            <span className="font-medium">CPU Temp:</span> {data.temperature ? data.temperature.toFixed(1) : 'N/A'}°C
+          </div>
+          <div>
+            <span className="font-medium">Power Status:</span> Unavailable
+          </div>
+          <div>
+            <span className="font-medium">Voltage:</span> N/A
+          </div>
+        </div>
+      </Card>
 
       <div className="pi-card p-4 rounded-lg border pi-border shadow-sm min-h-[150px] lg:col-span-3"><NetworkRow /></div>
 
