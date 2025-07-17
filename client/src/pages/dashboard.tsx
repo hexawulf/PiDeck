@@ -145,7 +145,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-pi-dark">
       {/* Header */}
-      <header className="fixed top-0 w-full bg-[color:var(--pi-dark)] shadow-md z-[1000]">
+      <header className="w-full bg-[var(--pi-dark)] text-[var(--pi-text)] py-3 px-4 shadow-md z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo & Title */}
@@ -265,7 +265,7 @@ export default function Dashboard() {
       )}
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="pt-16 px-4">
         {/* Tab Navigation */}
         <div className="mb-8">
           <nav className="flex space-x-1 bg-pi-card rounded-xl p-1">
