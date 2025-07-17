@@ -72,58 +72,45 @@ const LogLineHighlighter: React.FC<LogLineHighlighterProps> = ({ line }) => {
 };
 
 export default function LogViewer() {
-  const { logFiles } = useSystemData();
-  const [selectedLog, setSelectedLog] = useState<string>("");
-  const [autoRefresh, setAutoRefresh] = useState(false);
-  const [isHtmlContent, setIsHtmlContent] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const logContainerRef = useRef<HTMLDivElement>(null);
-  
-  const logContent = useLogContent(selectedLog, autoRefresh);
+  const { logFiles: logFilesQuery } = useSystemData();
+  const [logList, setLogList] = useState<{ filename: string; content: string }[]>([]);
+  const [selectedLogContent, setSelectedLogContent] = useState<string>("");
 
-  const filteredLogLines = useMemo(() => {
-    if (!logContent.data?.content) return [];
-    const lines = logContent.data.content.split('\n');
-    if (!searchTerm) return lines;
-    return lines.filter(line => line.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [logContent.data?.content, searchTerm]);
+  useEffect(() => {
+    const fetchLogContents = async () => {
+      if (logFilesQuery.data) {
+        const promises = logFilesQuery.data.map(async (logFile) => {
+          const res = await fetch(`/api/logs/${encodeURIComponent(logFile.name)}`);
+          const data = await res.json();
+          return { filename: logFile.name, content: data.content };
+        });
+        const allLogs = await Promise.all(promises);
+        setLogList(allLogs);
+      }
+    };
+    fetchLogContents();
+  }, [logFilesQuery.data]);
 
-  const handleSelectLog = (filename: string) => {
-    setSelectedLog(filename);
-    setSearchTerm(""); // Reset search term when selecting a new log
+  const handleLogClick = (filename: string) => {
+    const log = logList.find((l) => l.filename === filename);
+    if (log) {
+      setSelectedLogContent(log.content);
+    }
   };
 
-  const handleDownloadLog = () => {
-    if (!logContent.data?.content) return;
-    
-    const blob = new Blob([logContent.data.content], { type: 'text/plain' });
+  const handleDownload = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = selectedLog;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+
     URL.revokeObjectURL(url);
   };
 
-  useEffect(() => {
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-    }
-  }, [logContent.data?.content]); // Scroll when content changes
-
-  useEffect(() => {
-    if (logContent.data?.content) {
-      // Basic HTML detection: check for common tags or <!DOCTYPE>
-      const basicHtmlRegex = /<html.*?>|<body.*?>|<div.*?>|<p.*?>|<span.*?>|<!DOCTYPE html>/i;
-      setIsHtmlContent(basicHtmlRegex.test(logContent.data.content));
-    } else {
-      setIsHtmlContent(false);
-    }
-  }, [logContent.data?.content]);
-
-  if (logFiles.isLoading) {
+  if (logFilesQuery.isLoading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1">
@@ -144,37 +131,32 @@ export default function LogViewer() {
     );
   }
 
-  const files = logFiles.data || [];
-  const selectedFile = files.find(f => f.name === selectedLog);
-
   return (
     <div className="flex gap-4">
-      {/* Log Files Sidebar */}
-      <div className="w-1/4 max-h-[600px] overflow-y-auto custom-scrollbar pi-card rounded-xl p-2">
-        {files.map((file) => (
-          <div
-            key={file.name}
-            onClick={() => handleSelectLog(file.name)}
-            className={`py-1 px-2 hover:bg-pi-card-hover rounded cursor-pointer ${
-              selectedLog === file.name ? 'bg-pi-card-hover' : ''
-            }`}
-          >
-            {file.name}
+      {/* Left Log List */}
+      <div className="w-1/4 max-h-[600px] overflow-y-auto custom-scrollbar pi-card rounded-xl p-2 space-y-2">
+        {logList.map((log) => (
+          <div key={log.filename} className="flex justify-between items-center hover:bg-pi-card-hover px-2 py-1 rounded">
+            <span
+              onClick={() => handleLogClick(log.filename)}
+              className="cursor-pointer hover:underline text-sm text-pi-text"
+            >
+              {log.filename}
+            </span>
+            <button
+              onClick={() => handleDownload(log.filename, log.content)}
+              className="text-xs text-pi-text-muted hover:text-pi-accent"
+              title="Download log"
+            >
+              ⬇
+            </button>
           </div>
         ))}
       </div>
 
-      {/* Log Viewer */}
+      {/* Right Log Preview */}
       <div className="w-3/4 pi-card rounded-xl p-4 max-h-[600px] overflow-auto">
-        <pre className="whitespace-pre-wrap break-words">
-          {logContent.isLoading
-            ? "Loading..."
-            : logContent.error
-            ? "Error loading log."
-            : selectedLog
-            ? logContent.data?.content
-            : "Select a log to view."}
-        </pre>
+        <pre className="whitespace-pre-wrap break-words">{selectedLogContent || "Select a log to view."}</pre>
       </div>
     </div>
   );
