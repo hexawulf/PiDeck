@@ -265,31 +265,33 @@ export default function Dashboard() {
       )}
 
       {/* Main Content */}
-      <main className="pt-16 px-4">
-        {/* Tab Navigation */}
-        <div className="mb-8">
-          <nav className="flex space-x-1 bg-pi-card rounded-xl p-1">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`tab-button flex items-center space-x-2 ${
-                    activeTab === tab.id ? 'active' : ''
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
+      <main className="pt-16">
+        <div className="max-w-7xl mx-auto px-4">
+          {/* Tab Navigation */}
+          <div className="mb-8">
+            <nav className="flex space-x-1 bg-pi-card rounded-xl p-1">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`tab-button flex items-center space-x-2 ${
+                      activeTab === tab.id ? 'active' : ''
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
 
-        {/* Tab Content */}
-        <div className="tab-content">
-          {renderTabContent()}
+          {/* Tab Content */}
+          <div className="tab-content">
+            {renderTabContent()}
+          </div>
         </div>
       </main>
     </div>
