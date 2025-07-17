@@ -148,166 +148,33 @@ export default function LogViewer() {
   const selectedFile = files.find(f => f.name === selectedLog);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <div className="flex gap-4">
       {/* Log Files Sidebar */}
-      <div className="lg:col-span-1">
-        <Card className="bg-pi-card border-pi-border">
-          <CardContent className="p-6">
-            <h3 className="text-lg font-semibold pi-text mb-4 flex items-center space-x-2">
-              <Folder className="w-5 h-5" />
-              <span>Log Files</span>
-            </h3>
-            
-            {files.length === 0 ? (
-              <p className="pi-text-muted text-sm">No log files found</p>
-            ) : (
-              <div className="space-y-2">
-                {files.map((file) => (
-                  <button
-                    key={file.name}
-                    onClick={() => handleSelectLog(file.name)}
-                    className={`w-full text-left p-3 rounded-lg hover:bg-pi-card-hover transition-colors ${
-                      selectedLog === file.name 
-                        ? 'border-l-4 border-pi-accent bg-pi-darker' 
-                        : ''
-                    }`}
-                  >
-                    <div className="font-medium pi-text">{file.name}</div>
-                    <div className="text-sm pi-text-muted">{file.size}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-            
-            <div className="mt-4 pt-4 border-t border-pi-border">
-              <label className="flex items-center space-x-2">
-                <Checkbox 
-                  checked={autoRefresh}
-                  onCheckedChange={(checked) => setAutoRefresh(checked as boolean)}
-                  className="border-pi-border"
-                />
-                <span className="text-sm pi-text-muted">Auto-refresh</span>
-              </label>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="w-1/4 max-h-[600px] overflow-y-auto custom-scrollbar pi-card rounded-xl p-2">
+        {files.map((file) => (
+          <div
+            key={file.name}
+            onClick={() => handleSelectLog(file.name)}
+            className={`py-1 px-2 hover:bg-pi-card-hover rounded cursor-pointer ${
+              selectedLog === file.name ? 'bg-pi-card-hover' : ''
+            }`}
+          >
+            {file.name}
+          </div>
+        ))}
       </div>
 
       {/* Log Viewer */}
-      <div className="lg:col-span-3">
-        <Card className="bg-pi-card border-pi-border">
-          {/* Log Header */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border-b border-pi-border gap-2">
-            <div className="flex items-center space-x-3">
-              <FileText className="w-5 h-5 text-pi-accent flex-shrink-0" />
-              <div>
-                <h3 className="font-semibold pi-text">
-                  {selectedFile?.name || "Select a log file"}
-                </h3>
-                {selectedFile && (
-                  <p className="text-sm pi-text-muted">{selectedFile.path}</p>
-                )}
-              </div>
-            </div>
-            {selectedLog && (
-              <div className="flex items-center space-x-2 w-full sm:w-auto">
-                {!isHtmlContent && (
-                  <div className="relative flex-grow sm:flex-grow-0">
-                    <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-pi-text-muted" />
-                    <Input
-                      type="text"
-                      placeholder="Search logs..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-8 bg-pi-darker border-pi-border focus:border-pi-accent w-full"
-                      disabled={isHtmlContent}
-                    />
-                  </div>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDownloadLog}
-                  className="bg-pi-darker hover:bg-pi-card-hover border-pi-border"
-                  disabled={!logContent.data?.content}
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="bg-pi-darker hover:bg-pi-card-hover border-pi-border text-pi-error hover:text-pi-error"
-                  disabled
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => logContent.refetch()}
-                  className="bg-pi-darker hover:bg-pi-card-hover border-pi-border"
-                  disabled={logContent.isLoading}
-                >
-                  <RefreshCw className={`w-4 h-4 ${logContent.isLoading ? 'animate-spin' : ''}`} />
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {/* Log Content */}
-          <CardContent className="p-4">
-            {!selectedLog ? (
-              <div className="h-96 flex items-center justify-center">
-                <p className="pi-text-muted">Select a log file to view its contents</p>
-              </div>
-            ) : logContent.isLoading ? (
-              <div className="h-96 flex items-center justify-center">
-                <RefreshCw className="w-6 h-6 animate-spin pi-text-muted" />
-              </div>
-            ) : logContent.error ? (
-              <div className="h-96 flex flex-col items-center justify-center p-4">
-                <p className="pi-error text-lg mb-2">Failed to load log content</p>
-                {logContent.error instanceof Error && (
-                  <p className="pi-text-muted text-sm bg-pi-darker p-2 rounded">{logContent.error.message}</p>
-                )}
-              </div>
-            ) : (
-              <div
-                ref={logContainerRef}
-                className="bg-pi-darker rounded-lg p-4 h-96 overflow-y-auto font-mono text-sm custom-scrollbar"
-              >
-                {isHtmlContent ? (
-                  <div dangerouslySetInnerHTML={{ __html: logContent.data?.content || "" }} />
-                ) : (
-                  <div className="space-y-1">
-                    {logContent.data?.content && filteredLogLines.length === 0 && searchTerm ? (
-                      <div className="pi-text-muted">No lines match your search term "{searchTerm}".</div>
-                    ) : filteredLogLines.length > 0 ? (
-                      filteredLogLines.map((line, index) => (
-                        <div
-                          key={index}
-                          className={`${
-                            line.includes('ERROR') || line.includes('error')
-                              ? 'text-red-400'
-                              : line.includes('WARN') || line.includes('warn')
-                              ? 'text-yellow-400'
-                              : line.includes('SUCCESS') || line.includes('success')
-                              ? 'text-green-400'
-                              : 'pi-text-muted' // Default text color
-                          }`}
-                        >
-                          <LogLineHighlighter line={line || '\u00A0'} />
-                        </div>
-                      ))
-                    ) : (
-                      <div className="pi-text-muted">Log file is empty</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      <div className="w-3/4 pi-card rounded-xl p-4 max-h-[600px] overflow-auto">
+        <pre className="whitespace-pre-wrap break-words">
+          {logContent.isLoading
+            ? "Loading..."
+            : logContent.error
+            ? "Error loading log."
+            : selectedLog
+            ? logContent.data?.content
+            : "Select a log to view."}
+        </pre>
       </div>
     </div>
   );
