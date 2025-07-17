@@ -159,7 +159,7 @@ export default function LogViewer() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as 'name' | 'date' | 'size')}
-            className="text-sm bg-pi-card text-pi-text border border-pi-border rounded px-2 py-1"
+            className="bg-[var(--pi-card)] text-[var(--pi-text)] border border-[var(--pi-border)] px-2 py-1 rounded-md text-sm focus:outline-none"
           >
             <option value="name">Name</option>
             <option value="date">Date</option>
