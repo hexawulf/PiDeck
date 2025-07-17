@@ -73,8 +73,9 @@ const LogLineHighlighter: React.FC<LogLineHighlighterProps> = ({ line }) => {
 
 export default function LogViewer() {
   const { logFiles: logFilesQuery } = useSystemData();
-  const [logList, setLogList] = useState<{ filename: string; content: string }[]>([]);
+  const [logList, setLogList] = useState<{ filename: string; content: string; modified: Date; size: number }[]>([]);
   const [selectedLogContent, setSelectedLogContent] = useState<string>("");
+  const [sortBy, setSortBy] = useState<'name' | 'date' | 'size'>('name');
 
   useEffect(() => {
     const fetchLogContents = async () => {
@@ -82,7 +83,12 @@ export default function LogViewer() {
         const promises = logFilesQuery.data.map(async (logFile) => {
           const res = await fetch(`/api/logs/${encodeURIComponent(logFile.name)}`);
           const data = await res.json();
-          return { filename: logFile.name, content: data.content };
+          return {
+            filename: logFile.name,
+            content: data.content,
+            modified: new Date(),
+            size: data.content.length
+          };
         });
         const allLogs = await Promise.all(promises);
         setLogList(allLogs);
@@ -110,6 +116,19 @@ export default function LogViewer() {
     URL.revokeObjectURL(url);
   };
 
+  const sortedLogList = [...logList].sort((a, b) => {
+    if (sortBy === 'name') {
+      return a.filename.localeCompare(b.filename);
+    }
+    if (sortBy === 'date') {
+      return new Date(b.modified).getTime() - new Date(a.modified).getTime(); // newest first
+    }
+    if (sortBy === 'size') {
+      return (b.size || 0) - (a.size || 0); // largest first
+    }
+    return 0;
+  });
+
   if (logFilesQuery.isLoading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -135,7 +154,19 @@ export default function LogViewer() {
     <div className="flex gap-4">
       {/* Left Log List */}
       <div className="w-1/4 max-h-[600px] overflow-y-auto custom-scrollbar pi-card rounded-xl p-2 space-y-2">
-        {logList.map((log) => (
+        <div className="flex justify-between items-center mb-2 px-2">
+          <span className="text-sm font-semibold text-pi-text-muted">Sort:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'name' | 'date' | 'size')}
+            className="text-sm bg-pi-card text-pi-text border border-pi-border rounded px-2 py-1"
+          >
+            <option value="name">Name</option>
+            <option value="date">Date</option>
+            <option value="size">Size</option>
+          </select>
+        </div>
+        {sortedLogList.map((log) => (
           <div key={log.filename} className="flex justify-between items-center hover:bg-pi-card-hover px-2 py-1 rounded">
             <span
               onClick={() => handleLogClick(log.filename)}
