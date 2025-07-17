@@ -291,7 +291,7 @@ export default function Dashboard() {
         <div className="tab-content">
           {renderTabContent()}
         </div>
-      </div>
+      </main>
     </div>
   );
 }
