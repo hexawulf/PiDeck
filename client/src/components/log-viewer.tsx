@@ -81,7 +81,7 @@ export default function LogViewer() {
     const fetchLogContents = async () => {
       if (logFilesQuery.data) {
         const promises = logFilesQuery.data.map(async (logFile) => {
-          const res = await fetch(`/api/logs/${encodeURIComponent(logFile.name)}`);
+          const res = await fetch(`/api/logs/${encodeURIComponent(logFile.name)}`, { credentials: "include" });
           const data = await res.json();
           return {
             filename: logFile.name,
