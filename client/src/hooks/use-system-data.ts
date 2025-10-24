@@ -20,18 +20,6 @@ export function useSystemData() {
     refetchInterval: 7000, // Poll slightly offset from systemInfo to catch updates
   });
 
-  const logFiles = useQuery<LogFile[]>({
-    queryKey: ["/api/logs"],
-  });
-
-  const hostLogs = useQuery<HostLog[]>({
-    queryKey: ["/api/hostlogs"],
-  });
-
-  const rpiLogs = useQuery<RpiLog[]>({
-    queryKey: ["/api/rasplogs"],
-  });
-
   const dockerContainers = useQuery<DockerContainer[]>({
     queryKey: ["/api/docker/containers"],
     refetchInterval: 10000, // Refresh every 10 seconds
@@ -110,9 +98,6 @@ export function useSystemData() {
     queryClient.invalidateQueries({ queryKey: ["/api/system/info"] });
     queryClient.invalidateQueries({ queryKey: ["/api/system/history"] });
     queryClient.invalidateQueries({ queryKey: ["/api/system/alerts"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/logs"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/hostlogs"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/rasplogs"] });
     queryClient.invalidateQueries({ queryKey: ["/api/docker/containers"] });
     queryClient.invalidateQueries({ queryKey: ["/api/pm2/processes"] });
     queryClient.invalidateQueries({ queryKey: ["/api/cron/jobs"] });
@@ -122,9 +107,6 @@ export function useSystemData() {
     systemInfo,
     historicalData,
     systemAlerts,
-    logFiles,
-    hostLogs,
-    rpiLogs,
     dockerContainers,
     pm2Processes,
     cronJobs,
@@ -143,26 +125,3 @@ export function useSystemData() {
   };
 }
 
-// The hook itself needs to accept 'autoRefresh' as an argument.
-// The previous approach for refetchInterval was not ideal.
-// Let's simplify and make the hook accept autoRefreshEnabled directly.
-
-export function useLogContent(filename: string, autoRefreshEnabled: boolean) {
-  return useQuery<{ content: string }>({
-    queryKey: ["/api/logs", filename], // autoRefreshEnabled does not need to be in the queryKey if it only affects refetchInterval
-    queryFn: async ({ queryKey }) => {
-      const [, file] = queryKey;
-      if (!file) return { content: "" }; // Should ideally not happen if enabled is false
-      const res = await fetch(`/api/logs/${encodeURIComponent(file as string)}`, {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const text = (await res.text()) || res.statusText;
-        throw new Error(`Failed to fetch log content: ${res.status} ${text}`);
-      }
-      return res.json();
-    },
-    enabled: !!filename,
-    refetchInterval: autoRefreshEnabled ? 5000 : false, // Set interval if autoRefresh is enabled
-  });
-}

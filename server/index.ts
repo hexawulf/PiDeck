@@ -11,6 +11,8 @@ import memoryRoute from "./routes/memory";
 import topProcessesRoute from "./routes/topProcesses";
 import networkRoute from "./routes/network";
 import firewallRoute from "./routes/firewall";
+import rasplogsRouter from "./routes/rasplogs";
+import compatRouter from "./routes/compat";
 
 const app = express();
 app.use(express.json());
@@ -24,6 +26,8 @@ app.use(memoryRoute);
 app.use(topProcessesRoute);
 app.use(networkRoute);
 app.use(firewallRoute);
+app.use("/api", rasplogsRouter);
+app.use("/api", compatRouter);
 
 app.use((req, res, next) => {
   const start = Date.now();

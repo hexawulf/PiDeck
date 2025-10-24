@@ -33,12 +33,48 @@ export type LogFile = {
   content?: string;
 };
 
+export const logIndexEntrySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  label: z.string(),
+  path: z.string(),
+  size: z.number(),
+  mtime: z.string(),
+  pathExists: z.boolean(),
+  tooLarge: z.boolean(),
+});
+
+export type LogIndexEntry = z.infer<typeof logIndexEntrySchema>;
+
+// Keep legacy types for now to avoid breaking changes during migration
+export type HostLog = {
+  id: string;
+  label: string;
+  pathExists: boolean;
+};
+
+export type RpiLog = {
+  id: string;
+  label: string;
+  path: string;
+  relPath: string;
+  size: number;
+  mtime: string;
+  pathExists: boolean;
+  tooLarge: boolean;
+};
+
 export type DockerContainer = {
   id: string;
   name: string;
   image: string;
   status: string;
   state: string;
+};
+
+export type DockerContainersResponse = {
+  containers: DockerContainer[];
+  warning?: string;
 };
 
 export type PM2Process = {
