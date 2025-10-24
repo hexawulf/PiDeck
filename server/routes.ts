@@ -5,10 +5,15 @@ import bcrypt from "bcrypt"; // Added bcrypt import
 import MemoryStore from "memorystore";
 import { AuthService } from "./services/auth";
 import nvmeRouter from "./routes/nvme";
+import systemRouter from "./routes/system";
+import dockerRouter from "./routes/docker";
+import pm2Router from "./routes/pm2";
 import { SystemService } from "./services/system";
+
 import { loginSchema, User } from "@shared/schema"; // Added User
 import { storage } from "./storage"; // Added storage import
 import { z } from "zod";
+
 
 const MemStore = MemoryStore(session);
 
@@ -40,8 +45,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }));
 
+  // Instance fingerprint header
+  app.use((_req, res, next) => {
+    res.setHeader('X-PiDeck-Instance', process.pid.toString());
+    next();
+  });
+
   // NVMe metrics route
   app.use(nvmeRouter);
+
+  // Health check endpoint (accessible without authentication)
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true, ts: Date.now() });
+  });
 
   // Auth middleware
   const requireAuth = (req: any, res: any, next: any) => {
@@ -111,6 +127,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // CSRF token endpoint (accessible without authentication)
+  app.get("/api/auth/csrf", (req, res) => {
+    // Generate a simple CSRF token
+    const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    res.json({ token });
+  });
+
   app.get("/api/auth/me", (req, res) => {
     if ((req.session as any)?.authenticated) {
       res.json({ authenticated: true, userId: (req.session as any).userId });
@@ -174,15 +197,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // System routes
-  app.get("/api/system/info", requireAuth, async (req, res) => {
-    try {
-      const systemInfo = await SystemService.getSystemInfo();
-      res.json(systemInfo);
-    } catch (error) {
-      console.error("System info error:", error);
-      res.status(500).json({ message: "Failed to get system information" });
-    }
-  });
+  app.use("/api", requireAuth, systemRouter);
+  app.use("/api", requireAuth, dockerRouter);
+  app.use("/api", requireAuth, pm2Router);
 
   app.get("/api/system/history", requireAuth, async (req, res) => {
     try {
@@ -356,6 +373,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Run cron job error:", error);
       res.status(500).json({ message: "Failed to execute cron job" });
     }
+  });
+
+  // Health check endpoint (accessible without authentication)
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true, ts: Date.now() });
   });
 
   const httpServer = createServer(app);

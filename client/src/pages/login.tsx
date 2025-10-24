@@ -16,7 +16,7 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!password.trim()) {
       toast({
         title: "Error",
@@ -27,15 +27,61 @@ export default function Login() {
     }
 
     try {
+      // Attempt login
       await login(password);
-      toast({
-        title: "Success",
-        description: "Login successful",
+
+      // Verify session by checking /api/auth/me
+      const meResponse = await fetch('/api/auth/me', {
+        credentials: 'include'
       });
-    } catch (error) {
+
+      if (meResponse.ok) {
+        const meData = await meResponse.json();
+        if (meData.authenticated) {
+          toast({
+            title: "Success",
+            description: "Login successful",
+          });
+          return;
+        }
+      }
+
+      // Session verification failed
       toast({
         title: "Login Failed",
-        description: loginError || "Invalid password",
+        description: "Session could not be established. Please try again.",
+        variant: "destructive",
+      });
+
+    } catch (error: any) {
+      // Extract X-Auth-Reason from error if available
+      let errorMessage = loginError || "Invalid password";
+
+      // Try to parse error for more details
+      if (error?.message) {
+        try {
+          const errorData = JSON.parse(error.message.split(': ')[1]);
+          if (errorData.reason) {
+            const reasonMap: Record<string, string> = {
+              'bad_password_compare': 'Invalid password',
+              'missing_password': 'Password is required',
+              'locked_out': 'Account locked due to too many failed attempts',
+              'origin_blocked': 'Request blocked by security policy',
+              'session_write_failed': 'Session could not be saved',
+              'bad_body_parse': 'Invalid request format'
+            };
+            errorMessage = reasonMap[errorData.reason] || errorData.message || errorMessage;
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch {
+          // Keep default error message
+        }
+      }
+
+      toast({
+        title: "Login Failed",
+        description: errorMessage,
         variant: "destructive",
       });
     }

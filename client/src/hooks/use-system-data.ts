@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import type { SystemInfo, LogFile, DockerContainer, PM2Process, CronJob, HistoricalMetric, ActiveAlert } from "@shared/schema";
+import type { SystemInfo, LogFile, DockerContainer, PM2Process, CronJob, HistoricalMetric, ActiveAlert, HostLog, RpiLog } from "@shared/schema";
 
 export function useSystemData() {
   const queryClient = useQueryClient();
@@ -22,6 +22,14 @@ export function useSystemData() {
 
   const logFiles = useQuery<LogFile[]>({
     queryKey: ["/api/logs"],
+  });
+
+  const hostLogs = useQuery<HostLog[]>({
+    queryKey: ["/api/hostlogs"],
+  });
+
+  const rpiLogs = useQuery<RpiLog[]>({
+    queryKey: ["/api/rasplogs"],
   });
 
   const dockerContainers = useQuery<DockerContainer[]>({
@@ -103,6 +111,8 @@ export function useSystemData() {
     queryClient.invalidateQueries({ queryKey: ["/api/system/history"] });
     queryClient.invalidateQueries({ queryKey: ["/api/system/alerts"] });
     queryClient.invalidateQueries({ queryKey: ["/api/logs"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/hostlogs"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/rasplogs"] });
     queryClient.invalidateQueries({ queryKey: ["/api/docker/containers"] });
     queryClient.invalidateQueries({ queryKey: ["/api/pm2/processes"] });
     queryClient.invalidateQueries({ queryKey: ["/api/cron/jobs"] });
@@ -113,6 +123,8 @@ export function useSystemData() {
     historicalData,
     systemAlerts,
     logFiles,
+    hostLogs,
+    rpiLogs,
     dockerContainers,
     pm2Processes,
     cronJobs,

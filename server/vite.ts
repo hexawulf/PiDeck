@@ -76,10 +76,33 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // Serve assets with explicit MIME types and caching
+  app.use("/assets", express.static(path.join(distPath, "assets"), {
+    maxAge: "1y",
+    immutable: true,
+    setHeaders: (res, filePath) => {
+      // Ensure correct MIME types for assets
+      if (filePath.endsWith(".js")) {
+        res.setHeader("Content-Type", "application/javascript; charset=UTF-8");
+      } else if (filePath.endsWith(".css")) {
+        res.setHeader("Content-Type", "text/css; charset=UTF-8");
+      } else if (filePath.endsWith(".json")) {
+        res.setHeader("Content-Type", "application/json; charset=UTF-8");
+      }
+    }
+  }));
 
-  // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  // Serve other static files (fonts, images, etc.)
+  app.use(express.static(distPath, {
+    maxAge: "1h"
+  }));
+
+  // SPA fallback - ONLY for non-API, non-assets routes
+  app.use("*", (req, res, next) => {
+    // Don't intercept API routes or asset requests
+    if (req.path.startsWith("/api") || req.path.startsWith("/assets")) {
+      return res.sendStatus(404);
+    }
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
