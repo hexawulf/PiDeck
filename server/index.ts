@@ -13,6 +13,8 @@ import networkRoute from "./routes/network";
 import firewallRoute from "./routes/firewall";
 import rasplogsRouter from "./routes/rasplogs";
 import compatRouter from "./routes/compat";
+import dockerRouter from "./routes/docker";
+import pm2Router from "./routes/pm2";
 
 const app = express();
 app.use(express.json());
@@ -27,7 +29,8 @@ app.use(topProcessesRoute);
 app.use(networkRoute);
 app.use(firewallRoute);
 app.use("/api", rasplogsRouter);
-app.use("/api", compatRouter);
+app.use("/api", dockerRouter);
+app.use("/api", pm2Router);
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -61,6 +64,9 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+  
+  // Mount compatibility router AFTER registerRoutes to avoid authentication
+  app.use("/api", compatRouter);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

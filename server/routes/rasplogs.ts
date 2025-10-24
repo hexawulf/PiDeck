@@ -5,6 +5,14 @@ import { spawn } from "child_process";
 import type { LogIndexEntry } from "@shared/schema";
 
 const rasplogsRouter = Router();
+
+// Authentication middleware
+rasplogsRouter.use((req, res, next) => {
+  if (!(req.session as any)?.authenticated) {
+    return res.status(401).json({ message: "Authentication required" });
+  }
+  next();
+});
 const LOGS_DIR = "/home/zk/logs";
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MiB
 

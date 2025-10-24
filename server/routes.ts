@@ -211,15 +211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/system/alerts", requireAuth, (req, res) => {
-    try {
-      const alerts = SystemService.getActiveAlerts();
-      res.json(alerts);
-    } catch (error) {
-      console.error("System alerts error:", error);
-      res.status(500).json({ message: "Failed to get system alerts" });
-    }
-  });
+
 
   app.post("/api/system/update", requireAuth, async (_req, res) => {
     try {
@@ -241,28 +233,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Log routes
-  app.get("/api/logs", requireAuth, async (req, res) => {
-    try {
-      const logFiles = await SystemService.getLogFiles();
-      res.json(logFiles);
-    } catch (error) {
-      console.error("Get logs error:", error);
-      res.status(500).json({ message: "Failed to get log files" });
-    }
-  });
 
-  app.get("/api/logs/:filename", requireAuth, async (req, res) => {
-    try {
-      const { filename } = req.params;
-      const filePath = `/home/zk/logs/${filename}`;
-      const content = await SystemService.getLogFileContent(filePath);
-      res.json({ content });
-    } catch (error) {
-      console.error("Get log content error:", error);
-      res.status(500).json({ message: "Failed to read log file" });
-    }
-  });
 
   // Docker routes
   app.get("/api/docker/containers", requireAuth, async (req, res) => {
