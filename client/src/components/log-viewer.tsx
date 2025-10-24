@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useSystemData } from "@/hooks/use-system-data";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,12 +15,8 @@ import {
   AlertCircle,
   CheckCircle2,
   HardDrive,
-  Server,
 } from "lucide-react";
-import type { HostLog, RpiLog } from "@shared/schema";
-
-type LogType = "rpi" | "host";
-type LogItem = (HostLog | RpiLog) & { type: LogType };
+import type { LogIndexEntry } from "@shared/schema";
 
 // Regex patterns for syntax highlighting
 const TIMESTAMP_REGEX = /(\b[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}(\s+[A-Z]{3,4})?\s+\d{4}\b)/g;
@@ -78,67 +74,69 @@ const LogLineHighlighter: React.FC<LogLineHighlighterProps> = ({ line }) => {
 };
 
 export default function LogViewer() {
-  const { hostLogs, rpiLogs } = useSystemData();
-  const [selectedLog, setSelectedLog] = useState<LogItem | null>(null);
+  const { data: logs, isLoading: isLoadingLogs, error: logsError } = useQuery<LogIndexEntry[]>({
+    queryKey: ["rasplogs"],
+    queryFn: async () => {
+      const res = await fetch("/api/rasplogs");
+      if (!res.ok) {
+        if (res.status === 401) {
+          throw new Error("Sign in required");
+        }
+        throw new Error("Failed to fetch logs");
+      }
+      return res.json();
+    },
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
+  const [selectedLog, setSelectedLog] = useState<LogIndexEntry | null>(null);
   const [logContent, setLogContent] = useState<string[]>([]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState("");
   const [tailLines, setTailLines] = useState("1000");
-  const [rpiSearchQuery, setRpiSearchQuery] = useState("");
-  const [rpiSortBy, setRpiSortBy] = useState<"name" | "modified">("modified");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"name" | "modified">("modified");
   const eventSourceRef = useRef<EventSource | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Load last selection from localStorage
   useEffect(() => {
-    const lastCategory = localStorage.getItem("logViewer:lastCategory") as LogType | null;
     const lastId = localStorage.getItem("logViewer:lastId");
 
-    if (lastCategory && lastId) {
-      if (lastCategory === "rpi" && rpiLogs.data) {
-        const log = rpiLogs.data.find((l) => l.id === lastId);
-        if (log) {
-          handleLogSelect({ ...log, type: "rpi" });
-        }
-      } else if (lastCategory === "host" && hostLogs.data) {
-        const log = hostLogs.data.find((l) => l.id === lastId);
-        if (log) {
-          handleLogSelect({ ...log, type: "host" });
-        }
+    if (lastId && logs) {
+      const log = logs.find((l) => l.id === lastId);
+      if (log) {
+        handleLogSelect(log);
       }
     }
-  }, [rpiLogs.data, hostLogs.data]);
+  }, [logs]);
 
-  // Filter and sort Raspberry Pi logs
-  const filteredRpiLogs = useMemo(() => {
-    let logs = rpiLogs.data || [];
+  // Filter and sort logs
+  const filteredLogs = useMemo(() => {
+    let logData = logs || [];
 
-    // Apply search filter
-    if (rpiSearchQuery) {
-      const query = rpiSearchQuery.toLowerCase();
-      logs = logs.filter(
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      logData = logData.filter(
         (log) =>
-          log.label.toLowerCase().includes(query) ||
-          ("relPath" in log && log.relPath.toLowerCase().includes(query))
+          log.name.toLowerCase().includes(query)
       );
     }
 
-    // Apply sorting
-    const sorted = [...logs].sort((a, b) => {
-      if (rpiSortBy === "name") {
-        return a.label.localeCompare(b.label);
+    const sorted = [...logData].sort((a, b) => {
+      if (sortBy === "name") {
+        return a.name.localeCompare(b.name);
       } else {
-        // Sort by modified date (newest first)
         return new Date(b.mtime).getTime() - new Date(a.mtime).getTime();
       }
     });
 
     return sorted;
-  }, [rpiLogs.data, rpiSearchQuery, rpiSortBy]);
+  }, [logs, searchQuery, sortBy]);
 
-  // Cleanup EventSource on unmount or when stopping follow
+  // Cleanup EventSource
   useEffect(() => {
     return () => {
       if (eventSourceRef.current) {
@@ -155,46 +153,36 @@ export default function LogViewer() {
     }
   }, [logContent, isFollowing]);
 
-  const handleLogSelect = async (log: LogItem) => {
-    // Stop any active following
+  const handleLogSelect = async (log: LogIndexEntry) => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
     setIsFollowing(false);
-
     setSelectedLog(log);
     setLogContent([]);
     setError(null);
-
-    // Save selection to localStorage
-    localStorage.setItem("logViewer:lastCategory", log.type);
     localStorage.setItem("logViewer:lastId", log.id);
 
     if (!log.pathExists) {
-      setError("Log file does not exist on the system");
+      setError("Log file does not exist on the system.");
       return;
     }
 
-    // Check if file is too large (only for RpiLog)
-    if ("tooLarge" in log && log.tooLarge) {
-      setError("File >20 MiB – open directly over SSH instead.");
+    if (log.tooLarge) {
+      setError("File is too large (>20MB) to be viewed in the browser.");
       return;
     }
 
-    // Fetch initial content
-    await fetchLogContent(log.id, log.type, false);
+    await fetchLogContent(log.id, false);
   };
 
-  const fetchLogContent = async (logId: string, logType: LogType, follow: boolean) => {
+  const fetchLogContent = async (logId: string, follow: boolean) => {
     setIsLoading(true);
     setError(null);
 
-    const apiEndpoint = logType === "rpi" ? "rasplogs" : "hostlogs";
-
     try {
       if (follow) {
-        // Start SSE streaming
         const params = new URLSearchParams({
           follow: "1",
           tail: tailLines,
@@ -203,7 +191,7 @@ export default function LogViewer() {
           params.append("grep", searchFilter);
         }
 
-        const url = `/api/${apiEndpoint}/${logId}?${params.toString()}`;
+        const url = `/api/rasplogs/${logId}?${params.toString()}`;
         const eventSource = new EventSource(url, { withCredentials: true });
 
         eventSource.onmessage = (event) => {
@@ -222,17 +210,13 @@ export default function LogViewer() {
 
         eventSourceRef.current = eventSource;
         setIsFollowing(true);
-        setIsLoading(false);
       } else {
-        // Fetch snapshot
-        const params = new URLSearchParams({
-          tail: tailLines,
-        });
+        const params = new URLSearchParams({ tail: tailLines });
         if (searchFilter) {
           params.append("grep", searchFilter);
         }
 
-        const response = await fetch(`/api/${apiEndpoint}/${logId}?${params.toString()}`, {
+        const response = await fetch(`/api/rasplogs/${logId}?${params.toString()}`, {
           credentials: "include",
         });
 
@@ -244,42 +228,37 @@ export default function LogViewer() {
         const data = await response.json();
         const lines = data.content.split("\n").filter((l: string) => l.trim());
         setLogContent(lines);
-        setIsLoading(false);
       }
     } catch (err: any) {
       console.error("Error fetching log:", err);
       setError(err.message || "Failed to fetch log content");
+    } finally {
       setIsLoading(false);
     }
   };
 
   const handleFollowToggle = () => {
     if (isFollowing) {
-      // Stop following
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
       setIsFollowing(false);
-    } else {
-      // Start following
-      if (selectedLog) {
-        setLogContent([]); // Clear existing content
-        fetchLogContent(selectedLog.id, selectedLog.type, true);
-      }
+    } else if (selectedLog) {
+      setLogContent([]);
+      fetchLogContent(selectedLog.id, true);
     }
   };
 
   const handleRefresh = () => {
     if (selectedLog) {
       setLogContent([]);
-      fetchLogContent(selectedLog.id, selectedLog.type, false);
+      fetchLogContent(selectedLog.id, false);
     }
   };
 
   const handleDownload = () => {
     if (!selectedLog || logContent.length === 0) return;
-
     const blob = new Blob([logContent.join("\n")], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -293,48 +272,23 @@ export default function LogViewer() {
     if (selectedLog) {
       setLogContent([]);
       if (isFollowing) {
-        // Restart follow with new filters
         if (eventSourceRef.current) {
           eventSourceRef.current.close();
           eventSourceRef.current = null;
         }
-        fetchLogContent(selectedLog.id, selectedLog.type, true);
+        fetchLogContent(selectedLog.id, true);
       } else {
-        fetchLogContent(selectedLog.id, selectedLog.type, false);
+        fetchLogContent(selectedLog.id, false);
       }
     }
   };
 
-  if (hostLogs.isLoading || rpiLogs.isLoading) {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-1 space-y-4">
-          <Skeleton className="h-64 w-full" />
-          <Skeleton className="h-96 w-full" />
-        </div>
-        <div className="lg:col-span-3">
-          <Skeleton className="h-96 w-full" />
-        </div>
-      </div>
-    );
-  }
-
-  const availableHostLogs = hostLogs.data?.filter((log) => log.pathExists) || [];
-  const unavailableHostLogs = hostLogs.data?.filter((log) => !log.pathExists) || [];
-
-  // Separate RpiLogs by size and availability
-  const availableRpiLogs = filteredRpiLogs.filter((log) => log.pathExists && !log.tooLarge);
-  const tooLargeRpiLogs = filteredRpiLogs.filter((log) => log.pathExists && log.tooLarge);
-  const unavailableRpiLogs = filteredRpiLogs.filter((log) => !log.pathExists);
-
-  // Format file size
   const formatSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // Format modified time
   const formatMtime = (date: Date | string): string => {
     const d = typeof date === "string" ? new Date(date) : date;
     const now = new Date();
@@ -353,33 +307,51 @@ export default function LogViewer() {
     return d.toLocaleDateString();
   };
 
+  if (isLoadingLogs) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-1">
+          <Skeleton className="h-[calc(100vh-8rem)] w-full" />
+        </div>
+        <div className="lg:col-span-3">
+          <Skeleton className="h-[calc(100vh-8rem)] w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  if (logsError) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-red-500">{logsError.message}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-      {/* Left sidebar - Log lists */}
-      <div className="lg:col-span-1 space-y-4">
-        {/* Raspberry Pi Logs Card */}
+      <div className="lg:col-span-1">
         <Card className="bg-pi-card border-pi-border">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <HardDrive className="h-5 w-5 text-pi-accent" />
               <div>
-                <CardTitle className="text-lg">Raspberry Pi Logs</CardTitle>
+                <CardTitle className="text-lg">Logs</CardTitle>
                 <p className="text-xs text-pi-text-muted mt-1">/home/zk/logs</p>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
-            {/* Search and sort controls */}
             <div className="space-y-2 mb-3">
               <Input
                 placeholder="Search..."
-                value={rpiSearchQuery}
-                onChange={(e) => setRpiSearchQuery(e.target.value)}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-8 text-sm"
               />
               <select
-                value={rpiSortBy}
-                onChange={(e) => setRpiSortBy(e.target.value as "name" | "modified")}
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as "name" | "modified")}
                 className="w-full h-8 px-2 text-sm rounded-md bg-pi-card-hover border border-pi-border text-pi-text"
               >
                 <option value="modified">Sort: Modified</option>
@@ -387,132 +359,43 @@ export default function LogViewer() {
               </select>
             </div>
 
-            {availableRpiLogs.length === 0 && tooLargeRpiLogs.length === 0 && unavailableRpiLogs.length === 0 && (
+            {filteredLogs.length === 0 ? (
               <p className="text-sm text-pi-text-muted">No log files found</p>
-            )}
-
-            {/* Available RPI logs */}
-            {availableRpiLogs.map((log) => (
-              <button
-                key={log.id}
-                onClick={() => handleLogSelect({ ...log, type: "rpi" })}
-                className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                  selectedLog?.id === log.id && selectedLog?.type === "rpi"
-                    ? "bg-pi-accent text-white"
-                    : "bg-pi-card-hover hover:bg-pi-border text-pi-text"
-                }`}
-              >
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate">{log.label}</div>
-                    <div className="text-xs text-pi-text-muted mt-0.5 flex justify-between">
-                      <span>{formatSize(log.size)}</span>
-                      <span>{formatMtime(log.mtime)}</span>
-                    </div>
-                  </div>
-                </div>
-              </button>
-            ))}
-
-            {/* Too large RPI logs */}
-            {tooLargeRpiLogs.length > 0 && (
-              <>
-                {availableRpiLogs.length > 0 && <div className="border-t border-pi-border my-2" />}
-                <p className="text-xs text-pi-text-muted mb-2">Too Large (&gt;20 MiB)</p>
-                {tooLargeRpiLogs.map((log) => (
-                  <button
-                    key={log.id}
-                    onClick={() => handleLogSelect({ ...log, type: "rpi" })}
-                    className="w-full text-left px-3 py-2 rounded-lg opacity-60 bg-pi-card-hover"
-                  >
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="h-4 w-4 text-yellow-500 flex-shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium truncate text-pi-text-muted">
-                          {log.label}
-                        </div>
-                        <div className="text-xs text-pi-text-muted mt-0.5">
-                          {formatSize(log.size)}
-                        </div>
+            ) : (
+              filteredLogs.map((log) => (
+                <button
+                  key={log.id}
+                  onClick={() => handleLogSelect(log)}
+                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+                    selectedLog?.id === log.id
+                      ? "bg-pi-accent text-white"
+                      : "bg-pi-card-hover hover:bg-pi-border text-pi-text"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium truncate">{log.name}</div>
+                      <div className="text-xs text-pi-text-muted mt-0.5 flex justify-between">
+                        <span>{formatSize(log.size)}</span>
+                        <span>{formatMtime(log.mtime)}</span>
                       </div>
                     </div>
-                  </button>
-                ))}
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* System Logs Card */}
-        <Card className="bg-pi-card border-pi-border">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Server className="h-5 w-5 text-pi-accent" />
-              <CardTitle className="text-lg">System Logs</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {availableHostLogs.length === 0 && unavailableHostLogs.length === 0 && (
-              <p className="text-sm text-pi-text-muted">No logs configured</p>
-            )}
-
-            {/* Available host logs */}
-            {availableHostLogs.map((log) => (
-              <button
-                key={log.id}
-                onClick={() => handleLogSelect({ ...log, type: "host" })}
-                className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                  selectedLog?.id === log.id && selectedLog?.type === "host"
-                    ? "bg-pi-accent text-white"
-                    : "bg-pi-card-hover hover:bg-pi-border text-pi-text"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{log.label}</div>
                   </div>
-                </div>
-              </button>
-            ))}
-
-            {/* Unavailable host logs */}
-            {unavailableHostLogs.length > 0 && (
-              <>
-                {availableHostLogs.length > 0 && <div className="border-t border-pi-border my-2" />}
-                <p className="text-xs text-pi-text-muted mb-2">Unavailable</p>
-                {unavailableHostLogs.map((log) => (
-                  <button
-                    key={log.id}
-                    onClick={() => handleLogSelect({ ...log, type: "host" })}
-                    disabled
-                    className="w-full text-left px-3 py-2 rounded-lg opacity-50 cursor-not-allowed"
-                  >
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4 text-gray-500 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate text-pi-text-muted">
-                          {log.label}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </>
+                </button>
+              ))
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Right panel - Log viewer */}
       <div className="lg:col-span-3">
         <Card className="bg-pi-card border-pi-border">
           <CardHeader>
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg">
-                  {selectedLog ? selectedLog.label : "Select a log to view"}
+                  {selectedLog ? selectedLog.name : "Select a log to view"}
                 </CardTitle>
                 {selectedLog && (
                   <div className="flex items-center gap-2">
@@ -522,17 +405,7 @@ export default function LogViewer() {
                       onClick={handleFollowToggle}
                       disabled={isLoading}
                     >
-                      {isFollowing ? (
-                        <>
-                          <Pause className="h-4 w-4 mr-1" />
-                          Stop
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4 mr-1" />
-                          Follow
-                        </>
-                      )}
+                      {isFollowing ? "Stop" : "Follow"}
                     </Button>
                     <Button
                       size="sm"
@@ -576,15 +449,6 @@ export default function LogViewer() {
                     Apply
                   </Button>
                 </div>
-              )}
-
-              {isFollowing && (
-                <Badge variant="outline" className="w-fit">
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                    Live following
-                  </div>
-                </Badge>
               )}
             </div>
           </CardHeader>
