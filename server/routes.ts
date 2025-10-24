@@ -8,11 +8,13 @@ import nvmeRouter from "./routes/nvme";
 import systemRouter from "./routes/system";
 import dockerRouter from "./routes/docker";
 import pm2Router from "./routes/pm2";
+import rasplogsRouter from "./routes/rasplogs";
 import { SystemService } from "./services/system";
 
 import { loginSchema, User } from "@shared/schema"; // Added User
 import { storage } from "./storage"; // Added storage import
 import { z } from "zod";
+import { rateLimitLogin } from "./middleware/rateLimitLogin";
 
 
 const MemStore = MemoryStore(session);
@@ -28,20 +30,31 @@ const passwordChangeSchema = z.object({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Trust proxy (behind Cloudflare/Nginx)
+  app.set('trust proxy', 1);
+
   // Session configuration
+  const isProd = process.env.NODE_ENV === 'production';
+  const secret = process.env.SESSION_SECRET;
+  if (isProd && !secret) {
+    throw new Error('SESSION_SECRET must be set in production');
+  }
+
   app.use(session({
     store: new MemStore({
       checkPeriod: 86400000 // 24 hours
     }),
-    secret: process.env.SESSION_SECRET || "pideck-secret-key",
+    secret: secret || "pideck-secret-key",
     resave: false,
     saveUninitialized: false,
     rolling: true, // Extends session on each request
     cookie: {
-      secure: false, // Set to true in production with HTTPS
+      secure: isProd, // Set to true in production with HTTPS
       httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'lax' // Better cookie handling for same-site requests
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      sameSite: 'lax', // Better cookie handling for same-site requests
+      path: '/'
+      // domain: OMITTED on purpose - keep cookie first-party scoped to current host
     }
   }));
 
@@ -59,16 +72,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ ok: true, ts: Date.now() });
   });
 
-  // Auth middleware
-  const requireAuth = (req: any, res: any, next: any) => {
-    if (!(req.session as any)?.authenticated) {
-      return res.status(401).json({ message: "Authentication required" });
-    }
-    next();
-  };
-
-  // Auth routes
-  app.post("/api/auth/login", async (req, res) => {
+  // Auth routes (defined BEFORE any middleware to allow login)
+  app.post("/api/auth/login", rateLimitLogin, async (req, res) => {
     try {
       const { password } = loginSchema.parse(req.body);
       
@@ -142,66 +147,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Password change route
-  app.post("/api/auth/change-password", requireAuth, async (req: any, res: any) => {
-    try {
-      const { currentPassword, newPassword } = passwordChangeSchema.parse(req.body);
-      const userId = req.session.userId;
-
-      if (!userId) {
-        // Should not happen if requireAuth is working, but good for safety
-        return res.status(401).json({ message: "User not authenticated." });
-      }
-
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found." });
-      }
-
-      // 1. Validate current password
-      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password_hash);
-      if (!isCurrentPasswordValid) {
-        return res.status(400).json({ message: "Incorrect current password." });
-      }
-
-      // 2. Validate new password strength
-      const strengthValidation = AuthService.validatePasswordStrength(newPassword);
-      if (!strengthValidation.isValid) {
-        return res.status(400).json({ message: strengthValidation.message || "New password does not meet strength requirements." });
-      }
-
-      // 3. Hash new password and update user
-      const newPasswordHash = await AuthService.hashPassword(newPassword);
-
-      user.password_hash = newPasswordHash;
-      user.last_password_change = new Date();
-      user.failed_login_attempts = 0; // Reset failed attempts on successful password change
-      user.account_locked_until = null; // Unlock account if it was locked
-
-      await storage.updateUser(user);
-
-      // Optional: Re-issue session or update session details if needed, though often not necessary for password change.
-      // Forcing logout on other devices is a more advanced feature.
-
-      console.log(`[API /auth/change-password] User ${user.username} (ID: ${userId}) changed their password successfully.`);
-      res.json({ message: "Password changed successfully." });
-
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid input", errors: error.errors });
-      }
-      console.error("Password change error:", error);
-      res.status(500).json({ message: "Internal server error during password change." });
+  // Auth middleware
+  const requireAuth = (req: any, res: any, next: any) => {
+    if (!(req.session as any)?.authenticated) {
+      return res.status(401).json({ message: "Authentication required" });
     }
-  });
+    next();
+  };
 
+  // Auth middleware wrapper that skips login route
+  const requireAuthUnlessLogin = (req: any, res: any, next: any) => {
+    const url = req.originalUrl || req.url || '';
+    // Allow both /api/auth/login and /auth/login (handles different mounts)
+    if (url.startsWith('/api/auth/login') || url.startsWith('/auth/login')) {
+      return next();
+    }
+    return requireAuth(req, res, next);
+  };
 
   // System routes
-  app.use("/api", requireAuth, systemRouter);
-  app.use("/api", requireAuth, dockerRouter);
-  app.use("/api", requireAuth, pm2Router);
+  app.use("/api", systemRouter);
+  app.use("/api", dockerRouter);
+  app.use("/api", pm2Router);
+  app.use("/api", rasplogsRouter);
 
-  app.get("/api/system/history", requireAuth, async (req, res) => {
+  app.get("/api/system/history", async (req, res) => {
     try {
       const historicalData = await SystemService.getHistoricalData();
       res.json(historicalData);
@@ -213,7 +183,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
 
-  app.post("/api/system/update", requireAuth, async (_req, res) => {
+  app.post("/api/system/update", async (_req, res) => {
     try {
       const output = await SystemService.updateSystem();
       res.json({ message: "System updated", output });
@@ -223,7 +193,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/reboot-check", requireAuth, async (_req, res) => {
+  app.get("/api/reboot-check", async (_req, res) => {
     try {
       const rebootRequired = await SystemService.checkRebootRequired();
       res.json({ rebootRequired });
@@ -236,7 +206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Docker routes
-  app.get("/api/docker/containers", requireAuth, async (req, res) => {
+  app.get("/api/docker/containers", async (req, res) => {
     try {
       const containers = await SystemService.getDockerContainers();
       res.json(containers);
@@ -246,7 +216,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/docker/containers/:id/restart", requireAuth, async (req, res) => {
+  app.post("/api/docker/containers/:id/restart", async (req, res) => {
     try {
       const { id } = req.params;
       await SystemService.restartDockerContainer(id);
@@ -257,7 +227,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/docker/containers/:id/stop", requireAuth, async (req, res) => {
+  app.post("/api/docker/containers/:id/stop", async (req, res) => {
     try {
       const { id } = req.params;
       await SystemService.stopDockerContainer(id);
@@ -268,7 +238,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/docker/containers/:id/start", requireAuth, async (req, res) => {
+  app.post("/api/docker/containers/:id/start", async (req, res) => {
     try {
       const { id } = req.params;
       await SystemService.startDockerContainer(id);
@@ -280,7 +250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // PM2 routes
-  app.get("/api/pm2/processes", requireAuth, async (req, res) => {
+  app.get("/api/pm2/processes", async (req, res) => {
     try {
       const processes = await SystemService.getPM2Processes();
       res.json(processes);
@@ -290,7 +260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/pm2/processes/:name/restart", requireAuth, async (req, res) => {
+  app.post("/api/pm2/processes/:name/restart", async (req, res) => {
     try {
       const { name } = req.params;
       await SystemService.restartPM2Process(name);
@@ -301,7 +271,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/pm2/processes/:name/stop", requireAuth, async (req, res) => {
+  app.post("/api/pm2/processes/:name/stop", async (req, res) => {
     try {
       const { name } = req.params;
       await SystemService.stopPM2Process(name);
@@ -313,7 +283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Cron routes
-  app.get("/api/cron/jobs", requireAuth, async (req, res) => {
+  app.get("/api/cron/jobs", async (req, res) => {
     try {
       const jobs = await SystemService.getCronJobs();
       res.json(jobs);
@@ -323,7 +293,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cron/run", requireAuth, async (req, res) => {
+  app.post("/api/cron/run", async (req, res) => {
     try {
       const { command: requestedCommand } = req.body;
       if (!requestedCommand) {

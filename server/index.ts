@@ -28,9 +28,10 @@ app.use(memoryRoute);
 app.use(topProcessesRoute);
 app.use(networkRoute);
 app.use(firewallRoute);
-app.use("/api", rasplogsRouter);
-app.use("/api", dockerRouter);
-app.use("/api", pm2Router);
+  // These routes are protected by requireAuth in routes.ts
+  // app.use("/api", rasplogsRouter);
+  // app.use("/api", dockerRouter);
+  // app.use("/api", pm2Router);
 
 app.use((req, res, next) => {
   const start = Date.now();

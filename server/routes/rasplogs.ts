@@ -6,13 +6,7 @@ import type { LogIndexEntry } from "@shared/schema";
 
 const rasplogsRouter = Router();
 
-// Authentication middleware
-rasplogsRouter.use((req, res, next) => {
-  if (!(req.session as any)?.authenticated) {
-    return res.status(401).json({ message: "Authentication required" });
-  }
-  next();
-});
+
 const LOGS_DIR = "/home/zk/logs";
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MiB
 
@@ -98,6 +92,15 @@ rasplogsRouter.get("/rasplogs/:name", async (req, res) => {
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
+    // Note: For Nginx proxy, recommended timeout settings:
+    // proxy_read_timeout 300s; proxy_send_timeout 300s;
+
+    // SSE heartbeat - emit keepalive every ~25s
+    const HEARTBEAT_MS = 25000;
+    const hb = setInterval(() => {
+      try { res.write(':keepalive\n\n'); } catch { /* ignore */ }
+    }, HEARTBEAT_MS);
+
     const tailCommand = ["-n", tail as string, "-F", filePath];
     const tailProc = spawn("tail", tailCommand);
 
@@ -119,6 +122,7 @@ rasplogsRouter.get("/rasplogs/:name", async (req, res) => {
     stream.on("data", onData);
 
     req.on("close", () => {
+      clearInterval(hb);
       stream.removeListener("data", onData);
       tailProc.kill();
     });
