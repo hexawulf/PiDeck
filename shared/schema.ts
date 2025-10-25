@@ -64,12 +64,22 @@ export type RpiLog = {
   tooLarge: boolean;
 };
 
+export type DockerContainerPort = {
+  private: number;
+  public?: number;
+  ip?: string;
+  type: string;
+};
+
 export type DockerContainer = {
   id: string;
   name: string;
   image: string;
   status: string;
   state: string;
+  ports: DockerContainerPort[];
+  createdAt: number;
+  labels: Record<string, string>;
 };
 
 export type DockerContainersResponse = {

@@ -17,6 +17,11 @@ interface LogEntry {
   id: string;
   name: string;
   label: string;
+  path: string;
+  size: number;
+  mtime: string;
+  source: 'home' | 'nginx' | 'pm2' | 'project';
+  large?: boolean;
 }
 
 // Regex patterns for syntax highlighting
@@ -75,20 +80,36 @@ const LogLineHighlighter: React.FC<LogLineHighlighterProps> = ({ line }) => {
 };
 
 export default function LogViewer() {
-  // Fixed allowlist of log files
-  const logAllowlist = [
-    { id: 'nginx_access', name: 'nginx_access', label: 'Nginx Access Log' },
-    { id: 'nginx_error', name: 'nginx_error', label: 'Nginx Error Log' },
-    { id: 'pm2_pideck_out', name: 'pm2_pideck_out', label: 'PM2 PiDeck Output' },
-    { id: 'pm2_pideck_err', name: 'pm2_pideck_err', label: 'PM2 PiDeck Error' },
-    { id: 'pideck_cron', name: 'pideck_cron', label: 'PiDeck Cron' },
-    { id: 'codepatchwork', name: 'codepatchwork', label: 'CodePatchwork' },
-    { id: 'synology', name: 'synology', label: 'Synology' }
-  ];
+    const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(true);
+  const [logsError, setLogsError] = useState<string | null>(null);
 
-  const logs = logAllowlist;
-  const isLoadingLogs = false;
-  const logsError = null;
+  // Fetch logs on mount
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        setIsLoadingLogs(true);
+        const response = await fetch('/api/hostlogs', {
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        }
+        
+        const logData = await response.json();
+        const safeLogData = Array.isArray(logData) ? logData : [];
+        setLogs(safeLogData);
+      } catch (err) {
+        console.error('Error fetching logs:', err);
+        setLogsError(err instanceof Error ? err.message : 'Failed to fetch logs');
+      } finally {
+        setIsLoadingLogs(false);
+      }
+    };
+
+    fetchLogs();
+  }, []);
 
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [logContent, setLogContent] = useState<string[]>([]);
@@ -129,9 +150,9 @@ export default function LogViewer() {
 
     const sorted = [...logData].sort((a, b) => {
       if (sortBy === "name") {
-        return a.name.localeCompare(b.name);
+        return (a?.name || "").localeCompare(b?.name || "");
       } else {
-        return a.label.localeCompare(b.label);
+        return (a?.label || "").localeCompare(b?.label || "");
       }
     });
 
@@ -175,33 +196,9 @@ export default function LogViewer() {
 
     try {
       if (follow) {
-        const params = new URLSearchParams({
-          follow: "1",
-          tail: tailLines,
-        });
-        if (searchFilter) {
-          params.append("grep", searchFilter);
-        }
-
-        const url = `/api/hostlogs/${logId}?${params.toString()}`;
-        const eventSource = new EventSource(url, { withCredentials: true });
-
-        eventSource.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          if (data.line) {
-            setLogContent((prev) => [...prev, data.line]);
-          }
-        };
-
-        eventSource.onerror = (err) => {
-          console.error("SSE error:", err);
-          setError("Connection lost. Click Follow to reconnect.");
-          setIsFollowing(false);
-          eventSource.close();
-        };
-
-        eventSourceRef.current = eventSource;
-        setIsFollowing(true);
+        // SSE functionality not yet implemented in new API
+        setError("Live tail functionality is not yet available with the new API");
+        setIsFollowing(false);
       } else {
         const params = new URLSearchParams({ tail: tailLines });
         if (searchFilter) {
@@ -345,10 +342,10 @@ export default function LogViewer() {
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium truncate">{log.name}</div>
-                       <div className="text-xs text-pi-text-muted mt-0.5">
-                         {log.label}
-                       </div>
+                       <div className="text-xs font-medium truncate">{log.name}</div>
+                        <div className="text-xs text-pi-text-muted mt-0.5">
+                          {log.source} • {new Date(log.mtime).toLocaleDateString()}
+                        </div>
                     </div>
                   </div>
                 </button>

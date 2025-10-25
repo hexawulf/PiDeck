@@ -1,245 +1,194 @@
-FIXIT — PiDeck Vite build fails: [vite:asset-import-meta-url] Unexpected token 'import' in client/index.html
-Context
+PiDeck — Fix empty “Docker Containers” box on /dashboard
 
-Repo root: /home/zk/projects/PiDeck
+Repo: /home/zk/projects/PiDeck
+Runtime: Node/Express backend + React (Vite) frontend, served on PORT=5006 via PM2 (containeryard-style setup)
+Prod URL: https://pideck.piapps.dev
+Symptoms: On the Apps tab, the “Docker Containers” panel shows “No Docker containers found” while multiple Docker containers are running on the host (Grafana, Prometheus, Redis, Freqtrade stack, etc.).
+Goal: Implement a backend endpoint + frontend hook/UI to return and render the live list of Docker containers from the Pi host (read-only), using the local UNIX socket /var/run/docker.sock. No TCP exposure.
 
-Build command: npm run build → vite build (client) then esbuild (server)
+Deliverables
 
-Error repeats:
+Backend
 
-[vite:asset-import-meta-url] Unexpected token 'import'
-file: /home/zk/projects/PiDeck/client/index.html
+Add a read-only endpoint: GET /api/docker/containers
 
+Uses dockerode with socketPath: '/var/run/docker.sock'
 
-We’re not on Replit. Strip all Replit plugins/integration.
-
-Client root is client/; server is server/. Static output should be dist/public.
-
-Keep ESM server build to dist/index.js.
-
-Goal
-
-Make vite build succeed.
-
-Output client to dist/public and keep server bundle in dist/.
-
-SPA serves via Express static from dist/public (index.html fallback).
-
-No Replit references.
-
-Preserve aliases @, @shared, @assets.
-
-Strong suspicion (do not skip)
-
-The error means Rollup is parsing HTML as JS. This usually happens if:
-
-A plugin or config bypasses the HTML plugin, or
-
-There’s a stray/duplicate HTML entry, or
-
-index.html has an inline <script> without type="module", or
-
-The Vite root/input is misconfigured, or
-
-Tooling versions are clashing (Vite/Rollup/tailwind-vite).
-
-Step 0 — Print environment (for the log)
-node --version
-npm --version
-npx vite --version
-node -e "console.log(process.versions)"
-
-Step 1 — Show the exact files (do not assume)
-
-Print these (verbatim):
-
-cat vite.config.ts
-cat package.json
-cat tsconfig.json
-sed -n '1,120p' client/index.html
-sed -n '1,120p' client/src/main.tsx
-sed -n '1,120p' client/src/App.tsx
-ls -al client | sed -n '1,120p'
-ls -al client/src | sed -n '1,120p'
-ls -al
-
-Step 2 — Sanity edits (apply exactly)
-
-vite.config.ts — replace completely:
-
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-export default defineConfig({
-  appType: "spa",
-  root: path.resolve(__dirname, "client"),
-  plugins: [react()],
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "client", "src"),
-      "@shared": path.resolve(__dirname, "shared"),
-      "@assets": path.resolve(__dirname, "attached_assets"),
-    },
-  },
-  publicDir: path.resolve(__dirname, "client", "public"),
-  build: {
-    outDir: path.resolve(__dirname, "dist/public"),
-    emptyOutDir: true
-    // DO NOT set rollupOptions.input; let Vite detect client/index.html
-  },
-  server: { fs: { strict: true, deny: ["**/.*"] } },
-});
-
-
-client/index.html — replace completely:
-
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PiDeck</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <!-- Must be type="module" -->
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
-
-
-client/src/main.tsx — ensure minimal valid boot:
-
-import React from "react";
-import { createRoot } from "react-dom/client";
-import { Router } from "wouter";
-import App from "./App";
-import "./index.css";
-
-const root = document.getElementById("root");
-if (!root) throw new Error("#root not found");
-
-createRoot(root).render(
-  <React.StrictMode>
-    <Router>
-      <App />
-    </Router>
-  </React.StrictMode>
-);
-
-
-package.json — replace “scripts” with:
-
-"scripts": {
-  "dev": "dotenv -e .env -- tsx server/index.ts",
-  "dev:client": "vite",
-  "build:client": "vite build --debug",
-  "build:server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-  "build": "npm run build:client && npm run build:server",
-  "start": "PORT=5006 NODE_ENV=production node dist/index.js",
-  "check": "tsc",
-  "db:push": "drizzle-kit push"
-}
-
-
-tsconfig.json — replace (paths consistent with aliases):
+Returns an array of containers with fields:
 
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM"],
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "jsx": "react-jsx",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["client/src/*"],
-      "@shared/*": ["shared/*"],
-      "@assets/*": ["attached_assets/*"]
-    }
-  },
-  "include": ["client", "server", "shared"]
+  id: string
+  name: string
+  image: string
+  state: 'running' | 'exited' | 'paused' | 'restarting' | string
+  status: string          // e.g., "Up 3 hours (healthy)"
+  ports: Array<{private: number, public?: number, ip?: string, type: string}>
+  createdAt: number       // epoch seconds
+  labels: Record<string,string>
+}[]
+
+
+Must gracefully handle:
+
+Docker not installed / socket missing → return { containers: [] , note: 'docker socket not available' } with HTTP 200.
+
+Permission denied on socket → same as above, plus note: 'permission denied'.
+
+Enforce read-only: never start/stop containers here.
+
+Add basic rate-limit (e.g., 20 req / 30s per IP) and reuse existing session auth middleware (same as other API routes).
+
+Add quick health log on first request: write a one-line JSON to /home/zk/logs/pideck-docker-endpoint.log.
+
+Frontend
+
+On Apps tab, fetch /api/docker/containers on mount + on “Refresh”.
+
+If array length > 0, render the grid with:
+
+Name, image, state badge (green running, gray exited, etc.), status text, first mapped port(s).
+
+Small copy button to copy name.
+
+If empty and note provided, show a muted hint (e.g., “Docker unavailable: permission denied”).
+
+Keep the existing PM2 Processes card unchanged.
+
+Security/Config
+
+Use the UNIX socket only. Never open Docker over TCP.
+
+No elevated shelling out; only dockerode.
+
+Do not expose container env or mounts.
+
+Put all new server code under server/ (TypeScript), wire it in server/index.ts.
+
+Quality
+
+TypeScript types for the API response.
+
+Zod (or lightweight manual) validation for query (none expected) and output shape.
+
+Unit test (lightweight) for the mapper that converts dockerode data → response DTO.
+
+Files to Add/Change (suggested paths)
+
+server/lib/docker.ts
+
+import Docker from 'dockerode';
+export const docker = new Docker({ socketPath: '/var/run/docker.sock' });
+export async function listContainersDto() {
+  try {
+    const containers = await docker.listContainers({ all: true });
+    return containers.map(c => ({
+      id: c.Id,
+      name: (c.Names?.[0] || '').replace(/^\//,''),
+      image: c.Image,
+      state: c.State as string,
+      status: c.Status || '',
+      ports: (c.Ports || []).map(p => ({
+        private: p.PrivatePort, public: p.PublicPort, ip: p.IP, type: p.Type
+      })),
+      createdAt: c.Created,
+      labels: c.Labels || {}
+    }));
+  } catch (e: any) {
+    if (String(e?.message || '').match(/ENOENT|EACCES|permission/i)) return { note: 'socket unavailable or permission denied', containers: [] };
+    throw e;
+  }
 }
 
-Step 3 — Remove anything that can confuse Rollup/Vite
-# Remove other HTML entries at client/ root
-find client -maxdepth 1 -type f -name '*.html' ! -name 'index.html' -print -delete
 
-# Force-add type="module" for any inline scripts lacking it (idempotent)
-perl -0777 -pe 's/<script(?![^>]*type=)[^>]*>/<script type="module">/g' \
-  client/index.html > client/.index.tmp && mv client/.index.tmp client/index.html
+server/routes/docker.ts
 
-# Clean caches & outputs
-rm -rf node_modules client/.vite dist
+import { Router } from 'express';
+import { listContainersDto } from '../lib/docker';
+const r = Router();
 
-Step 4 — Pin compatible versions (temporary if needed)
-
-To rule out a Rollup/Vite quirk:
-
-npm i -D vite@5.4.10 rollup@4.21.2 @vitejs/plugin-react@4.3.2
-
-Step 5 — Build with full debug & show logs
-npm run build:client --silent 2>&1 | tee /tmp/vite-debug.log
-sed -n '1,200p' /tmp/vite-debug.log
-
-
-Confirm the plugin order includes the HTML plugin and that client/index.html is recognized as HTML, not JS.
-
-If it still throws [vite:asset-import-meta-url] Unexpected token 'import', bisect plugins:
-
-Temporarily set plugins: [] (no react) and try vite build again.
-
-If it passes with no plugins, re-enable @vitejs/plugin-react only.
-
-If it fails only when another plugin is present, identify and remove/upgrade it.
-
-Step 6 — Finalize server static handling (if not present)
-
-Ensure Express serves the SPA:
-
-// server/index.ts snippet
-import path from "path";
-import { fileURLToPath } from "url";
-import express from "express";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const app = express();
-
-const staticDir = path.resolve(__dirname, "../dist/public");
-app.use(express.static(staticDir));
-app.get("*", (req, res, next) => {
-  if (req.path.startsWith("/api/")) return next();
-  res.sendFile(path.join(staticDir, "index.html"));
+// reuse existing auth & rate-limit middlewares if present
+r.get('/containers', async (req, res) => {
+  const data = await listContainersDto();
+  if (Array.isArray(data)) return res.json({ containers: data });
+  return res.json(data); // {note, containers:[]}
 });
 
-Acceptance Criteria
-
-npm run build succeeds with:
-
-Vite outputs to dist/public/ (assets + index.html)
-
-esbuild outputs server to dist/index.js
-
-vite build --debug shows client/index.html processed as HTML (no “Unexpected token 'import'”).
-
-Starting the server serves SPA from dist/public and all routes work.
-
-Commit message
-build(vite): fix HTML parsing error; standardize client root + output; remove replit remnants; stabilize paths
-
-- root=client, output dist/public, aliases @/@shared/@assets
-- clean index.html (module script), minimal main.tsx
-- pin vite/rollup versions temporarily to avoid parse bug
-- ensure server static fallback to dist/public/index.html
+export default r;
 
 
-Run these exactly; if the failure persists after plugin bisect, print the first 200 lines of /tmp/vite-debug.log and the plugin list Vite reports so we can lock the offending plugin/version.
+server/index.ts
+Register: app.use('/api/docker', dockerRoutes);
 
+client/src/pages/Apps.tsx (or the component that renders the “Apps” tab)
+
+Fetch /api/docker/containers
+
+Render containers grid (name, image, state badge, status, ports)
+
+Keep the existing Refresh button wired to re-fetch
+
+Edge Cases to Handle
+
+No Docker on host → empty list with informational note.
+
+Socket permission: if the node user isn’t in docker group, endpoint still responds with empty+note; do not crash.
+
+Large lists (>200) → only show the first 100 with a “+N more” footer.
+
+Networkless containers (no port mappings) → show “—” for ports.
+
+Acceptance Tests (run on the Pi host)
+
+1) API sanity (expect a non-empty array on this host):
+
+curl -sS http://127.0.0.1:5006/api/docker/containers | jq '.containers | length'
+curl -sS http://127.0.0.1:5006/api/docker/containers | jq '.containers[0]'
+
+
+2) Cross-check with Docker:
+
+docker ps --format '{{.Names}}' | wc -l
+docker ps --format '{{.Names}}' | head -n 3
+
+
+The first number should be ≥ the JSON length of running containers (your endpoint includes all:true, so exited containers may appear with different states).
+
+3) UI smoke test
+
+Open https://pideck.piapps.dev/dashboard → Apps
+
+Click Refresh on the Docker card; cards render with names/images and green “running” where applicable.
+
+4) Log
+
+tail -n 50 /home/zk/logs/pideck-docker-endpoint.log
+
+Constraints & Notes
+
+Absolute paths only in scripts/notes (admin preference).
+
+Don’t change auth/session behavior.
+
+Don’t introduce new open ports or CORS changes.
+
+Keep bundle size impact minimal; no heavyweight UI libs.
+
+If you must add a dep: dockerode (and @types/dockerode) on the server only.
+
+Deployment
+# from /home/zk/projects/PiDeck
+/usr/bin/npm run build
+# restart pm2 app serving PiDeck (adjust name if different)
+/usr/bin/pm2 restart pideck --update-env
+/usr/bin/pm2 save
+
+If you hit permissions on /var/run/docker.sock
+
+Prefer not to change system groups in code. But you may leave a one-time post-fix note:
+
+# One-time (manual) option to allow the running user to access docker socket:
+# sudo usermod -aG docker zk && newgrp docker
+# (then pm2 restart)
+
+
+Success = the Docker box shows real containers (names/images/state/status/ports), refresh works, and API gracefully degrades when Docker isn’t available.

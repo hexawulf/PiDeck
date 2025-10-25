@@ -1,8 +1,6 @@
 import type { Express } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
-import session from "express-session";
-import MemoryStore from "memorystore";
 import { z } from "zod";
 import fs from "node:fs";
 
@@ -18,8 +16,6 @@ import hostLogsRouter from "./routes/hostLogs";
 
 import { loginSchema } from "@shared/schema";
 import { rateLimitLogin } from "./middleware/rateLimitLogin";
-
-const MemStore = MemoryStore(session);
 
 // (Optional) password change schema retained for future use
 const passwordChangeSchema = z.object({
@@ -39,30 +35,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
 
-  // Sessions
-  const isProd = process.env.NODE_ENV === "production";
-  const secret = process.env.SESSION_SECRET;
-  if (isProd && !secret) {
-    throw new Error("SESSION_SECRET must be set in production");
-  }
-
-  app.use(
-    session({
-      store: new MemStore({ checkPeriod: 86_400_000 }), // 24h
-      secret: secret || "pideck-secret-key",
-      resave: false,
-      saveUninitialized: false,
-      rolling: true, // extend session on each request
-      cookie: {
-        secure: isProd,
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7d
-        // domain: OMITTED intentionally (host-scoped cookie)
-      },
-    })
-  );
+  // Sessions are already configured in server/index.ts
+  // Using the main session configuration from the parent app
 
   // Instance fingerprint header
   app.use((_req, res, next) => {

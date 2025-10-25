@@ -1,178 +1,116 @@
-// server/index.ts — production-safe drop-in
+// server/index.ts — production-safe, SPA public, /api protected
 import "./env";
+import path from "path";
 import express, { type Request, type Response, type NextFunction } from "express";
 import session from "express-session";
+import { fileURLToPath } from "url";
+
+// Your existing helpers (unchanged)
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import compatRouter from "./routes/compat";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // ---------- config ----------
 const PORT = Number(process.env.PORT || 5006);
-
 const SESSION_SECRET =
   process.env.SESSION_SECRET || "CHANGE_ME_SESSION_SECRET_LONG_RANDOM";
-
 const PIDECK_PASSWORD =
   process.env.PIDECK_PASSWORD ||
   process.env.ADMIN_PASSWORD ||
   process.env.APP_PASSWORD ||
   "";
 
-const ALLOWED_ORIGINS = new Set<string>([
+// Public origins we might want to echo in CORS later (not required for SPA)
+const PUBLIC_ORIGINS = new Set<string>([
   `http://127.0.0.1:${PORT}`,
   `http://localhost:${PORT}`,
   "https://pideck.piapps.dev",
 ]);
 
+// ---------- app ----------
 const app = express();
 
-// behind Cloudflare/Nginx: allow Express to detect HTTPS via X-Forwarded-Proto
+// Behind Cloudflare/Nginx (needed for secure cookies & proto detection)
 app.set("trust proxy", 1);
 
-// hardening & parsers
+// Parsers & hardening
 app.disable("x-powered-by");
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// ---------- lightweight origin/referrer allowlist ----------
-// Skip static, health, root, and *POST /api/auth/login* so nothing blocks auth.
-app.use((req, res, next) => {
-  const u = (req.originalUrl || req.url || "").toLowerCase();
-
-  if (
-    (req.method === "GET" &&
-      (u === "/" ||
-        u === "/healthz" ||
-        u.startsWith("/assets/") ||
-        u.startsWith("/favicon"))) ||
-    (req.method === "POST" && u.startsWith("/api/auth/login"))
-  ) {
-    return next();
-  }
-
-  const origin = (req.headers.origin as string | undefined) || "";
-  const referer = (req.headers.referer as string | undefined) || "";
-  const ok =
-    (origin && ALLOWED_ORIGINS.has(origin)) ||
-    (referer && Array.from(ALLOWED_ORIGINS).some((o) => referer.startsWith(o)));
-
-  if (!ok) return res.status(401).json({ message: "Authentication required" });
-  next();
-});
-
-// ---------- sessions (must be before any routes using req.session) ----------
+// ---------- sessions (before anything that uses req.session) ----------
 app.use(
   session({
     name: "connect.sid",
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    proxy: true, // respect X-Forwarded-* from Nginx/CF
+    proxy: true,
     cookie: {
       httpOnly: true,
-      secure: true, // only over HTTPS (works because trust proxy = 1)
+      secure: true, // ok because trust proxy = 1 and we're behind TLS at CF+Nginx
       sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   }),
 );
 
-// ---------- AUTH endpoints (mounted early; nothing should intercept) ----------
-app.post("/api/auth/login", (req: Request, res: Response) => {
-  const { password } = (req.body ?? {}) as { password?: string };
+// ---------- STATIC & SPA: PUBLIC (no auth) ----------
+const staticDir = path.resolve(__dirname, "../dist/public");
+app.use(express.static(staticDir));
 
-  if (!PIDECK_PASSWORD) {
-    return res.status(500).json({ message: "Server misconfigured" });
-  }
-  if (!password || password !== PIDECK_PASSWORD) {
-    return res.status(401).json({ message: "Authentication required" });
-  }
+// Health is public
+app.get("/healthz", (_req, res) => res.sendStatus(204));
 
-  // Create a fresh SID and persist deterministically
-  req.session.regenerate((regenErr) => {
-    if (regenErr) {
-      return res.status(500).json({ message: "Session regenerate failed" });
-    }
-    (req.session as any).userId = 1;
-    (req.session as any).authenticated = true;
+// ---------- AUTH ENDPOINTS (public) ----------
+// Auth endpoints are handled by the routes system in server/routes.ts
+// The routes system provides DB-backed authentication with proper session management
 
-    req.session.save((saveErr) => {
-      if (saveErr) return res.status(500).json({ message: "Session save failed" });
-      return res.json({ message: "Login successful", authenticated: true, userId: 1 });
-    });
-  });
-});
+// ---------- API protection ----------
+// API protection is now handled by the routes system in server/routes.ts
+// The routes system provides proper authentication and authorization
 
-app.get("/api/auth/me", (req: Request, res: Response) => {
-  const sess: any = req.session ?? {};
-  if (sess?.authenticated) {
-    return res.json({ authenticated: true, userId: sess.userId || 1 });
-  }
-  return res.status(401).json({ message: "Authentication required" });
-});
-
-// handy probe (leave during bring-up; remove later if you want)
-app.get("/whoami", (_req: Request, res: Response) => {
-  return res.json({ app: "PiDeck", port: PORT });
-});
-
-// ---------- API access logger (after auth endpoints so we log results) ----------
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let captured: unknown;
-
-  const originalJson = res.json.bind(res);
-  res.json = ((body: any) => {
-    captured = body;
-    return originalJson(body);
-  }) as typeof res.json;
-
-  res.on("finish", () => {
-    if (!path.startsWith("/api")) return;
-    const ms = Date.now() - start;
-    let line = `${req.method} ${path} ${res.statusCode} in ${ms}ms`;
-    if (captured !== undefined) {
-      try {
-        const s = JSON.stringify(captured);
-        line += ` :: ${s}`;
-      } catch {
-        /* ignore */
-      }
-    }
-    if (line.length > 80) line = line.slice(0, 79) + "…";
-    log(line);
-  });
-
-  next();
-});
-
-// ---------- App wiring ----------
+// ---------- Mount real API routes ----------
 (async () => {
-  // Mount the app’s real routes AFTER auth + session
-  const server = await registerRoutes(app);
-
-  // Compat router AFTER real routes; never intercept auth
+  // Back-compat router BEFORE API routes; never intercept /api/*
   app.use((req, res, next) => {
     const u = (req.originalUrl || req.url || "").toLowerCase();
-    if (u.startsWith("/api/auth/")) return next();
+    if (u.startsWith("/api/")) return next();
     return (compatRouter as any)(req, res, next);
   });
 
-  // Error handler (JSON shape)
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err?.status || err?.statusCode || 500;
-    const message = err?.message || "Internal Server Error";
-    res.status(status).json({ message });
-    // eslint-disable-next-line no-console
-    console.error(err);
-  });
+  // Register your API routes (includes auth endpoints and protected routes)
+  const server = await registerRoutes(app);
 
+  // Dev: Vite; Prod: static already above
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
+    // serveStatic contains any extra prod wiring (no-op if you want)
     serveStatic(app);
   }
+
+  // ---------- SPA fallback (public) ----------
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api")) return next();
+    res.sendFile(path.join(staticDir, "index.html"));
+  });
+
+  // ---------- Error handler ----------
+  app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
+    const status = err?.status || err?.statusCode || 500;
+    const message = err?.message || "Internal Server Error";
+    if (req.path.startsWith("/api")) {
+      res.status(status).json({ message });
+    } else {
+      res.status(status).send("Internal error");
+    }
+    // eslint-disable-next-line no-console
+    console.error(err);
+  });
 
   server.listen(
     { port: PORT, host: "0.0.0.0", reusePort: true },

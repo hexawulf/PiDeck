@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import type { SystemInfo, LogFile, DockerContainer, PM2Process, CronJob, HistoricalMetric, ActiveAlert, HostLog, RpiLog } from "@shared/schema";
+import type { SystemInfo, LogFile, DockerContainer, DockerContainersResponse, PM2Process, CronJob, HistoricalMetric, ActiveAlert, HostLog, RpiLog } from "@shared/schema";
 
 export function useSystemData() {
   const queryClient = useQueryClient();
@@ -20,7 +20,7 @@ export function useSystemData() {
     refetchInterval: 7000, // Poll slightly offset from systemInfo to catch updates
   });
 
-  const dockerContainers = useQuery<DockerContainer[]>({
+  const dockerContainers = useQuery<DockerContainersResponse>({
     queryKey: ["/api/docker/containers"],
     refetchInterval: 10000, // Refresh every 10 seconds
   });

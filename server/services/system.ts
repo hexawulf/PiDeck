@@ -479,7 +479,10 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
           name: parts[1] || "",
           image: parts[2] || "",
           status: parts[3] || "",
-          state: parts[3]?.includes("Up") ? "running" : "stopped"
+          state: parts[3]?.includes("Up") ? "running" : "stopped",
+          ports: [],
+          createdAt: 0,
+          labels: {}
         };
       });
     } catch (error) {

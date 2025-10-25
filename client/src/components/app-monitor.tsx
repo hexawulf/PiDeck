@@ -9,7 +9,8 @@ import {
   Square, 
   RotateCw, 
   Play,
-  RefreshCw
+  RefreshCw,
+  Copy
 } from "lucide-react";
 
 export default function AppMonitor() {
@@ -98,103 +99,147 @@ export default function AppMonitor() {
     return 'status-offline';
   };
 
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({
+        title: "Copied",
+        description: "Container name copied to clipboard",
+      });
+    } catch (error) {
+      console.error("Failed to copy to clipboard:", error);
+    }
+  };
+
+  const formatPorts = (ports: any[]) => {
+    if (!ports || ports.length === 0) return "—";
+    return ports.map(p => `${p.private}${p.public ? `:${p.public}` : ""}`).join(", ");
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-       {/* Docker Containers - Only show if containers are available */}
-       {dockerContainers.data && dockerContainers.data.length > 0 && (
-         <Card className="bg-pi-card border-pi-border">
-           <CardContent className="p-6">
-             <div className="flex items-center justify-between mb-6">
-               <h3 className="text-lg font-semibold pi-text flex items-center space-x-2">
-                 <Box className="w-5 h-5" />
-                 <span>Docker Containers</span>
-               </h3>
-               <Button
-                 variant="outline"
-                 size="sm"
-                 onClick={() => dockerContainers.refetch()}
-                 className="bg-pi-darker hover:bg-pi-card-hover border-pi-border"
-                 disabled={dockerContainers.isLoading}
-               >
-                 <RefreshCw className={`w-4 h-4 ${dockerContainers.isLoading ? 'animate-spin' : ''}`} />
-                 Refresh
-               </Button>
+       {/* Docker Containers - Always visible */}
+       <Card className="bg-pi-card border-pi-border">
+         <CardContent className="p-6">
+           <div className="flex items-center justify-between mb-6">
+             <h3 className="text-lg font-semibold pi-text flex items-center space-x-2">
+               <Box className="w-5 h-5" />
+               <span>Docker Containers</span>
+             </h3>
+             <Button
+               variant="outline"
+               size="sm"
+               onClick={() => dockerContainers.refetch()}
+               className="bg-pi-darker hover:bg-pi-card-hover border-pi-border"
+               disabled={dockerContainers.isLoading}
+             >
+               <RefreshCw className={`w-4 h-4 ${dockerContainers.isLoading ? 'animate-spin' : ''}`} />
+               Refresh
+             </Button>
+           </div>
+           
+           {dockerContainers.isLoading ? (
+             <div className="space-y-4">
+               {[...Array(3)].map((_, i) => (
+                 <Skeleton key={i} className="h-16 w-full" />
+               ))}
              </div>
-             
-             {dockerContainers.isLoading ? (
-               <div className="space-y-4">
-                 {[...Array(3)].map((_, i) => (
-                   <Skeleton key={i} className="h-16 w-full" />
-                 ))}
-               </div>
-             ) : dockerContainers.error ? (
-               <p className="pi-error text-center py-4">Failed to load Docker containers</p>
-             ) : (
-               <div className="space-y-4">
-                 {dockerContainers.data.map((container) => (
-                   <div key={container.id} className="flex items-center justify-between p-4 bg-pi-darker rounded-lg">
-                     <div className="flex items-center space-x-3">
-                       <div className={`w-3 h-3 rounded-full ${getStatusColor(container.status)}`} />
-                       <div>
-                         <h4 className="font-medium pi-text">{container.name}</h4>
-                         <p className="text-sm pi-text-muted">{container.image}</p>
-                       </div>
-                     </div>
-                     <div className="flex items-center space-x-2">
-                       <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusBadge(container.status)}`}>
-                         {container.state}
-                       </span>
-                       {container.state === 'running' ? (
-                         <>
-                           <Button
-                             variant="outline"
-                             size="sm"
-                             onClick={() => handleContainerAction('stop', container.id, container.name)}
-                             disabled={isContainerActionPending}
-                             className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
-                           >
-                             <Square className="w-4 h-4 text-pi-error" />
-                           </Button>
-                           <Button
-                             variant="outline"
-                             size="sm"
-                             onClick={() => handleContainerAction('restart', container.id, container.name)}
-                             disabled={isContainerActionPending}
-                             className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
-                           >
-                             <RotateCw className="w-4 h-4 pi-text-muted" />
-                           </Button>
-                         </>
-                       ) : (
-                         <>
-                           <Button
-                             variant="outline"
-                             size="sm"
-                             onClick={() => handleContainerAction('start', container.id, container.name)}
-                             disabled={isContainerActionPending}
-                             className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
-                           >
-                             <Play className="w-4 h-4 text-green-400" />
-                           </Button>
-                           <Button
-                             variant="outline"
-                             size="sm"
-                             onClick={() => handleContainerAction('restart', container.id, container.name)}
-                             disabled={isContainerActionPending}
-                             className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
-                           >
-                             <RotateCw className="w-4 h-4 pi-text-muted" />
-                           </Button>
-                         </>
-                       )}
-                     </div>
-                   </div>
-                 ))}
-               </div>
-             )}
-           </CardContent>
-         </Card>
-       )}
+           ) : dockerContainers.error ? (
+             <div className="text-center py-4">
+               <p className="pi-error mb-2">Failed to load Docker containers</p>
+               <p className="text-xs pi-text-muted">
+                 {dockerContainers.error.message?.substring(0, 160) || 'Docker service may be unavailable'}
+               </p>
+             </div>
+            ) : !dockerContainers.data?.containers?.length ? (
+              <div className="text-center py-4">
+                <p className="pi-text-muted">No Docker containers found</p>
+                {dockerContainers.data?.warning && (
+                  <p className="text-xs pi-text-muted mt-2">
+                    {dockerContainers.data.warning === "socket unavailable or permission denied" 
+                      ? "Docker unavailable: permission denied" 
+                      : "Docker service may be unavailable"}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {dockerContainers.data.containers.map((container) => (
+                  <div key={container.id} className="flex items-center justify-between p-4 bg-pi-darker rounded-lg">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-3 mb-2">
+                        <div className={`w-3 h-3 rounded-full ${getStatusColor(container.status)}`} />
+                        <div className="flex items-center space-x-2">
+                          <h4 className="font-medium pi-text truncate">{container.name}</h4>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyToClipboard(container.name)}
+                            className="p-1 h-auto opacity-50 hover:opacity-100"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                        <div className="pi-text-muted truncate">{container.image}</div>
+                        <div className="pi-text-muted">Ports: {formatPorts(container.ports)}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2 ml-4">
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusBadge(container.status)}`}>
+                        {container.state}
+                      </span>
+                      {container.state === 'running' ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleContainerAction('stop', container.id, container.name)}
+                            disabled={isContainerActionPending}
+                            className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
+                          >
+                            <Square className="w-4 h-4 text-pi-error" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleContainerAction('restart', container.id, container.name)}
+                            disabled={isContainerActionPending}
+                            className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
+                          >
+                            <RotateCw className="w-4 h-4 pi-text-muted" />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleContainerAction('start', container.id, container.name)}
+                            disabled={isContainerActionPending}
+                            className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
+                          >
+                            <Play className="w-4 h-4 text-green-400" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleContainerAction('restart', container.id, container.name)}
+                            disabled={isContainerActionPending}
+                            className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
+                          >
+                            <RotateCw className="w-4 h-4 pi-text-muted" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+             </div>
+           )}
+         </CardContent>
+       </Card>
 
       {/* PM2 Processes */}
       <Card className="bg-pi-card border-pi-border">
