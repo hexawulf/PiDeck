@@ -4,12 +4,7 @@ import type { PM2Process } from "@shared/schema";
 
 export const pm2Router = Router();
 
-pm2Router.use((req, res, next) => {
-  if (!(req.session as any)?.authenticated) {
-    return res.status(401).json({ message: "Authentication required" });
-  }
-  next();
-});
+
 
 pm2Router.get("/pm2/processes", async (_req, res) => {
   const processes: PM2Process[] = await new Promise((resolve) => {

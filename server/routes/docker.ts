@@ -6,12 +6,7 @@ const docker = new Dockerode({ socketPath: "/var/run/docker.sock" });
 
 export const dockerRouter = Router();
 
-dockerRouter.use((req, res, next) => {
-  if (!(req.session as any)?.authenticated) {
-    return res.status(401).json({ message: "Authentication required" });
-  }
-  next();
-});
+
 
 dockerRouter.get("/docker/containers", async (_req, res) => {
   try {

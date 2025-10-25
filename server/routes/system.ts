@@ -4,12 +4,7 @@ import { SystemService } from "../services/system";
 
 export const systemRouter = Router();
 
-systemRouter.use((req, res, next) => {
-  if (!(req.session as any)?.authenticated) {
-    return res.status(401).json({ message: "Authentication required" });
-  }
-  next();
-});
+
 
 systemRouter.get("/system/info", async (_req, res) => {
   try {

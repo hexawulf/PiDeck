@@ -1,118 +1,145 @@
 import type { Express } from "express";
+import express from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
-import bcrypt from "bcrypt"; // Added bcrypt import
 import MemoryStore from "memorystore";
+import { z } from "zod";
+import fs from "node:fs";
+
 import { AuthService } from "./services/auth";
+import { SystemService } from "./services/system";
+
 import nvmeRouter from "./routes/nvme";
 import systemRouter from "./routes/system";
 import dockerRouter from "./routes/docker";
 import pm2Router from "./routes/pm2";
 import rasplogsRouter from "./routes/rasplogs";
-import { SystemService } from "./services/system";
+import hostLogsRouter from "./routes/hostLogs";
 
-import { loginSchema, User } from "@shared/schema"; // Added User
-import { storage } from "./storage"; // Added storage import
-import { z } from "zod";
+import { loginSchema } from "@shared/schema";
 import { rateLimitLogin } from "./middleware/rateLimitLogin";
-
 
 const MemStore = MemoryStore(session);
 
-// Schema for password change
+// (Optional) password change schema retained for future use
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
   newPassword: z.string().min(1, "New password is required"),
   confirmNewPassword: z.string().min(1, "Confirm new password is required"),
-}).refine(data => data.newPassword === data.confirmNewPassword, {
+}).refine((data) => data.newPassword === data.confirmNewPassword, {
   message: "New passwords do not match",
-  path: ["confirmNewPassword"], // Path to field that should display error
+  path: ["confirmNewPassword"],
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Trust proxy (behind Cloudflare/Nginx)
-  app.set('trust proxy', 1);
+  // --- Core hardening / prerequisites ---
+  app.set("trust proxy", 1);
 
-  // Session configuration
-  const isProd = process.env.NODE_ENV === 'production';
+  // Ensure body parsers are available BEFORE routes (safe even if also in index.ts)
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
+
+  // Sessions
+  const isProd = process.env.NODE_ENV === "production";
   const secret = process.env.SESSION_SECRET;
   if (isProd && !secret) {
-    throw new Error('SESSION_SECRET must be set in production');
+    throw new Error("SESSION_SECRET must be set in production");
   }
 
-  app.use(session({
-    store: new MemStore({
-      checkPeriod: 86400000 // 24 hours
-    }),
-    secret: secret || "pideck-secret-key",
-    resave: false,
-    saveUninitialized: false,
-    rolling: true, // Extends session on each request
-    cookie: {
-      secure: isProd, // Set to true in production with HTTPS
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      sameSite: 'lax', // Better cookie handling for same-site requests
-      path: '/'
-      // domain: OMITTED on purpose - keep cookie first-party scoped to current host
-    }
-  }));
+  app.use(
+    session({
+      store: new MemStore({ checkPeriod: 86_400_000 }), // 24h
+      secret: secret || "pideck-secret-key",
+      resave: false,
+      saveUninitialized: false,
+      rolling: true, // extend session on each request
+      cookie: {
+        secure: isProd,
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7d
+        // domain: OMITTED intentionally (host-scoped cookie)
+      },
+    })
+  );
 
   // Instance fingerprint header
   app.use((_req, res, next) => {
-    res.setHeader('X-PiDeck-Instance', process.pid.toString());
+    res.setHeader("X-PiDeck-Instance", process.pid.toString());
     next();
   });
 
-  // NVMe metrics route
+  // Health (public)
+  app.get("/api/health", (_req, res) => res.json({ ok: true, ts: Date.now() }));
+
+  // NVMe metrics (public or behind your network/firewall middlewares)
   app.use(nvmeRouter);
 
-  // Health check endpoint (accessible without authentication)
-  app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, ts: Date.now() });
+  // --- Auth bypass marker (belt & suspenders) ---
+  // Mark ONLY the login POST to bypass any stray guards mounted elsewhere.
+  app.use((req, _res, next) => {
+    const url = (req.originalUrl || req.url || "").toLowerCase();
+    if (req.method === "POST" && (url.startsWith("/api/auth/login") || url.startsWith("/auth/login"))) {
+      (req as any).__loginBypass = true;
+    }
+    next();
   });
 
-  // Auth routes (defined BEFORE any middleware to allow login)
+  // --- Auth routes (OPEN): must be defined BEFORE protected mounts ---
+
+  // Public CSRF token (for clients that enforce CSRF)
+  app.get("/api/auth/csrf", (_req, res) => {
+    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    res.json({ token });
+  });
+
   app.post("/api/auth/login", rateLimitLogin, async (req, res) => {
     try {
       const { password } = loginSchema.parse(req.body);
-      
+
+      // 1) Primary: validate via AuthService (DB/hashed)
       const validationResult = await AuthService.validatePassword(password);
 
-      if (!validationResult.isValid) {
+      // 2) Fallback: also accept password from ENV or file (for bootstrap / no-DB admin)
+      let expected = (process.env.APP_PASSWORD || "").trim();
+      if (!expected && process.env.APP_PASSWORD_FILE) {
+        try {
+          expected = fs.readFileSync(process.env.APP_PASSWORD_FILE, "utf8").trim();
+        } catch {
+          // ignore file read errors; fallback stays empty
+        }
+      }
+      const supplied = (password || "").trim();
+      const envMatch = expected.length > 0 && supplied === expected;
+
+      if (!validationResult.isValid && !envMatch) {
         if (validationResult.error === "account_locked") {
-          // Determine remaining lockout time for a more informative message
           let message = "Account is locked due to too many failed login attempts.";
-          if (validationResult.user && validationResult.user.account_locked_until) {
-            const remainingTime = new Date(validationResult.user.account_locked_until).getTime() - Date.now();
-            if (remainingTime > 0) {
-              message += ` Please try again in about ${Math.ceil(remainingTime / (60 * 1000))} minutes.`;
-            }
+          if (validationResult.user?.account_locked_until) {
+            const ms = new Date(validationResult.user.account_locked_until).getTime() - Date.now();
+            if (ms > 0) message += ` Please try again in about ${Math.ceil(ms / 60000)} minutes.`;
           }
           return res.status(403).json({ message });
         }
-        return res.status(401).json({ message: "Invalid username or password." }); // Generic message
+        return res.status(401).json({ message: "Invalid username or password." });
       }
 
-      // Successfully authenticated - set session data
+      // Session success (use DB user id if present; otherwise fallback to 1 for env login)
       (req.session as any).authenticated = true;
-      (req.session as any).userId = validationResult.user?.id;
-      
-      // Explicitly save the session before responding
+      (req.session as any).userId = validationResult.user?.id ?? 1;
+
       req.session.save((err) => {
         if (err) {
           console.error("Session save error:", err);
           return res.status(500).json({ message: "Session save failed" });
         }
-        
-        // Session saved successfully, send response
-        res.json({ 
+        res.json({
           message: "Login successful",
           authenticated: true,
-          userId: validationResult.user?.id 
+          userId: (req.session as any).userId,
         });
       });
-      
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid input", errors: error.errors });
@@ -120,6 +147,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Login error:", error);
       res.status(500).json({ message: "Internal server error" });
     }
+  });
+
+  // Non-POST /api/auth/login → 405 (match with/without trailing slash)
+  app.all(["/api/auth/login", "/api/auth/login/"], (_req, res) => res.sendStatus(405));
+
+  // Optional: block non-GET verb misuse on /api/auth/me (helps avoid compat fallthrough)
+  app.all("*", (req: any, res: any, next: any) => {
+    const p = req.path;
+    if (req.method !== "GET" && (p === "/api/auth/me" || p === "/api/auth/me/")) return res.sendStatus(405);
+    return next();
   });
 
   app.post("/api/auth/logout", (req, res) => {
@@ -132,13 +169,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  // CSRF token endpoint (accessible without authentication)
-  app.get("/api/auth/csrf", (req, res) => {
-    // Generate a simple CSRF token
-    const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
-    res.json({ token });
-  });
-
   app.get("/api/auth/me", (req, res) => {
     if ((req.session as any)?.authenticated) {
       res.json({ authenticated: true, userId: (req.session as any).userId });
@@ -147,31 +177,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Auth middleware
+  // --- Auth middleware & wrapper ---
   const requireAuth = (req: any, res: any, next: any) => {
+    if (req.__loginBypass) return next(); // hard bypass for POST /api/auth/login
     if (!(req.session as any)?.authenticated) {
       return res.status(401).json({ message: "Authentication required" });
     }
     next();
   };
 
-  // Auth middleware wrapper that skips login route
   const requireAuthUnlessLogin = (req: any, res: any, next: any) => {
-    const url = req.originalUrl || req.url || '';
-    // Allow both /api/auth/login and /auth/login (handles different mounts)
-    if (url.startsWith('/api/auth/login') || url.startsWith('/auth/login')) {
+    const url = (req.originalUrl || req.url || "").toLowerCase();
+    if (url.startsWith("/api/auth/login") || url.startsWith("/auth/login")) {
       return next();
     }
     return requireAuth(req, res, next);
   };
 
-  // System routes
-  app.use("/api", systemRouter);
-  app.use("/api", dockerRouter);
-  app.use("/api", pm2Router);
-  app.use("/api", rasplogsRouter);
+  // --- Protected mounts (USE the skip-wrapper) ---
+  app.use("/api", requireAuthUnlessLogin, systemRouter);
+  app.use("/api", requireAuthUnlessLogin, dockerRouter);
+  app.use("/api", requireAuthUnlessLogin, pm2Router);
+  app.use("/api", requireAuthUnlessLogin, rasplogsRouter);
+  app.use("/api/hostlogs", requireAuthUnlessLogin, hostLogsRouter);
+  app.use("/api/rasplogs", requireAuthUnlessLogin, hostLogsRouter); // backward-compat alias
 
-  app.get("/api/system/history", async (req, res) => {
+  // These ad-hoc endpoints are also protected by the wrapper above
+  app.get("/api/system/history", async (_req, res) => {
     try {
       const historicalData = await SystemService.getHistoricalData();
       res.json(historicalData);
@@ -180,8 +212,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to get system historical data" });
     }
   });
-
-
 
   app.post("/api/system/update", async (_req, res) => {
     try {
@@ -203,10 +233,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-
-
-  // Docker routes
-  app.get("/api/docker/containers", async (req, res) => {
+  // Docker helpers (protected by wrapper)
+  app.get("/api/docker/containers", async (_req, res) => {
     try {
       const containers = await SystemService.getDockerContainers();
       res.json(containers);
@@ -218,8 +246,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/docker/containers/:id/restart", async (req, res) => {
     try {
-      const { id } = req.params;
-      await SystemService.restartDockerContainer(id);
+      await SystemService.restartDockerContainer(req.params.id);
       res.json({ message: "Container restarted successfully" });
     } catch (error) {
       console.error("Restart container error:", error);
@@ -229,8 +256,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/docker/containers/:id/stop", async (req, res) => {
     try {
-      const { id } = req.params;
-      await SystemService.stopDockerContainer(id);
+      await SystemService.stopDockerContainer(req.params.id);
       res.json({ message: "Container stopped successfully" });
     } catch (error) {
       console.error("Stop container error:", error);
@@ -240,8 +266,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/docker/containers/:id/start", async (req, res) => {
     try {
-      const { id } = req.params;
-      await SystemService.startDockerContainer(id);
+      await SystemService.startDockerContainer(req.params.id);
       res.json({ message: "Container started successfully" });
     } catch (error) {
       console.error("Start container error:", error);
@@ -249,8 +274,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // PM2 routes
-  app.get("/api/pm2/processes", async (req, res) => {
+  // PM2 helpers (protected)
+  app.get("/api/pm2/processes", async (_req, res) => {
     try {
       const processes = await SystemService.getPM2Processes();
       res.json(processes);
@@ -262,8 +287,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/pm2/processes/:name/restart", async (req, res) => {
     try {
-      const { name } = req.params;
-      await SystemService.restartPM2Process(name);
+      await SystemService.restartPM2Process(req.params.name);
       res.json({ message: "Process restarted successfully" });
     } catch (error) {
       console.error("Restart PM2 process error:", error);
@@ -273,8 +297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/pm2/processes/:name/stop", async (req, res) => {
     try {
-      const { name } = req.params;
-      await SystemService.stopPM2Process(name);
+      await SystemService.stopPM2Process(req.params.name);
       res.json({ message: "Process stopped successfully" });
     } catch (error) {
       console.error("Stop PM2 process error:", error);
@@ -282,8 +305,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Cron routes
-  app.get("/api/cron/jobs", async (req, res) => {
+  // Cron helpers (protected)
+  app.get("/api/cron/jobs", async (_req, res) => {
     try {
       const jobs = await SystemService.getCronJobs();
       res.json(jobs);
@@ -299,15 +322,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!requestedCommand) {
         return res.status(400).json({ message: "Command is required" });
       }
-
-      // Get the list of existing cron jobs to validate against
       const existingJobs = await SystemService.getCronJobs();
-      const isValidCommand = existingJobs.some(job => job.command === requestedCommand);
-
+      const isValidCommand = existingJobs.some((job) => job.command === requestedCommand);
       if (!isValidCommand) {
         return res.status(403).json({ message: "Invalid or not allowed cron command." });
       }
-      
       await SystemService.runCronJob(requestedCommand);
       res.json({ message: "Cron job executed successfully" });
     } catch (error) {
@@ -316,10 +335,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Health check endpoint (accessible without authentication)
-  app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, ts: Date.now() });
-  });
+  // (Avoid duplicating /api/health; one public endpoint is enough)
 
   const httpServer = createServer(app);
   return httpServer;

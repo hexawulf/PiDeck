@@ -1,22 +1,23 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   FileText,
   Download,
   RefreshCw,
   Search,
-  Play,
-  Pause,
   AlertCircle,
   CheckCircle2,
   HardDrive,
 } from "lucide-react";
-import type { LogIndexEntry } from "@shared/schema";
+
+interface LogEntry {
+  id: string;
+  name: string;
+  label: string;
+}
 
 // Regex patterns for syntax highlighting
 const TIMESTAMP_REGEX = /(\b[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}(\s+[A-Z]{3,4})?\s+\d{4}\b)/g;
@@ -74,22 +75,22 @@ const LogLineHighlighter: React.FC<LogLineHighlighterProps> = ({ line }) => {
 };
 
 export default function LogViewer() {
-  const { data: logs, isLoading: isLoadingLogs, error: logsError } = useQuery<LogIndexEntry[]>({
-    queryKey: ["rasplogs"],
-    queryFn: async () => {
-      const res = await fetch("/api/rasplogs");
-      if (!res.ok) {
-        if (res.status === 401) {
-          throw new Error("Sign in required");
-        }
-        throw new Error("Failed to fetch logs");
-      }
-      return res.json();
-    },
-    refetchInterval: 30000, // Refetch every 30 seconds
-  });
+  // Fixed allowlist of log files
+  const logAllowlist = [
+    { id: 'nginx_access', name: 'nginx_access', label: 'Nginx Access Log' },
+    { id: 'nginx_error', name: 'nginx_error', label: 'Nginx Error Log' },
+    { id: 'pm2_pideck_out', name: 'pm2_pideck_out', label: 'PM2 PiDeck Output' },
+    { id: 'pm2_pideck_err', name: 'pm2_pideck_err', label: 'PM2 PiDeck Error' },
+    { id: 'pideck_cron', name: 'pideck_cron', label: 'PiDeck Cron' },
+    { id: 'codepatchwork', name: 'codepatchwork', label: 'CodePatchwork' },
+    { id: 'synology', name: 'synology', label: 'Synology' }
+  ];
 
-  const [selectedLog, setSelectedLog] = useState<LogIndexEntry | null>(null);
+  const logs = logAllowlist;
+  const isLoadingLogs = false;
+  const logsError = null;
+
+  const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [logContent, setLogContent] = useState<string[]>([]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -121,7 +122,8 @@ export default function LogViewer() {
       const query = searchQuery.toLowerCase();
       logData = logData.filter(
         (log) =>
-          log.name.toLowerCase().includes(query)
+          log.name.toLowerCase().includes(query) ||
+          log.label.toLowerCase().includes(query)
       );
     }
 
@@ -129,7 +131,7 @@ export default function LogViewer() {
       if (sortBy === "name") {
         return a.name.localeCompare(b.name);
       } else {
-        return new Date(b.mtime).getTime() - new Date(a.mtime).getTime();
+        return a.label.localeCompare(b.label);
       }
     });
 
@@ -153,7 +155,7 @@ export default function LogViewer() {
     }
   }, [logContent, isFollowing]);
 
-  const handleLogSelect = async (log: LogIndexEntry) => {
+  const handleLogSelect = async (log: LogEntry) => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -163,16 +165,6 @@ export default function LogViewer() {
     setLogContent([]);
     setError(null);
     localStorage.setItem("logViewer:lastId", log.id);
-
-    if (!log.pathExists) {
-      setError("Log file does not exist on the system.");
-      return;
-    }
-
-    if (log.tooLarge) {
-      setError("File is too large (>20MB) to be viewed in the browser.");
-      return;
-    }
 
     await fetchLogContent(log.id, false);
   };
@@ -191,7 +183,7 @@ export default function LogViewer() {
           params.append("grep", searchFilter);
         }
 
-        const url = `/api/rasplogs/${logId}?${params.toString()}`;
+        const url = `/api/hostlogs/${logId}?${params.toString()}`;
         const eventSource = new EventSource(url, { withCredentials: true });
 
         eventSource.onmessage = (event) => {
@@ -216,23 +208,23 @@ export default function LogViewer() {
           params.append("grep", searchFilter);
         }
 
-        const response = await fetch(`/api/rasplogs/${logId}?${params.toString()}`, {
+        const response = await fetch(`/api/hostlogs/${logId}?${params.toString()}`, {
           credentials: "include",
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || "Failed to fetch log");
+          const msg = await response.text(); // keep it robust
+          throw new Error(`HTTP ${response.status}: ${msg}`);
         }
 
-        const data = await response.json();
-        const lines = data.content.split("\n").filter((l: string) => l.trim());
+        const text = await response.text();           // << text, not JSON
+        const lines = text ? text.split("\n").filter((l: string) => l.trim()) : [];
         setLogContent(lines);
       }
-    } catch (err: any) {
-      console.error("Error fetching log:", err);
-      setError(err.message || "Failed to fetch log content");
-    } finally {
+  } catch (err) {
+    console.error("Error fetching log:", err);
+    setError(err instanceof Error ? err.message : "Failed to fetch log content");
+  } finally {
       setIsLoading(false);
     }
   };
@@ -283,29 +275,7 @@ export default function LogViewer() {
     }
   };
 
-  const formatSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
 
-  const formatMtime = (date: Date | string): string => {
-    const d = typeof date === "string" ? new Date(date) : date;
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-
-    if (diffMins < 1) return "just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays < 7) return `${diffDays}d ago`;
-
-    return d.toLocaleDateString();
-  };
 
   if (isLoadingLogs) {
     return (
@@ -323,7 +293,7 @@ export default function LogViewer() {
   if (logsError) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-red-500">{logsError.message}</p>
+        <p className="text-red-500">{logsError}</p>
       </div>
     );
   }
@@ -335,10 +305,10 @@ export default function LogViewer() {
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <HardDrive className="h-5 w-5 text-pi-accent" />
-              <div>
-                <CardTitle className="text-lg">Logs</CardTitle>
-                <p className="text-xs text-pi-text-muted mt-1">/home/zk/logs</p>
-              </div>
+               <div>
+                 <CardTitle className="text-lg">Raspberry Pi Logs</CardTitle>
+                 <p className="text-xs text-pi-text-muted mt-1">System and application logs</p>
+               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -376,10 +346,9 @@ export default function LogViewer() {
                     <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium truncate">{log.name}</div>
-                      <div className="text-xs text-pi-text-muted mt-0.5 flex justify-between">
-                        <span>{formatSize(log.size)}</span>
-                        <span>{formatMtime(log.mtime)}</span>
-                      </div>
+                       <div className="text-xs text-pi-text-muted mt-0.5">
+                         {log.label}
+                       </div>
                     </div>
                   </div>
                 </button>
