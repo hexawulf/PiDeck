@@ -1,10 +1,11 @@
 import { Switch, Route, Redirect } from "wouter";
-import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useAuth } from "@/hooks/use-auth";
+
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import ChangePassword from "@/pages/change-password";
@@ -20,45 +21,46 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
-  if (!isAuthenticated) {
-    return <Redirect to="/login" />;
-  }
-
+  if (!isAuthenticated) return <Redirect to="/login" />;
   return <>{children}</>;
 }
 
-function Router() {
+// Renamed to avoid confusion with wouter's <Router>
+function AppRoutes() {
   return (
     <Switch>
+      {/* Public routes */}
       <Route path="/login" component={Login} />
       <Route path="/" component={() => <Redirect to="/login" />} />
+
+      {/* Protected routes */}
       <Route path="/change-password">
         <ProtectedRoute>
           <ChangePassword />
         </ProtectedRoute>
       </Route>
+
       <Route path="/dashboard">
         <ProtectedRoute>
           <Dashboard />
         </ProtectedRoute>
       </Route>
+
+      {/* Catch-all */}
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-function App() {
+export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <AppRoutes />
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
 }
-
-export default App;

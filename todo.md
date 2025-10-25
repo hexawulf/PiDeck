@@ -1,186 +1,245 @@
-FIXIT — PiDeck logs & apps regressions
-
+FIXIT — PiDeck Vite build fails: [vite:asset-import-meta-url] Unexpected token 'import' in client/index.html
 Context
 
-App runs on port 5006 behind Nginx for pideck.piapps.dev. Keep auth/session as-is.
+Repo root: /home/zk/projects/PiDeck
 
-We previously had a host logs allowlist (Nginx/PM2/other files). Re-add it and expose as /api/hostlogs/:name (alias /api/rasplogs for backward compatibility). Use tail/since/grep/follow SSE as needed; for now snapshot + simple follow is enough. Use absolute paths; primary log directory is /home/zk/logs. (We also want Nginx and PM2 logs back.)
+Build command: npm run build → vite build (client) then esbuild (server)
 
-Docker is running (Grafana 3000, Prometheus 9090, Redis 6379, cAdvisor 8082, freqtrade stack), so “No Docker containers found” is incorrect—either list them via Docker socket or hide the card gracefully if the socket isn’t available.
+Error repeats:
 
-1) Server — restore host logs API (and JSON-safe errors)
+[vite:asset-import-meta-url] Unexpected token 'import'
+file: /home/zk/projects/PiDeck/client/index.html
 
-Create server/routes/hostLogs.ts:
 
-import { Router } from 'express';
-import fs from 'fs';
-import path from 'path';
+We’re not on Replit. Strip all Replit plugins/integration.
 
-const r = Router();
+Client root is client/; server is server/. Static output should be dist/public.
 
-// Allowlist (absolute paths only)
-const LOGS: Record<string,string> = {
-  'nginx_access': '/var/log/nginx/container.piapps.dev.access.log',
-  'nginx_error':  '/var/log/nginx/container.piapps.dev.error.log',
-  'pm2_pideck_out':  path.join(process.env.HOME || '/home/zk', '.pm2/logs/pideck-out.log'),
-  'pm2_pideck_err':  path.join(process.env.HOME || '/home/zk', '.pm2/logs/pideck-error.log'),
-  // project logs folder
-  'pideck_cron': '/home/zk/logs/pideck-cron.log',
-  'codepatchwork': '/home/zk/logs/codepatchwork.log',
-  'synology': '/home/zk/logs/synology.log'
-};
+Keep ESM server build to dist/index.js.
 
-function tailFile(file: string, n = 500): string {
-  // simple, safe tail without extra deps
-  if (!fs.existsSync(file)) return '';
-  const stat = fs.statSync(file);
-  const size = Math.min(stat.size, 1024 * 1024); // cap to 1MB
-  const fd = fs.openSync(file, 'r');
-  const buf = Buffer.alloc(size);
-  fs.readSync(fd, buf, 0, size, stat.size - size);
-  fs.closeSync(fd);
-  const lines = buf.toString('utf8').split('\n');
-  return lines.slice(-n).join('\n');
+Goal
+
+Make vite build succeed.
+
+Output client to dist/public and keep server bundle in dist/.
+
+SPA serves via Express static from dist/public (index.html fallback).
+
+No Replit references.
+
+Preserve aliases @, @shared, @assets.
+
+Strong suspicion (do not skip)
+
+The error means Rollup is parsing HTML as JS. This usually happens if:
+
+A plugin or config bypasses the HTML plugin, or
+
+There’s a stray/duplicate HTML entry, or
+
+index.html has an inline <script> without type="module", or
+
+The Vite root/input is misconfigured, or
+
+Tooling versions are clashing (Vite/Rollup/tailwind-vite).
+
+Step 0 — Print environment (for the log)
+node --version
+npm --version
+npx vite --version
+node -e "console.log(process.versions)"
+
+Step 1 — Show the exact files (do not assume)
+
+Print these (verbatim):
+
+cat vite.config.ts
+cat package.json
+cat tsconfig.json
+sed -n '1,120p' client/index.html
+sed -n '1,120p' client/src/main.tsx
+sed -n '1,120p' client/src/App.tsx
+ls -al client | sed -n '1,120p'
+ls -al client/src | sed -n '1,120p'
+ls -al
+
+Step 2 — Sanity edits (apply exactly)
+
+vite.config.ts — replace completely:
+
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export default defineConfig({
+  appType: "spa",
+  root: path.resolve(__dirname, "client"),
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "client", "src"),
+      "@shared": path.resolve(__dirname, "shared"),
+      "@assets": path.resolve(__dirname, "attached_assets"),
+    },
+  },
+  publicDir: path.resolve(__dirname, "client", "public"),
+  build: {
+    outDir: path.resolve(__dirname, "dist/public"),
+    emptyOutDir: true
+    // DO NOT set rollupOptions.input; let Vite detect client/index.html
+  },
+  server: { fs: { strict: true, deny: ["**/.*"] } },
+});
+
+
+client/index.html — replace completely:
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PiDeck</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Must be type="module" -->
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
+
+client/src/main.tsx — ensure minimal valid boot:
+
+import React from "react";
+import { createRoot } from "react-dom/client";
+import { Router } from "wouter";
+import App from "./App";
+import "./index.css";
+
+const root = document.getElementById("root");
+if (!root) throw new Error("#root not found");
+
+createRoot(root).render(
+  <React.StrictMode>
+    <Router>
+      <App />
+    </Router>
+  </React.StrictMode>
+);
+
+
+package.json — replace “scripts” with:
+
+"scripts": {
+  "dev": "dotenv -e .env -- tsx server/index.ts",
+  "dev:client": "vite",
+  "build:client": "vite build --debug",
+  "build:server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+  "build": "npm run build:client && npm run build:server",
+  "start": "PORT=5006 NODE_ENV=production node dist/index.js",
+  "check": "tsc",
+  "db:push": "drizzle-kit push"
 }
 
-r.get('/:name', (req, res) => {
-  const name = req.params.name;
-  const file = LOGS[name];
-  if (!file) return res.status(404).json({ error: 'unknown_log' });
 
-  const tail = Math.min(Math.max(parseInt(String(req.query.tail || 500), 10) || 500, 1), 5000);
-  let text = tailFile(file, tail);
+tsconfig.json — replace (paths consistent with aliases):
 
-  const grep = String(req.query.grep || '').trim();
-  if (grep) {
-    try {
-      const rx = grep.startsWith('/') && grep.endsWith('/') ? new RegExp(grep.slice(1,-1), 'i') : new RegExp(grep, 'i');
-      text = text.split('\n').filter(l => rx.test(l)).join('\n');
-    } catch {
-      const q = grep.toLowerCase();
-      text = text.split('\n').filter(l => l.toLowerCase().includes(q)).join('\n');
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["client/src/*"],
+      "@shared/*": ["shared/*"],
+      "@assets/*": ["attached_assets/*"]
     }
-  }
-
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.send(text);
-});
-
-export default r;
-
-
-Wire the route in server/index.ts (or wherever routes mount):
-
-import hostLogs from './routes/hostLogs';
-// … after auth/session middlewares:
-app.use('/api/hostlogs', requireAuth, hostLogs);
-// backward-compat alias for older UI:
-app.use('/api/rasplogs', requireAuth, hostLogs);
-
-
-Ensure API errors are JSON (not HTML) — in your global error handler, if the path starts with /api/, send application/json:
-
-app.use((err, req, res, _next) => {
-  const status = err.status || 500;
-  if (req.path.startsWith('/api/')) {
-    res.status(status).json({ error: err.code || 'server_error', message: err.message || 'Internal error' });
-  } else {
-    res.status(status).send('Internal error');
-  }
-});
-
-
-This prevents the client’s .json() from choking on an HTML error page, which is what caused “Unexpected token < …”.
-
-2) Client — make the Logs viewer fetch text, not JSON, and restore the catalog label
-
-Edit the logs page component (where we load a log by name, e.g. client/src/pages/Logs.tsx or similar):
-
-// replace response.json() with response.text()
-const res = await fetch(`/api/hostlogs/${encodeURIComponent(name)}?tail=${tail}&grep=${encodeURIComponent(grep || '')}`, {
-  credentials: 'include'
-});
-if (!res.ok) {
-  const msg = await res.text(); // keep it robust
-  throw new Error(`HTTP ${res.status}: ${msg}`);
+  },
+  "include": ["client", "server", "shared"]
 }
-const text = await res.text();           // << text, not JSON
-setLines(text ? text.split('\n') : []);
+
+Step 3 — Remove anything that can confuse Rollup/Vite
+# Remove other HTML entries at client/ root
+find client -maxdepth 1 -type f -name '*.html' ! -name 'index.html' -print -delete
+
+# Force-add type="module" for any inline scripts lacking it (idempotent)
+perl -0777 -pe 's/<script(?![^>]*type=)[^>]*>/<script type="module">/g' \
+  client/index.html > client/.index.tmp && mv client/.index.tmp client/index.html
+
+# Clean caches & outputs
+rm -rf node_modules client/.vite dist
+
+Step 4 — Pin compatible versions (temporary if needed)
+
+To rule out a Rollup/Vite quirk:
+
+npm i -D vite@5.4.10 rollup@4.21.2 @vitejs/plugin-react@4.3.2
+
+Step 5 — Build with full debug & show logs
+npm run build:client --silent 2>&1 | tee /tmp/vite-debug.log
+sed -n '1,200p' /tmp/vite-debug.log
 
 
-UI copy: change the page title back to “Raspberry Pi Logs” and repopulate the sidebar with the allowlist keys (nginx_access, nginx_error, pm2_pideck_out, pm2_pideck_err, pideck_cron, etc.).
+Confirm the plugin order includes the HTML plugin and that client/index.html is recognized as HTML, not JS.
 
-3) Apps → Docker panel: list containers if socket available, otherwise hide the card
+If it still throws [vite:asset-import-meta-url] Unexpected token 'import', bisect plugins:
 
-Server (optional minimal endpoint) — add server/routes/docker.ts:
+Temporarily set plugins: [] (no react) and try vite build again.
 
-import { Router } from 'express';
-import Docker from 'dockerode';
-const r = Router();
+If it passes with no plugins, re-enable @vitejs/plugin-react only.
 
-r.get('/containers', async (_req, res) => {
-  try {
-    const docker = new Docker({ socketPath: '/var/run/docker.sock' });
-    const list = await docker.listContainers({ all: false });
-    res.json(list.map(c => ({
-      id: c.Id, names: c.Names, image: c.Image, state: c.State, status: c.Status
-    })));
-  } catch (e:any) {
-    // socket not available? return empty to let UI hide
-    res.json([]);
-  }
+If it fails only when another plugin is present, identify and remove/upgrade it.
+
+Step 6 — Finalize server static handling (if not present)
+
+Ensure Express serves the SPA:
+
+// server/index.ts snippet
+import path from "path";
+import { fileURLToPath } from "url";
+import express from "express";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const app = express();
+
+const staticDir = path.resolve(__dirname, "../dist/public");
+app.use(express.static(staticDir));
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api/")) return next();
+  res.sendFile(path.join(staticDir, "index.html"));
 });
 
-export default r;
+Acceptance Criteria
+
+npm run build succeeds with:
+
+Vite outputs to dist/public/ (assets + index.html)
+
+esbuild outputs server to dist/index.js
+
+vite build --debug shows client/index.html processed as HTML (no “Unexpected token 'import'”).
+
+Starting the server serves SPA from dist/public and all routes work.
+
+Commit message
+build(vite): fix HTML parsing error; standardize client root + output; remove replit remnants; stabilize paths
+
+- root=client, output dist/public, aliases @/@shared/@assets
+- clean index.html (module script), minimal main.tsx
+- pin vite/rollup versions temporarily to avoid parse bug
+- ensure server static fallback to dist/public/index.html
 
 
-Mount it:
+Run these exactly; if the failure persists after plugin bisect, print the first 200 lines of /tmp/vite-debug.log and the plugin list Vite reports so we can lock the offending plugin/version.
 
-import dockerRoute from './routes/docker';
-app.use('/api/docker', requireAuth, dockerRoute);
-
-
-Client — where we build the Apps screen, fetch /api/docker/containers and:
-
-if array length > 0 → render the table
-
-else → hide the “Docker Containers” card (don’t show “No containers found” unless the call itself failed)
-
-This aligns with the fact that Docker is running and proxied services exist on 3000/9090/8082/6379 (per our mapping).
-
-4) Quick regression checks (paste-ready)
-# Verify auth cookie works against the same origin
-BASE="https://pideck.piapps.dev"; CK="/tmp/pideck.cookies"; rm -f "$CK"
-curl -sS -c "$CK" -H 'Content-Type: application/json' -H "Origin: ${BASE}" \
-  -X POST "${BASE}/api/auth/login" --data '{"password":"<YOUR_ADMIN_PASSWORD>"}' | jq .
-
-# Host logs should return text (no HTML)
-curl -i -sS -b "$CK" "${BASE}/api/hostlogs/nginx_error?tail=30" | sed -n '1,10p'
-curl -sS -b "$CK" "${BASE}/api/hostlogs/pideck_cron?tail=20&grep=error" | tail -n +1
-
-# Back-compat alias
-curl -sS -b "$CK" "${BASE}/api/rasplogs/pideck_cron?tail=10" | wc -l
-
-# Docker containers (if socket readable)
-curl -sS -b "$CK" "${BASE}/api/docker/containers" | jq 'length'
-
-5) Small Nginx sanity (only if you changed conf recently)
-
-Make sure your PiDeck vhost still proxies to 127.0.0.1:5006 and forwards scheme/host so session & redirects behave:
-
-proxy_set_header Host $host;
-proxy_set_header X-Forwarded-Proto $scheme;
-proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-
-
-(Port 5006 is PiDeck per our inventory.)
-
-6) Commit template
-fix(pideck): restore host logs API + text log fetching; revive “Raspberry Pi Logs”; docker panel robustness
-
-- server: add /api/hostlogs (+ alias /api/rasplogs) with allowlisted files (nginx, pm2, /home/zk/logs)
-- server: ensure API errors return JSON; avoid HTML in /api responses
-- client: logs viewer now uses response.text() (prevents “Unexpected token <” JSON parse errors)
-- client: restore sidebar label and catalog
-- apps: add /api/docker/containers via dockerode; hide card when socket absent
-- tests: curl sanity for hostlogs + docker endpoints

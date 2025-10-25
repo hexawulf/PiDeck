@@ -1,10 +1,13 @@
+import React from "react";
 import { createRoot } from "react-dom/client";
-import { Router } from "wouter"; // ✅ import Wouter Router
+import { Router } from "wouter";
 import App from "./App";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
-  <Router> {/* ✅ Wrap App in Wouter Router */}
-    <App />
-  </Router>
+  <React.StrictMode>
+    <Router>
+      <App />
+    </Router>
+  </React.StrictMode>
 );
