@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useAuthGate } from "@/hooks/use-auth-gate";
 import { Link, useLocation } from "wouter";
 import { useSystemData } from "@/hooks/use-system-data";
 import { useTheme } from "@/components/theme-provider";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { apiRequest } from "@/lib/queryClient";
 import SystemOverview from "@/components/system-overview";
 import LogViewer from "@/components/log-viewer";
 import AppMonitor from "@/components/app-monitor";
@@ -47,7 +49,8 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [rebootRequired, setRebootRequired] = useState(false);
   const { logout, isLogoutPending, isAuthenticated } = useAuth();
-  const { systemInfo, systemAlerts, refreshAll, updateSystem, isSystemUpdating } = useSystemData();
+  const { isAuthed, status } = useAuthGate();
+  const { systemInfo, systemAlerts, refreshAll, updateSystem, isSystemUpdating } = useSystemData(isAuthed);
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const displayedAlertIds = useRef<Set<string>>(new Set());
@@ -60,11 +63,13 @@ export default function Dashboard() {
   }, [location]);
 
   useEffect(() => {
-    fetch("/api/reboot-check", { credentials: "include" })
-      .then((res) => res.json())
-      .then((data) => setRebootRequired(Boolean(data.rebootRequired)))
-      .catch((err) => console.error("Failed to check reboot status", err));
-  }, []);
+    if (isAuthed) {
+      apiRequest("GET", "/api/reboot-check")
+        .then((res) => res.json())
+        .then((data) => setRebootRequired(Boolean(data.rebootRequired)))
+        .catch((err) => console.error("Failed to check reboot status", err));
+    }
+  }, [isAuthed]);
 
   useEffect(() => {
     if (systemAlerts.data) {
@@ -141,6 +146,21 @@ export default function Dashboard() {
       />
     );
   };
+
+  // Show loading state while checking authentication
+  if (status === 'checking') {
+    return (
+      <div className="min-h-screen bg-pi-dark flex items-center justify-center">
+        <div className="text-white text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  // Redirect to login if not authenticated
+  if (!isAuthed) {
+    navigate('/login');
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-pi-dark">

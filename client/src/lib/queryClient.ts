@@ -7,6 +7,7 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+// Centralized API client with credentials support
 export async function apiRequest(
   method: string,
   url: string,

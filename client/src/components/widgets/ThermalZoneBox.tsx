@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 const fetchThermalZones = async () => {
-  const res = await fetch('/api/metrics/thermal-zones')
+  const res = await fetch('/api/metrics/thermal-zones', { credentials: 'include' })
   if (!res.ok) throw new Error('Failed to fetch')
   return res.json()
 }

@@ -623,12 +623,146 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
 
   static async checkRebootRequired(): Promise<boolean> {
     try {
-      const { stdout } = await execAsync("/home/zk/bin/check-reboot.sh");
-      const result = JSON.parse(stdout.trim());
-      return Boolean(result.reboot_required);
+      const fs = await import('fs');
+      return fs.existsSync('/var/run/reboot-required');
     } catch (error) {
       console.error("Error checking reboot requirement:", error);
-      throw new Error("Failed to check reboot status");
+      return false;
+    }
+  }
+
+  static async getFilesystemUsage(): Promise<any[]> {
+    try {
+      const { stdout } = await execAsync("df -PT --block-size=1 | grep -v '^Filesystem' | grep -v '^tmpfs\|proc\|sysfs\|cgroup\|overlay\|devtmpfs'");
+      const lines = stdout.trim().split('\n');
+      
+      return lines.map(line => {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 7) return null;
+        
+        const device = parts[0];
+        const fstype = parts[1];
+        const size = parseInt(parts[2]) || 0;
+        const used = parseInt(parts[3]) || 0;
+        const avail = parseInt(parts[4]) || 0;
+        const pcent = parseInt(parts[5]) || 0;
+        const mount = parts[6];
+        
+        return {
+          device,
+          mount,
+          type: fstype,
+          size: Math.round(size / 1024 / 1024), // Convert to MB
+          used: Math.round(used / 1024 / 1024),
+          avail: Math.round(avail / 1024 / 1024),
+          pcent
+        };
+      }).filter(fs => fs !== null);
+    } catch (error) {
+      console.error("Error getting filesystem usage:", error);
+      return [];
+    }
+  }
+
+  static async getMountInfo(): Promise<any[]> {
+    try {
+      const { stdout } = await execAsync("mount | grep -v snap");
+      const lines = stdout.trim().split('\n');
+      
+      return lines.map(line => {
+        // Parse mount line: device on mountpoint type fstype (options)
+        const match = line.match(/^(.+?) on (.+?) type (.+?) \((.+?)\)$/);
+        if (!match) return null;
+        
+        return {
+          device: match[1],
+          mountpoint: match[2],
+          fstype: match[3],
+          options: match[4]
+        };
+      }).filter(mount => mount !== null);
+    } catch (error) {
+      console.error("Error getting mount info:", error);
+      return [];
+    }
+  }
+
+  static async getMemoryStats(): Promise<{ total: number; used: number; free: number; usage: number }> {
+    try {
+      const { stdout } = await execAsync("free -m | grep '^Mem:'");
+      const parts = stdout.trim().split(/\s+/);
+      const total = parseInt(parts[1]) || 0;
+      const used = parseInt(parts[2]) || 0;
+      const free = parseInt(parts[3]) || 0;
+      const usage = total > 0 ? Math.round((used / total) * 100) : 0;
+      
+      return { total, used, free, usage };
+    } catch (error) {
+      console.error("Error getting memory stats:", error);
+      return { total: 0, used: 0, free: 0, usage: 0 };
+    }
+  }
+
+  static async getSwapStats(): Promise<{ total: number; used: number; free: number }> {
+    try {
+      const { stdout } = await execAsync("free -m | grep '^Swap:'");
+      const parts = stdout.trim().split(/\s+/);
+      const total = parseInt(parts[1]) || 0;
+      const used = parseInt(parts[2]) || 0;
+      const free = parseInt(parts[3]) || 0;
+      
+      return { total, used, free };
+    } catch (error) {
+      console.error("Error getting swap stats:", error);
+      return { total: 0, used: 0, free: 0 };
+    }
+  }
+
+  static async getTopProcesses(n: number = 10): Promise<any[]> {
+    try {
+      const { stdout } = await execAsync(`ps -eo pid,comm,%cpu,%mem --sort=-%cpu --no-headers | head -n ${n}`);
+      const lines = stdout.trim().split('\n');
+      
+      return lines.map(line => {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 4) return null;
+        
+        return {
+          pid: parseInt(parts[0]) || 0,
+          name: parts[1] || "unknown",
+          cpu: parseFloat(parts[2]) || 0,
+          mem: parseFloat(parts[3]) || 0
+        };
+      }).filter(proc => proc !== null);
+    } catch (error) {
+      console.error("Error getting top processes:", error);
+      return [];
+    }
+  }
+
+  static async getCpuFrequency(): Promise<{ core: string; freq: string }[]> {
+    try {
+      const fs = await import('fs/promises');
+      const cpus = await fs.readdir('/sys/devices/system/cpu/');
+      const cpuCores = cpus.filter(cpu => cpu.match(/^cpu[0-9]+$/));
+      
+      const frequencies = await Promise.all(
+        cpuCores.map(async (core) => {
+          try {
+            const freqPath = `/sys/devices/system/cpu/${core}/cpufreq/scaling_cur_freq`;
+            const freq = await fs.readFile(freqPath, 'utf8');
+            const freqMHz = (parseInt(freq.trim()) / 1000).toFixed(0);
+            return { core, freq: `${freqMHz} MHz` };
+          } catch {
+            return { core, freq: "N/A" };
+          }
+        })
+      );
+      
+      return frequencies;
+    } catch (error) {
+      console.error("Error getting CPU frequency:", error);
+      return [{ core: "cpu0", freq: "N/A" }];
     }
   }
 

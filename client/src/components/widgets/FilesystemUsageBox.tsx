@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 
 const fetchFsUsage = async () => {
-  const res = await fetch('/api/metrics/filesystems')
-  if (!res.ok) throw new Error('Failed to fetch')
-  return res.json()
+  const res = await fetch('/api/metrics/filesystems', { credentials: 'include' })
+  if (!res.ok) throw new Error('Failed to fetch filesystem data')
+  const data = await res.json()
+  return Array.isArray(data) ? data : []
 }
 
 export function FilesystemUsageBox() {
@@ -13,13 +14,20 @@ export function FilesystemUsageBox() {
     refetchInterval: 10000,
   })
 
+  const filesystems = data || []
+
   return (
     <div className="rounded-2xl border p-4 shadow bg-[#0f172a] text-white w-full max-w-2xl">
       <h3 className="text-lg font-semibold mb-2">Filesystem Usage</h3>
       {isLoading ? (
-        <p>Loading...</p>
-      ) : error || !data ? (
-        <p className="text-red-400">Unavailable</p>
+        <p className="text-gray-400">Loading filesystem data...</p>
+      ) : error ? (
+        <div className="text-sm">
+          <p className="text-yellow-400 mb-2">Filesystem data temporarily unavailable</p>
+          <p className="text-gray-400 text-xs">{error.message}</p>
+        </div>
+      ) : filesystems.length === 0 ? (
+        <p className="text-gray-400">No filesystem data available</p>
       ) : (
         <table className="text-sm w-full">
           <thead>
@@ -32,13 +40,13 @@ export function FilesystemUsageBox() {
             </tr>
           </thead>
           <tbody>
-            {data.map((fs: any, i: number) => (
+            {filesystems.map((fs: any, i: number) => (
               <tr key={i}>
-                <td>{fs.mount}</td>
-                <td>{fs.used}</td>
-                <td>{fs.avail}</td>
-                <td>{fs.size}</td>
-                <td>{fs.pcent}</td>
+                <td className="truncate max-w-[120px]">{fs.mount}</td>
+                <td>{fs.used}MB</td>
+                <td>{fs.avail}MB</td>
+                <td>{fs.size}MB</td>
+                <td>{fs.pcent}%</td>
               </tr>
             ))}
           </tbody>

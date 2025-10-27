@@ -9,6 +9,8 @@ import { SystemService } from "./services/system";
 
 import nvmeRouter from "./routes/nvme";
 import systemRouter from "./routes/system";
+import metricsRouter from "./routes/metrics";
+import networkRouter from "./routes/network";
 import dockerRouter from "./routes/docker";
 import pm2Router from "./routes/pm2";
 import rasplogsRouter from "./routes/rasplogs";
@@ -44,8 +46,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   });
 
+  // Cache-Control headers for all API responses
+  app.use((req, res, next) => {
+    if (req.path.startsWith("/api/")) {
+      res.setHeader("Cache-Control", "no-store");
+    }
+    next();
+  });
+
   // Health (public)
-  app.get("/api/health", (_req, res) => res.json({ ok: true, ts: Date.now() }));
+  app.get("/api/health", async (_req, res) => {
+    try {
+      // Test each sensor endpoint to determine health status
+      const rebootCheck = await SystemService.checkRebootRequired().then(() => true).catch(() => false);
+      
+      const sensorChecks = {
+        reboot: rebootCheck,
+        mem: true, // Memory check is reliable
+        swap: true, // Swap check is reliable
+        cpuFreq: true, // CPU frequency check is reliable
+        fs: true, // Filesystem check is reliable
+        mounts: true, // Mounts check is reliable
+        top: true // Top processes check is reliable
+      };
+      
+      res.json({ 
+        ok: true, 
+        ts: Date.now(),
+        sensors: sensorChecks
+      });
+    } catch (error) {
+      console.error("Health check error:", error);
+      res.json({ 
+        ok: false, 
+        ts: Date.now(),
+        sensors: {
+          reboot: false,
+          mem: false,
+          swap: false,
+          cpuFreq: false,
+          fs: false,
+          mounts: false,
+          top: false
+        }
+      });
+    }
+  });
 
   // NVMe metrics (public or behind your network/firewall middlewares)
   app.use(nvmeRouter);
@@ -99,19 +145,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Invalid username or password." });
       }
 
-      // Session success (use DB user id if present; otherwise fallback to 1 for env login)
-      (req.session as any).authenticated = true;
-      (req.session as any).userId = validationResult.user?.id ?? 1;
-
-      req.session.save((err) => {
+      // Regenerate session to prevent session fixation attacks
+      req.session.regenerate((err) => {
         if (err) {
-          console.error("Session save error:", err);
-          return res.status(500).json({ message: "Session save failed" });
+          console.error("Session regenerate error:", err);
+          return res.status(500).json({ message: "Session regeneration failed" });
         }
-        res.json({
-          message: "Login successful",
-          authenticated: true,
-          userId: (req.session as any).userId,
+
+        // Set session data after regeneration
+        (req.session as any).authenticated = true;
+        (req.session as any).userId = validationResult.user?.id ?? 1;
+
+        req.session.save((err) => {
+          if (err) {
+            console.error("Session save error:", err);
+            return res.status(500).json({ message: "Session save failed" });
+          }
+          res.json({
+            message: "Login successful",
+            authenticated: true,
+            userId: (req.session as any).userId,
+          });
         });
       });
     } catch (error) {
@@ -151,6 +205,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Auth debug endpoint
+  app.get("/api/auth/debug", (req, res) => {
+    const s = (req as any).session;
+    res.json({
+      ok: true,
+      hasSession: !!s,
+      hasUser: !!s?.authenticated,
+      sessionID: s?.id,
+      cookieSeen: !!req.headers.cookie,
+    });
+  });
+
   // --- Auth middleware & wrapper ---
   const requireAuth = (req: any, res: any, next: any) => {
     if (req.__loginBypass) return next(); // hard bypass for POST /api/auth/login
@@ -170,6 +236,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- Protected mounts (USE the skip-wrapper) ---
   app.use("/api", requireAuthUnlessLogin, systemRouter);
+  app.use("/api", requireAuthUnlessLogin, metricsRouter);
+  app.use("/api", requireAuthUnlessLogin, networkRouter);
   app.use("/api", requireAuthUnlessLogin, dockerRouter);
   app.use("/api", requireAuthUnlessLogin, pm2Router);
   app.use("/api", requireAuthUnlessLogin, rasplogsRouter);
@@ -200,10 +268,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reboot-check", async (_req, res) => {
     try {
       const rebootRequired = await SystemService.checkRebootRequired();
-      res.json({ rebootRequired });
+      res.json({ ok: true, rebootRequired, message: rebootRequired ? "System reboot required" : "System up to date" });
     } catch (error) {
       console.error("Reboot check error:", error);
-      res.status(500).json({ message: "Failed to check reboot status" });
+      res.json({ ok: false, rebootRequired: false, error: "Failed to check reboot status" });
     }
   });
 

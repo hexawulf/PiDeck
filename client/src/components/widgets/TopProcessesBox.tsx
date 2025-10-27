@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 
 const fetchTopProcesses = async () => {
-  const res = await fetch('/api/metrics/top-processes')
-  if (!res.ok) throw new Error('Failed to fetch')
-  return res.json()
+  const res = await fetch('/api/metrics/top-processes', { credentials: 'include' })
+  if (!res.ok) throw new Error('Failed to fetch process data')
+  const data = await res.json()
+  return Array.isArray(data) ? data : []
 }
 
 export function TopProcessesBox() {
@@ -13,13 +14,20 @@ export function TopProcessesBox() {
     refetchInterval: 10000,
   })
 
+  const processes = data || []
+
   return (
     <div className="rounded-2xl border p-4 shadow bg-[#0f172a] text-white w-full overflow-x-auto">
       <h3 className="text-lg font-semibold mb-2">Top Processes</h3>
       {isLoading ? (
-        <p>Loading...</p>
-      ) : error || !data ? (
-        <p className="text-red-400">Unavailable</p>
+        <p className="text-gray-400">Loading process data...</p>
+      ) : error ? (
+        <div className="text-sm">
+          <p className="text-yellow-400 mb-2">Process data temporarily unavailable</p>
+          <p className="text-gray-400 text-xs">{error.message}</p>
+        </div>
+      ) : processes.length === 0 ? (
+        <p className="text-gray-400">No process data available</p>
       ) : (
         <table className="text-sm w-full">
           <thead className="text-gray-400">
@@ -31,10 +39,10 @@ export function TopProcessesBox() {
             </tr>
           </thead>
           <tbody>
-            {data.map((p: any) => (
+            {processes.map((p: any) => (
               <tr key={p.pid}>
                 <td>{p.pid}</td>
-                <td>{p.name}</td>
+                <td className="truncate max-w-[100px]">{p.name}</td>
                 <td className="text-right">{p.cpu !== null && p.cpu !== undefined ? p.cpu.toFixed(1) : 'N/A'}</td>
                 <td className="text-right">{p.mem !== null && p.mem !== undefined ? p.mem.toFixed(1) : 'N/A'}</td>
               </tr>

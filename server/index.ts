@@ -3,6 +3,7 @@ import "./env";
 import path from "path";
 import express, { type Request, type Response, type NextFunction } from "express";
 import session from "express-session";
+import cors from "cors";
 import { fileURLToPath } from "url";
 
 // Your existing helpers (unchanged)
@@ -44,19 +45,28 @@ app.use(express.urlencoded({ extended: false }));
 // ---------- sessions (before anything that uses req.session) ----------
 app.use(
   session({
-    name: "connect.sid",
+    name: "pideck.sid",
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    rolling: true,
     proxy: true,
     cookie: {
       httpOnly: true,
       secure: true, // ok because trust proxy = 1 and we're behind TLS at CF+Nginx
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      sameSite: "none",
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
+      path: "/",
+      domain: ".piapps.dev"
     },
   }),
 );
+
+// ---------- CORS ----------
+app.use(cors({
+  origin: "https://pideck.piapps.dev",
+  credentials: true,
+}));
 
 // ---------- STATIC & SPA: PUBLIC (no auth) ----------
 const staticDir = path.resolve(__dirname, "../dist/public");

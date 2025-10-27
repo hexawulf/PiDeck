@@ -181,3 +181,25 @@
 .status-restart {
   @apply bg-yellow-500/20 text-yellow-400;
 }
+
+/* ---- PiDeck: Dark-mode password visibility fix ---- */
+.dark input[type="password"] {
+  color: #0f172a !important;           /* slate-900 (very dark) */
+  caret-color: #0f172a !important;
+}
+
+/* Show a readable placeholder while empty */
+.dark input[type="password"]::placeholder {
+  color: #64748b !important;           /* slate-500 */
+  opacity: 1;
+}
+
+/* Chrome/Edge autofill keeps text white unless overridden */
+.dark input[type="password"]:-webkit-autofill,
+.dark input[type="password"]:-webkit-autofill:hover,
+.dark input[type="password"]:-webkit-autofill:focus,
+.dark input[type="password"]:-webkit-autofill:active {
+  -webkit-text-fill-color: #0f172a !important;
+  caret-color: #0f172a !important;
+  transition: background-color 9999s ease-out 0s; /* avoid yellow flash */
+}

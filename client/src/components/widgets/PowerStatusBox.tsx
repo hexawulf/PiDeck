@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 const fetchPowerStatus = async () => {
-  const res = await fetch('/api/metrics/power-status')
+  const res = await fetch('/api/metrics/power-status', { credentials: 'include' })
   if (!res.ok) throw new Error('Failed to fetch')
   return res.json()
 }

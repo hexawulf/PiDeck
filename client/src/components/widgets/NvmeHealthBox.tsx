@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 const fetchNvmeHealth = async () => {
-  const res = await fetch('/api/metrics/nvme')
+  const res = await fetch('/api/metrics/nvme', { credentials: 'include' })
   if (!res.ok) throw new Error('Failed to fetch')
   return res.json()
 }

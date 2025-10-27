@@ -2,36 +2,42 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { SystemInfo, LogFile, DockerContainer, DockerContainersResponse, PM2Process, CronJob, HistoricalMetric, ActiveAlert, HostLog, RpiLog } from "@shared/schema";
 
-export function useSystemData() {
+export function useSystemData(enabled: boolean = true) {
   const queryClient = useQueryClient();
 
   const systemInfo = useQuery<SystemInfo>({
     queryKey: ["/api/system/info"],
-    refetchInterval: 5000, // Refresh every 5 seconds. This also triggers alert checks on backend.
+    refetchInterval: enabled ? 5000 : false, // Refresh every 5 seconds. This also triggers alert checks on backend.
+    enabled,
   });
 
   const historicalData = useQuery<HistoricalMetric[]>({
     queryKey: ["/api/system/history"],
-    refetchInterval: 60000, // Refresh every 60 seconds
+    refetchInterval: enabled ? 60000 : false, // Refresh every 60 seconds
+    enabled,
   });
 
   const systemAlerts = useQuery<ActiveAlert[]>({
     queryKey: ["/api/system/alerts"],
-    refetchInterval: 7000, // Poll slightly offset from systemInfo to catch updates
+    refetchInterval: enabled ? 7000 : false, // Poll slightly offset from systemInfo to catch updates
+    enabled,
   });
 
   const dockerContainers = useQuery<DockerContainersResponse>({
     queryKey: ["/api/docker/containers"],
-    refetchInterval: 10000, // Refresh every 10 seconds
+    refetchInterval: enabled ? 10000 : false, // Refresh every 10 seconds
+    enabled,
   });
 
   const pm2Processes = useQuery<PM2Process[]>({
     queryKey: ["/api/pm2/processes"],
-    refetchInterval: 10000, // Refresh every 10 seconds
+    refetchInterval: enabled ? 10000 : false, // Refresh every 10 seconds
+    enabled,
   });
 
   const cronJobs = useQuery<CronJob[]>({
     queryKey: ["/api/cron/jobs"],
+    enabled,
   });
 
   // Mutations for Docker containers
