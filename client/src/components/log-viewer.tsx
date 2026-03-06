@@ -14,7 +14,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Clock,
   Globe,
   Terminal,
   FolderOpen,
@@ -33,11 +32,11 @@ interface LogEntry {
 
 type DateFilter = "all" | "24h" | "7d" | "30d";
 
-const CATEGORY_META: Record<string, { label: string; Icon: React.ElementType }> = {
-  nginx: { label: "Nginx", Icon: Globe },
-  pm2: { label: "PM2", Icon: Terminal },
-  project: { label: "Project", Icon: FolderOpen },
-  home: { label: "Home", Icon: HardDrive },
+const CATEGORY_META: Record<string, { label: string; Icon: React.ElementType; accent: string }> = {
+  nginx: { label: "Nginx", Icon: Globe, accent: "border-cyan-500" },
+  pm2: { label: "PM2", Icon: Terminal, accent: "border-violet-500" },
+  project: { label: "Project", Icon: FolderOpen, accent: "border-amber-500" },
+  home: { label: "Home", Icon: HardDrive, accent: "border-emerald-500" },
 };
 const CATEGORY_ORDER = ["nginx", "pm2", "project", "home"];
 
@@ -225,14 +224,6 @@ export default function LogViewer() {
 
   // --- Memos ---
 
-  const recentLogs = useMemo(
-    () =>
-      [...(logs || [])]
-        .sort((a, b) => new Date(b.mtime).getTime() - new Date(a.mtime).getTime())
-        .slice(0, 5),
-    [logs]
-  );
-
   const groupedLogs = useMemo(() => {
     let data = logs || [];
 
@@ -255,16 +246,17 @@ export default function LogViewer() {
       data = data.filter((l) => new Date(l.mtime).getTime() >= cutoff);
     }
 
-    const sorted = [...data].sort((a, b) =>
-      sortBy === "name"
-        ? a.name.localeCompare(b.name)
-        : new Date(b.mtime).getTime() - new Date(a.mtime).getTime()
-    );
-
     const groups: Record<string, LogEntry[]> = {};
-    for (const log of sorted) {
+    for (const log of data) {
       const cat = log.source || "home";
       (groups[cat] ??= []).push(log);
+    }
+    for (const cat of Object.keys(groups)) {
+      groups[cat].sort((a, b) =>
+        sortBy === "name"
+          ? a.name.localeCompare(b.name)
+          : new Date(b.mtime).getTime() - new Date(a.mtime).getTime()
+      );
     }
     return groups;
   }, [logs, searchQuery, dateFilter, sortBy]);
@@ -380,8 +372,6 @@ export default function LogViewer() {
     );
   }
 
-  const showRecent = recentLogs.length > 0 && !searchQuery && dateFilter === "all";
-
   return (
     <div className="flex flex-col lg:flex-row gap-4">
       {/* ---- Sidebar ---- */}
@@ -390,7 +380,7 @@ export default function LogViewer() {
           sidebarCollapsed ? "lg:w-12 w-full" : "lg:w-72 w-full"
         }`}
       >
-        <Card className="bg-pi-card border-pi-border h-auto lg:h-[calc(100vh-12rem)]">
+        <Card className="bg-pi-card border-pi-border h-auto lg:h-[calc(100vh-12rem)] flex flex-col">
           {sidebarCollapsed ? (
             /* Collapsed state */
             <div className="hidden lg:flex flex-col items-center py-3 gap-3">
@@ -424,14 +414,14 @@ export default function LogViewer() {
           ) : (
             /* Expanded state */
             <>
-              <CardHeader className="pb-2 pt-3 px-3">
+              <CardHeader className="pb-2 pt-3 px-3 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <HardDrive className="h-4 w-4 text-pi-accent" />
                     <CardTitle className="text-sm font-semibold">
                       Logs
                       <span className="ml-1.5 text-[10px] font-normal text-pi-text-muted">
-                        ({logs.length})
+                        ({totalFiltered}/{logs.length})
                       </span>
                     </CardTitle>
                   </div>
@@ -445,8 +435,9 @@ export default function LogViewer() {
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent className="px-3 pb-3 space-y-3 overflow-y-auto max-h-[50vh] lg:max-h-[calc(100vh-16rem)] custom-scrollbar">
-                {/* Search */}
+
+              {/* Pinned filters */}
+              <div className="px-3 pb-2 space-y-2 flex-shrink-0 border-b border-pi-border">
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-pi-text-muted pointer-events-none" />
                   <Input
@@ -456,8 +447,6 @@ export default function LogViewer() {
                     className="h-8 text-xs pl-7 bg-pi-card-hover border-pi-border"
                   />
                 </div>
-
-                {/* Sort + Date filter */}
                 <div className="flex gap-2">
                   <select
                     value={sortBy}
@@ -478,32 +467,10 @@ export default function LogViewer() {
                     <option value="30d">Last 30 days</option>
                   </select>
                 </div>
+              </div>
 
-                {/* Recent logs */}
-                {showRecent && (
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <Clock className="h-3.5 w-3.5 text-pi-accent" />
-                      <span className="text-[10px] font-semibold text-pi-text-muted uppercase tracking-wider">
-                        Recent
-                      </span>
-                    </div>
-                    <div className="space-y-0.5">
-                      {recentLogs.map((log) => (
-                        <LogListItem
-                          key={`recent-${log.id}`}
-                          log={log}
-                          selected={selectedLog?.id === log.id}
-                          onClick={() => handleLogSelect(log)}
-                          compact
-                        />
-                      ))}
-                    </div>
-                    <div className="border-t border-pi-border mt-3 mb-1" />
-                  </div>
-                )}
-
-                {/* Grouped logs */}
+              {/* Scrollable grouped log list */}
+              <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-1 custom-scrollbar">
                 {totalFiltered === 0 ? (
                   <p className="text-xs text-pi-text-muted py-6 text-center">
                     No logs match filters
@@ -512,20 +479,20 @@ export default function LogViewer() {
                   CATEGORY_ORDER.map((catKey) => {
                     const catLogs = groupedLogs[catKey];
                     if (!catLogs?.length) return null;
-                    const { label, Icon } = CATEGORY_META[catKey];
+                    const { label, Icon, accent } = CATEGORY_META[catKey];
                     const expanded = expandedCategories.has(catKey);
                     return (
-                      <div key={catKey}>
+                      <div key={catKey} className={`border-l-2 ${accent} rounded-r-md`}>
                         <button
                           onClick={() => toggleCategory(catKey)}
-                          className="flex items-center justify-between w-full py-1.5 group"
+                          className="flex items-center justify-between w-full px-2.5 py-2 group rounded-r-md hover:bg-pi-card-hover/50 transition-colors"
                         >
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-2">
                             <Icon className="h-3.5 w-3.5 text-pi-text-muted group-hover:text-pi-text transition-colors" />
-                            <span className="text-[10px] font-semibold text-pi-text-muted uppercase tracking-wider group-hover:text-pi-text transition-colors">
+                            <span className="text-[11px] font-semibold text-pi-text-muted uppercase tracking-wider group-hover:text-pi-text transition-colors">
                               {label}
                             </span>
-                            <span className="text-[10px] bg-pi-card-hover text-pi-text-muted rounded-full px-1.5 leading-relaxed">
+                            <span className="text-[10px] bg-pi-card-hover text-pi-text-muted rounded-full px-1.5 py-0.5 leading-none tabular-nums">
                               {catLogs.length}
                             </span>
                           </div>
@@ -536,7 +503,7 @@ export default function LogViewer() {
                           />
                         </button>
                         {expanded && (
-                          <div className="space-y-0.5 pb-1">
+                          <div className="space-y-0.5 pb-1.5 pl-1">
                             {catLogs.map((log) => (
                               <LogListItem
                                 key={log.id}
@@ -551,7 +518,7 @@ export default function LogViewer() {
                     );
                   })
                 )}
-              </CardContent>
+              </div>
             </>
           )}
 
