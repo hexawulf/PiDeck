@@ -10,6 +10,7 @@ const r = Router();
 interface LogItem {
   id: string;
   name: string;
+  label: string;
   path: string;
   size: number;
   mtime: string;
@@ -17,15 +18,25 @@ interface LogItem {
   large?: boolean;
 }
 
+function labelFromFilename(filename: string): string {
+  return filename
+    .replace(/\.log(\.\d+)?(\.gz)?$/, '')
+    .replace(/\.gz$/, '')
+    .replace(/\.\d{4}-\d{2}-\d{2}(\.0)?$/, '')
+    .replace(/[-_.]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .trim();
+}
+
 // Allowlist (absolute paths only)
-const ALLOWLIST_LOGS: Record<string, { name: string; path: string; source: 'nginx' | 'pm2' | 'project' }> = {
-  'nginx_access': { name: 'Nginx Access Log', path: '/var/log/nginx/access.log', source: 'nginx' },
-  'nginx_error': { name: 'Nginx Error Log', path: '/var/log/nginx/error.log', source: 'nginx' },
-  'pm2_pideck_out': { name: 'PM2 PiDeck Output', path: path.join(process.env.HOME || '/home/zk', '.pm2/logs/pideck-out.log'), source: 'pm2' },
-  'pm2_pideck_err': { name: 'PM2 PiDeck Error', path: path.join(process.env.HOME || '/home/zk', '.pm2/logs/pideck-error.log'), source: 'pm2' },
-  'pideck_cron': { name: 'PiDeck Cron', path: '/home/zk/logs/pideck-cron.log', source: 'project' },
-  'codepatchwork': { name: 'CodePatchwork', path: '/home/zk/logs/codepatchwork.log', source: 'project' },
-  'synology': { name: 'Synology', path: '/home/zk/logs/synology.log', source: 'project' }
+const ALLOWLIST_LOGS: Record<string, { name: string; label: string; path: string; source: 'nginx' | 'pm2' | 'project' }> = {
+  'nginx_access': { name: 'access.log', label: 'Nginx Access Log', path: '/var/log/nginx/access.log', source: 'nginx' },
+  'nginx_error': { name: 'error.log', label: 'Nginx Error Log', path: '/var/log/nginx/error.log', source: 'nginx' },
+  'pm2_pideck_out': { name: 'pideck-out.log', label: 'PM2 PiDeck Output', path: path.join(process.env.HOME || '/home/zk', '.pm2/logs/pideck-out.log'), source: 'pm2' },
+  'pm2_pideck_err': { name: 'pideck-error.log', label: 'PM2 PiDeck Error', path: path.join(process.env.HOME || '/home/zk', '.pm2/logs/pideck-error.log'), source: 'pm2' },
+  'pideck_cron': { name: 'pideck-cron.log', label: 'PiDeck Cron', path: '/home/zk/logs/pideck-cron.log', source: 'project' },
+  'codepatchwork': { name: 'codepatchwork.log', label: 'CodePatchwork', path: '/home/zk/logs/codepatchwork.log', source: 'project' },
+  'synology': { name: 'synology.log', label: 'Synology', path: '/home/zk/logs/synology.log', source: 'project' }
 };
 
 // Get rotated log files for nginx
@@ -48,7 +59,8 @@ async function getNginxRotatedLogs(): Promise<LogItem[]> {
           const id = `nginx_${file.replace(/[^a-zA-Z0-9]/g, '_')}`;
           logs.push({
             id,
-            name: `Nginx ${file}`,
+            name: file,
+            label: `Nginx ${labelFromFilename(file)}`,
             path: filePath,
             size: stat.size,
             mtime: stat.mtime.toISOString(),
@@ -76,28 +88,25 @@ async function scanHomeLogs(): Promise<LogItem[]> {
     const files = await fs.promises.readdir(logDir);
     
     for (const file of files) {
-      // Skip hidden files
       if (file.startsWith('.')) continue;
+      if (file.endsWith('.lock') || file.endsWith('.bak')) continue;
       
       const filePath = path.join(logDir, file);
       
       try {
         const stat = await fs.promises.stat(filePath);
-        
-        // Skip directories
         if (stat.isDirectory()) continue;
         
-        // Include: *.log, *.log.*, *.gz, files without ext but size > 0
         const shouldInclude = 
           file.endsWith('.log') ||
-          /^\.log\./.test(file) ||
-          file.endsWith('.gz') ||
-          (!file.includes('.') && stat.size > 0);
+          /\.log\.\d/.test(file) ||
+          file.endsWith('.gz');
         
         if (shouldInclude) {
           logs.push({
             id: `home_${file.replace(/[^a-zA-Z0-9]/g, '_')}`,
             name: file,
+            label: labelFromFilename(file),
             path: filePath,
             size: stat.size,
             mtime: stat.mtime.toISOString(),
@@ -120,13 +129,14 @@ async function scanHomeLogs(): Promise<LogItem[]> {
 async function getAllLogs(): Promise<LogItem[]> {
   const logs: LogItem[] = [];
   
-  // Add allowlisted logs
+  // Add allowlisted logs (these take priority in de-duplication)
   for (const [id, log] of Object.entries(ALLOWLIST_LOGS)) {
     try {
       const stat = await fs.promises.stat(log.path);
       logs.push({
         id,
         name: log.name,
+        label: log.label,
         path: log.path,
         size: stat.size,
         mtime: stat.mtime.toISOString(),
@@ -146,8 +156,12 @@ async function getAllLogs(): Promise<LogItem[]> {
   const homeLogs = await scanHomeLogs();
   logs.push(...homeLogs);
   
-  // De-duplicate by path and sort by mtime desc
-  const uniqueLogs = Array.from(new Map(logs.map(log => [log.path, log])).values());
+  // De-duplicate by path (first entry wins → allowlist takes priority)
+  const seen = new Map<string, LogItem>();
+  for (const log of logs) {
+    if (!seen.has(log.path)) seen.set(log.path, log);
+  }
+  const uniqueLogs = Array.from(seen.values());
   return uniqueLogs.sort((a, b) => new Date(b.mtime).getTime() - new Date(a.mtime).getTime());
 }
 
