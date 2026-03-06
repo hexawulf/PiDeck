@@ -373,14 +373,14 @@ export default function LogViewer() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4">
+    <div className="flex flex-col lg:flex-row gap-4 lg:h-[calc(100vh-12rem)]">
       {/* ---- Sidebar ---- */}
       <div
-        className={`flex-shrink-0 transition-all duration-200 ${
+        className={`flex-shrink-0 transition-all duration-200 max-h-[50vh] lg:max-h-none ${
           sidebarCollapsed ? "lg:w-12 w-full" : "lg:w-72 w-full"
         }`}
       >
-        <Card className="bg-pi-card border-pi-border h-auto lg:h-[calc(100vh-12rem)] flex flex-col">
+        <Card className="bg-pi-card border-pi-border h-full overflow-hidden flex flex-col">
           {sidebarCollapsed ? (
             /* Collapsed state */
             <div className="hidden lg:flex flex-col items-center py-3 gap-3">
@@ -451,7 +451,7 @@ export default function LogViewer() {
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as "name" | "modified")}
-                    className="flex-1 h-7 px-2 text-xs rounded-md bg-pi-card-hover border border-pi-border text-pi-text"
+                    className="flex-1 h-7 px-2 text-xs rounded-md bg-pi-card-hover border border-pi-border text-pi-text [color-scheme:dark]"
                   >
                     <option value="modified">Newest first</option>
                     <option value="name">A → Z</option>
@@ -459,7 +459,7 @@ export default function LogViewer() {
                   <select
                     value={dateFilter}
                     onChange={(e) => setDateFilter(e.target.value as DateFilter)}
-                    className="flex-1 h-7 px-2 text-xs rounded-md bg-pi-card-hover border border-pi-border text-pi-text"
+                    className="flex-1 h-7 px-2 text-xs rounded-md bg-pi-card-hover border border-pi-border text-pi-text [color-scheme:dark]"
                   >
                     <option value="all">All time</option>
                     <option value="24h">Last 24 h</option>
@@ -543,8 +543,8 @@ export default function LogViewer() {
 
       {/* ---- Log content pane ---- */}
       <div className="flex-1 min-w-0">
-        <Card className="bg-pi-card border-pi-border">
-          <CardHeader>
+        <Card className="bg-pi-card border-pi-border h-full flex flex-col overflow-hidden">
+          <CardHeader className="flex-shrink-0">
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg truncate">
@@ -605,8 +605,8 @@ export default function LogViewer() {
               )}
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="bg-black rounded-lg p-4 max-h-[600px] overflow-auto font-mono text-sm custom-scrollbar">
+          <CardContent className="flex-1 min-h-0 flex flex-col">
+            <div className="bg-black rounded-lg p-4 max-h-[600px] lg:max-h-none flex-1 min-h-0 overflow-auto font-mono text-sm custom-scrollbar">
               {error && (
                 <div className="text-red-500 mb-4 flex items-center gap-2">
                   <AlertCircle className="h-4 w-4" />
