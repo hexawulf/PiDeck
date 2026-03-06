@@ -184,26 +184,35 @@ router.get('/metrics/listening-ports', async (req, res) => {
 
 router.get('/metrics/firewall-status', async (_req, res) => {
   try {
-    // Try to detect firewall tool
     const { stdout: ufwCheck } = await run('command -v ufw')
     
     if (ufwCheck.trim()) {
-      // UFW is available
-      const { stdout } = await run('ufw status verbose')
+      let stdout = ''
+      try {
+        const result = await execAsync('sudo ufw status verbose', { timeout: 15000 })
+        stdout = result.stdout || ''
+      } catch (e: any) {
+        stdout = e.stdout || ''
+      }
       const enabled = stdout.includes('Status: active')
       
-      const rules: any[] = []
+      const rules: { to: string; action: string; from: string; comment?: string }[] = []
       const lines = stdout.split('\n')
-      
-      for (const line of lines) {
-        // Match rules like: "22/tcp ALLOW IN Anywhere"
-        const match = line.match(/^(\d+)(?:\/(tcp|udp|any))?\s+(ALLOW|DENY)\s+(IN|OUT)\s+(.+)$/i)
-        if (match) {
-          rules.push({
-            action: match[3].toUpperCase(),
-            proto: match[2] || 'any',
-            port: match[1]
-          })
+      const headerIdx = lines.findIndex(l => /^To\s+Action\s+From/.test(l))
+      if (headerIdx !== -1) {
+        for (const line of lines.slice(headerIdx + 1)) {
+          const trimmed = line.trim()
+          if (!trimmed || trimmed.startsWith('--')) continue
+          const cols = trimmed.split(/\s{2,}/)
+          if (cols.length >= 3) {
+            const to = cols[0]
+            const action = cols[1]
+            const rest = cols.slice(2).join(' ')
+            const hashIdx = rest.indexOf('#')
+            const from = hashIdx !== -1 ? rest.substring(0, hashIdx).trim() : rest.trim()
+            const comment = hashIdx !== -1 ? rest.substring(hashIdx + 1).trim() : undefined
+            rules.push({ to, action, from, ...(comment ? { comment } : {}) })
+          }
         }
       }
       

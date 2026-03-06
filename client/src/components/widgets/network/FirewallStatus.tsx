@@ -15,7 +15,15 @@ export function FirewallStatus() {
   })
 
   const rules = data?.rules || []
-  const displayRules = rules.slice(0, 8) // Show up to 8 rules
+  const MAX_DISPLAY = 20
+  const displayRules = rules.slice(0, MAX_DISPLAY)
+
+  const actionColor = (action: string) => {
+    const a = action.toUpperCase()
+    if (a.startsWith('ALLOW')) return 'text-green-400'
+    if (a.startsWith('LIMIT')) return 'text-yellow-400'
+    return 'text-red-400'
+  }
 
   return (
     <div className="rounded-2xl border p-4 shadow bg-[#0f172a] text-white w-full">
@@ -51,30 +59,30 @@ export function FirewallStatus() {
             <p className="text-gray-400">No firewall rules configured</p>
           ) : (
             <>
-              {rules.length > 8 && (
+              {rules.length > MAX_DISPLAY && (
                 <p className="text-xs text-gray-400">
-                  Showing 8 of {rules.length} rules
+                  Showing {MAX_DISPLAY} of {rules.length} rules
                 </p>
               )}
-              <div className="overflow-y-auto max-h-48">
+              <div className="overflow-y-auto max-h-64">
                 <table className="text-sm w-full">
                   <thead className="text-gray-400 text-xs sticky top-0 bg-[#0f172a]">
                     <tr>
-                      <th className="text-left py-1">Port</th>
-                      <th className="text-left py-1">Proto</th>
+                      <th className="text-left py-1">To</th>
                       <th className="text-left py-1">Action</th>
+                      <th className="text-left py-1">From</th>
                     </tr>
                   </thead>
                   <tbody>
                     {displayRules.map((r: any, idx: number) => (
-                      <tr key={idx} className="border-t border-gray-800">
-                        <td className="font-mono py-1">{r.port}</td>
-                        <td className="text-xs">{r.proto}</td>
-                        <td className="text-xs">
-                          <span className={r.action === 'ALLOW' ? 'text-green-400' : 'text-red-400'}>
+                      <tr key={idx} className="border-t border-gray-800" title={r.comment || undefined}>
+                        <td className="font-mono py-1 pr-2 truncate max-w-[120px]">{r.to}</td>
+                        <td className="text-xs pr-2 whitespace-nowrap">
+                          <span className={actionColor(r.action)}>
                             {r.action}
                           </span>
                         </td>
+                        <td className="text-xs font-mono truncate max-w-[140px]">{r.from}</td>
                       </tr>
                     ))}
                   </tbody>
