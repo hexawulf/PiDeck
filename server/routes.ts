@@ -1,7 +1,7 @@
 import type { Express } from "express";
-import express from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
+import crypto from "node:crypto";
 import fs from "node:fs";
 
 import { AuthService } from "./services/auth";
@@ -19,7 +19,6 @@ import hostLogsRouter from "./routes/hostLogs";
 import { loginSchema } from "@shared/schema";
 import { rateLimitLogin } from "./middleware/rateLimitLogin";
 
-// (Optional) password change schema retained for future use
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
   newPassword: z.string().min(1, "New password is required"),
@@ -30,16 +29,6 @@ const passwordChangeSchema = z.object({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // --- Core hardening / prerequisites ---
-  app.set("trust proxy", 1);
-
-  // Ensure body parsers are available BEFORE routes (safe even if also in index.ts)
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: false }));
-
-  // Sessions are already configured in server/index.ts
-  // Using the main session configuration from the parent app
-
   // Instance fingerprint header
   app.use((_req, res, next) => {
     res.setHeader("X-PiDeck-Instance", process.pid.toString());
@@ -108,9 +97,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- Auth routes (OPEN): must be defined BEFORE protected mounts ---
 
-  // Public CSRF token (for clients that enforce CSRF)
   app.get("/api/auth/csrf", (_req, res) => {
-    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const token = crypto.randomBytes(32).toString("hex");
     res.json({ token });
   });
 
@@ -205,18 +193,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Auth debug endpoint
-  app.get("/api/auth/debug", (req, res) => {
-    const s = (req as any).session;
-    res.json({
-      ok: true,
-      hasSession: !!s,
-      hasUser: !!s?.authenticated,
-      sessionID: s?.id,
-      cookieSeen: !!req.headers.cookie,
-    });
-  });
-
   // --- Auth middleware & wrapper ---
   const requireAuth = (req: any, res: any, next: any) => {
     if (req.__loginBypass) return next(); // hard bypass for POST /api/auth/login
@@ -275,17 +251,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Docker helpers (protected by wrapper)
-  app.get("/api/docker/containers", async (_req, res) => {
-    try {
-      const containers = await SystemService.getDockerContainers();
-      res.json(containers);
-    } catch (error) {
-      console.error("Get Docker containers error:", error);
-      res.status(500).json({ message: "Failed to get Docker containers" });
-    }
-  });
-
+  // Docker container actions (listing handled by dockerRouter via Dockerode)
   app.post("/api/docker/containers/:id/restart", async (req, res) => {
     try {
       await SystemService.restartDockerContainer(req.params.id);
@@ -377,7 +343,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // (Avoid duplicating /api/health; one public endpoint is enough)
+  // --- Password change (protected) ---
+  app.post("/api/auth/change-password", requireAuth, async (req: any, res: any) => {
+    try {
+      const parsed = passwordChangeSchema.parse(req.body);
+
+      const validation = await AuthService.validatePassword(parsed.currentPassword);
+      if (!validation.isValid) {
+        return res.status(401).json({ message: "Current password is incorrect." });
+      }
+
+      const strengthCheck = AuthService.validatePasswordStrength(parsed.newPassword);
+      if (!strengthCheck.isValid) {
+        return res.status(400).json({ message: strengthCheck.message });
+      }
+
+      const user = validation.user;
+      if (!user) {
+        return res.status(500).json({ message: "User not found." });
+      }
+
+      const newHash = await AuthService.hashPassword(parsed.newPassword);
+      user.password_hash = newHash;
+      user.last_password_change = new Date();
+      const { storage } = await import("./storage");
+      await storage.updateUser(user);
+
+      res.json({ message: "Password changed successfully." });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid input", errors: error.errors });
+      }
+      console.error("Change password error:", error);
+      res.status(500).json({ message: "Failed to change password." });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;

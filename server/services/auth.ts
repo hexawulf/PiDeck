@@ -53,24 +53,6 @@ export class AuthService {
     }
   }
 
-  // static async createSession(): Promise<string> {
-  //   // For now, session creation is still tied to 'admin'. This might need generalization later.
-  //   const user = await storage.getUserByUsername("admin");
-  //   if (!user) throw new Error("Admin user not found for session creation");
-    
-  //   const session = await storage.createSession(user.id);
-  //   return session.id;
-  // }
-
-  // static async validateSession(sessionId: string): Promise<boolean> {
-  //   const session = await storage.getSession(sessionId);
-  //   return !!session;
-  // }
-
-  // static async deleteSession(sessionId: string): Promise<void> {
-  //   await storage.deleteSession(sessionId);
-  // }
-
   static async hashPassword(password: string): Promise<string> {
     const saltRounds = 10; // Standard practice
     return bcrypt.hash(password, saltRounds);

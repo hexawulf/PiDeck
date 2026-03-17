@@ -4,10 +4,9 @@ import { exec } from 'child_process'
 const router = Router()
 
 router.get('/api/metrics/mounts', (_req, res) => {
-  exec('mount | grep -v snap', (err, stdout, stderr) => {
-    if (err || stderr) {
-      const details = stderr || (err ? err.message : "Unknown exec error");
-      return res.status(500).json({ error: 'Failed to run mount', details });
+  exec('mount | grep -v snap', (err, stdout) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to run mount', details: err.message });
     }
 
     const lines = stdout.trim().split('\n')

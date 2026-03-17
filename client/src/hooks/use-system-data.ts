@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import type { SystemInfo, LogFile, DockerContainer, DockerContainersResponse, PM2Process, CronJob, HistoricalMetric, ActiveAlert, HostLog, RpiLog } from "@shared/schema";
+import type { SystemInfo, DockerContainersResponse, PM2Process, CronJob, HistoricalMetric, ActiveAlert } from "@shared/schema";
 
 export function useSystemData(enabled: boolean = true) {
   const queryClient = useQueryClient();

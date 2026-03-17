@@ -4,6 +4,13 @@ const bucket = new Map<string, { count: number; reset: number }>();
 const WINDOW_MS = 10 * 60 * 1000; // 10 min
 const MAX_ATTEMPTS = 10;
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of bucket) {
+    if (now > entry.reset) bucket.delete(ip);
+  }
+}, 60 * 1000);
+
 export function rateLimitLogin(req: Request, res: Response, next: NextFunction) {
   const ip = (req.headers['cf-connecting-ip'] as string) || req.ip || 'unknown';
   const now = Date.now();

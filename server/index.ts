@@ -18,18 +18,6 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 5006);
 const SESSION_SECRET =
   process.env.SESSION_SECRET || "CHANGE_ME_SESSION_SECRET_LONG_RANDOM";
-const PIDECK_PASSWORD =
-  process.env.PIDECK_PASSWORD ||
-  process.env.ADMIN_PASSWORD ||
-  process.env.APP_PASSWORD ||
-  "";
-
-// Public origins we might want to echo in CORS later (not required for SPA)
-const PUBLIC_ORIGINS = new Set<string>([
-  `http://127.0.0.1:${PORT}`,
-  `http://localhost:${PORT}`,
-  "https://pideck.piapps.dev",
-]);
 
 // ---------- app ----------
 const app = express();

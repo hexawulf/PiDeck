@@ -19,7 +19,9 @@ router.get('/api/metrics/thermal-zones', (_req, res) => {
         label = readFileSync(typePath, 'utf8').trim()
         const raw = readFileSync(tempPath, 'utf8').trim()
         tempC = (parseInt(raw) / 1000).toFixed(1) + '°C'
-      } catch (_) {}
+      } catch (e) {
+        console.warn(`[thermalZones] Failed to read ${zone}:`, e instanceof Error ? e.message : e);
+      }
 
       return { zone, label, temp: tempC }
     })

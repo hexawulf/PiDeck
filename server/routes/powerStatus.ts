@@ -10,7 +10,7 @@ router.get('/api/metrics/power-status', (_req, res) => {
       PATH: `${process.env.PATH ?? ''}:/usr/bin`,
     },
   }, (throttleErr, throttleOut) => {
-    const output = throttleOut.trim()
+    const output = (throttleOut || '').trim()
 
     let status = 'Unavailable'
     if (!throttleErr) {
@@ -35,7 +35,7 @@ router.get('/api/metrics/power-status', (_req, res) => {
       },
     }, (voltErr, voltOut) => {
       let voltage: number | null = null
-      if (!voltErr) {
+      if (!voltErr && voltOut) {
         const vmatch = voltOut.trim().match(/volt=([0-9.]+)V/)
         if (vmatch) {
           voltage = parseFloat(vmatch[1])

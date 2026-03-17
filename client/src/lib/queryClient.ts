@@ -48,6 +48,10 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
+      // Polling queries (systemInfo, history, alerts, docker, pm2) set their own
+      // refetchInterval which drives data freshness. Non-polling queries (auth/me,
+      // cron/jobs) are manually invalidated on mutations. Infinity prevents
+      // unnecessary background refetches on re-mount while the dashboard is active.
       staleTime: Infinity,
       retry: false,
     },

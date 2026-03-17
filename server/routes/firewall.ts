@@ -5,9 +5,8 @@ const router = Router()
 
 router.get('/api/firewall/status', (_req, res) => {
   exec('sudo ufw status verbose', (err, stdout, stderr) => {
-    if (err || stderr) {
-      const details = stderr || (err ? err.message : "Unknown exec error");
-      return res.status(500).json({ error: 'Failed to run ufw', details });
+    if (err) {
+      return res.status(500).json({ error: 'Failed to run ufw', details: stderr || err.message });
     }
 
     const statusMatch = stdout.match(/^Status:\s*(\w+)/m)

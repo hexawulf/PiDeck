@@ -77,8 +77,8 @@ export default function ProcessList() {
                 <TableRow key={proc.pid}>
                   <TableCell className="pi-text font-mono text-xs">{proc.pid}</TableCell>
                   <TableCell className="pi-text text-xs">{proc.name}</TableCell>
-                  <TableCell className="pi-text text-xs text-right">{proc.cpuUsage.toFixed(1)}%</TableCell>
-                  <TableCell className="pi-text text-xs text-right">{proc.memUsage.toFixed(1)}%</TableCell>
+                  <TableCell className="pi-text text-xs text-right">{(proc.cpuUsage ?? 0).toFixed(1)}%</TableCell>
+                  <TableCell className="pi-text text-xs text-right">{(proc.memUsage ?? 0).toFixed(1)}%</TableCell>
                 </TableRow>
               ))}
             </TableBody>

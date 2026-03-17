@@ -50,12 +50,9 @@ const SettingsPanel: React.FC = () => {
       });
       setMessage({ type: 'success', text: 'Password changed successfully!' });
       reset();
-    } catch (error: any) {
-      // error.message here will likely be the generic Tanstack Query error message.
-      // The actual error from the API (if structured as { message: "..." }) is often in error.response.data.message
-      const apiErrorMessage = error?.response?.data?.message || 'Failed to change password. Please try again.';
-      setMessage({ type: 'error', text: apiErrorMessage });
-      console.error("Change password error details:", error.response?.data || error);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to change password. Please try again.';
+      setMessage({ type: 'error', text: msg });
     }
     // isChangingPassword is handled by useAuth hook now
   };

@@ -86,7 +86,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
               </div>
               <div>
                 <h3 className="text-sm font-medium pi-text-muted">CPU Usage</h3>
-                <p className="text-2xl font-bold pi-text">{data.cpu.toFixed(1)}%</p>
+                <p className="text-2xl font-bold pi-text">{(data.cpu ?? 0).toFixed(1)}%</p>
               </div>
             </div>
           </div>
@@ -109,18 +109,18 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
               </div>
               <div>
                 <h3 className="text-sm font-medium pi-text-muted">Memory</h3>
-                <p className="text-2xl font-bold pi-text">{data.memory.percentage}%</p>
+                <p className="text-2xl font-bold pi-text">{data.memory?.percentage ?? 0}%</p>
               </div>
             </div>
           </div>
           <div className="w-full bg-pi-darker rounded-full h-2">
             <div
               className="bg-green-500 h-2 rounded-full transition-all duration-500"
-              style={{ width: `${data.memory.percentage}%` }}
+              style={{ width: `${data.memory?.percentage ?? 0}%` }}
             />
           </div>
           <p className="text-xs pi-text-muted mt-1"> {/* Adjusted mt-2 to mt-1 */}
-            {(data.memory.used / 1024).toFixed(1)}GB / {(data.memory.total / 1024).toFixed(1)}GB
+            {((data.memory?.used ?? 0) / 1024).toFixed(1)}GB / {((data.memory?.total ?? 0) / 1024).toFixed(1)}GB
           </p>
         </CardContent>
       </Card>
@@ -135,16 +135,16 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
               </div>
               <div>
                 <h3 className="text-sm font-medium pi-text-muted">Temperature</h3>
-                <p className={`text-2xl font-bold ${getTemperatureColor(data.temperature)}`}>
-                  {data.temperature.toFixed(1)}°C
+                <p className={`text-2xl font-bold ${getTemperatureColor(data.temperature ?? 0)}`}>
+                  {(data.temperature ?? 0).toFixed(1)}°C
                 </p>
               </div>
             </div>
           </div>
           <div className="flex items-center space-x-2 mt-1"> {/* Added mt-1 for spacing */}
-            <div className={`w-2 h-2 rounded-full ${data.temperature < 70 ? 'bg-green-500' : data.temperature < 80 ? 'bg-yellow-500' : 'bg-red-500'}`} />
+            <div className={`w-2 h-2 rounded-full ${(data.temperature ?? 0) < 70 ? 'bg-green-500' : (data.temperature ?? 0) < 80 ? 'bg-yellow-500' : 'bg-red-500'}`} />
             <span className="text-xs pi-text-muted">
-              {data.temperature < 70 ? 'Normal' : data.temperature < 80 ? 'Warm' : 'Hot'}
+              {(data.temperature ?? 0) < 70 ? 'Normal' : (data.temperature ?? 0) < 80 ? 'Warm' : 'Hot'}
             </span>
           </div>
         </CardContent>
@@ -160,13 +160,13 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
               </div>
               <div>
                 <h3 className="text-sm font-medium pi-text-muted">Network</h3>
-                <p className="text-lg font-bold pi-text">{data.network.ip}</p>
+                <p className="text-lg font-bold pi-text">{data.network?.ip ?? 'N/A'}</p>
               </div>
             </div>
           </div>
           <div className="flex items-center space-x-2 mt-1"> {/* Added mt-1 for spacing */}
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span className="text-xs pi-text-muted">{data.network.status}</span>
+            <span className="text-xs pi-text-muted">{data.network?.status ?? 'Unknown'}</span>
           </div>
         </CardContent>
       </Card>

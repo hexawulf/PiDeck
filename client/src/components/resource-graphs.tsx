@@ -1,4 +1,4 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { HistoricalMetric, DiskIO, NetworkBandwidth } from "@shared/schema";
 import { useSystemData } from "@/hooks/use-system-data";
@@ -17,7 +17,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <p className="label text-sm pi-text-muted">{`${formatTime(label)}`}</p>
         {payload.map((entry: any) => (
           <p key={entry.name} style={{ color: entry.color }} className="text-xs">
-            {`${entry.name}: ${entry.value.toFixed(2)} ${entry.unit || ''}`}
+            {`${entry.name}: ${(entry.value ?? 0).toFixed(2)} ${entry.unit || ''}`}
           </p>
         ))}
       </div>

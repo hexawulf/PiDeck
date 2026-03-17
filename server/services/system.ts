@@ -2,10 +2,10 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
+import { PIDECK_LOGS_DIR } from "../config";
 import type {
   SystemInfo,
   LogFile,
-  DockerContainer,
   PM2Process,
   CronJob,
   DiskIO,
@@ -412,7 +412,7 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
 
   static async getLogFiles(): Promise<LogFile[]> {
     try {
-      const logDir = "/home/zk/logs";
+      const logDir = PIDECK_LOGS_DIR;
       
       try {
         await fs.access(logDir);
@@ -451,9 +451,8 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
 
   static async getLogFileContent(filePath: string): Promise<string> {
     try {
-      // Security check - ensure path is within logs directory
-      const normalizedPath = path.normalize(filePath);
-      if (!normalizedPath.includes("/home/zk/logs/")) {
+      const normalizedPath = path.resolve(filePath);
+      if (!normalizedPath.startsWith(PIDECK_LOGS_DIR + "/")) {
         throw new Error("Access denied");
       }
       
@@ -464,30 +463,6 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
     } catch (error) {
       console.error("Error reading log file:", error);
       throw new Error("Failed to read log file");
-    }
-  }
-
-  static async getDockerContainers(): Promise<DockerContainer[]> {
-    try {
-      const { stdout } = await execAsync("docker ps -a --format 'table {{.ID}}\\t{{.Names}}\\t{{.Image}}\\t{{.Status}}\\t{{.State}}'");
-      const lines = stdout.trim().split("\n").slice(1); // Remove header
-      
-      return lines.map(line => {
-        const parts = line.split("\t");
-        return {
-          id: parts[0] || "",
-          name: parts[1] || "",
-          image: parts[2] || "",
-          status: parts[3] || "",
-          state: parts[3]?.includes("Up") ? "running" : "stopped",
-          ports: [],
-          createdAt: 0,
-          labels: {}
-        };
-      });
-    } catch (error) {
-      console.error("Error getting Docker containers:", error);
-      return [];
     }
   }
 
@@ -553,7 +528,14 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
     return "Scheduled task";
   }
 
+  private static isValidContainerId(id: string): boolean {
+    return /^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/.test(id);
+  }
+
   static async restartDockerContainer(containerId: string): Promise<void> {
+    if (!this.isValidContainerId(containerId)) {
+      throw new Error("Invalid container ID format");
+    }
     try {
       await execAsync(`docker restart ${containerId}`);
     } catch (error) {
@@ -563,6 +545,9 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
   }
 
   static async stopDockerContainer(containerId: string): Promise<void> {
+    if (!this.isValidContainerId(containerId)) {
+      throw new Error("Invalid container ID format");
+    }
     try {
       await execAsync(`docker stop ${containerId}`);
     } catch (error) {
@@ -572,6 +557,9 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
   }
 
   static async startDockerContainer(containerId: string): Promise<void> {
+    if (!this.isValidContainerId(containerId)) {
+      throw new Error("Invalid container ID format");
+    }
     try {
       await execAsync(`docker start ${containerId}`);
     } catch (error) {
@@ -623,10 +611,9 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
 
   static async checkRebootRequired(): Promise<boolean> {
     try {
-      const fs = await import('fs');
-      return fs.existsSync('/var/run/reboot-required');
-    } catch (error) {
-      console.error("Error checking reboot requirement:", error);
+      await fs.access('/var/run/reboot-required');
+      return true;
+    } catch {
       return false;
     }
   }
@@ -719,8 +706,9 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
   }
 
   static async getTopProcesses(n: number = 10): Promise<any[]> {
+    const count = Math.max(1, Math.min(Math.floor(n), 100));
     try {
-      const { stdout } = await execAsync(`ps -eo pid,comm,%cpu,%mem --sort=-%cpu --no-headers | head -n ${n}`);
+      const { stdout } = await execAsync(`ps -eo pid,comm,%cpu,%mem --sort=-%cpu --no-headers | head -n ${count}`);
       const lines = stdout.trim().split('\n');
       
       return lines.map(line => {
@@ -742,7 +730,6 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
 
   static async getCpuFrequency(): Promise<{ core: string; freq: string }[]> {
     try {
-      const fs = await import('fs/promises');
       const cpus = await fs.readdir('/sys/devices/system/cpu/');
       const cpuCores = cpus.filter(cpu => cpu.match(/^cpu[0-9]+$/));
       

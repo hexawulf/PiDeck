@@ -14,15 +14,7 @@ export function useAuth() {
   const { data: user, isLoading } = useQuery<AuthStatus>({
     queryKey: ["/api/auth/me"],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/auth/me"); // Assuming apiRequest fetches and returns a Response
-      if (!res.ok) {
-        // Handle non-ok responses, e.g., if /api/auth/me returns 401 when not authenticated
-        // Depending on your apiRequest, it might already throw an error for non-ok responses.
-        // If it returns a default AuthStatus for unauthenticated users, that's also fine.
-        // For example, if it returns { authenticated: false }
-        if (res.status === 401) return { authenticated: false }; // Or handle as error
-        throw new Error('Network response was not ok for /api/auth/me');
-      }
+      const res = await apiRequest("GET", "/api/auth/me");
       return res.json();
     },
     retry: false,
@@ -55,19 +47,16 @@ export function useAuth() {
 
   const changePasswordMutation = useMutation({
     mutationFn: async (data: { currentPassword?: string; newPassword?: string; confirmNewPassword?: string }) => {
-      // The backend expects currentPassword and newPassword. confirmNewPassword is for client-side validation.
       return apiRequest("POST", "/api/auth/change-password", {
         currentPassword: data.currentPassword,
         newPassword: data.newPassword,
-        confirmNewPassword: data.confirmNewPassword, // Send it for Zod validation on backend too
+        confirmNewPassword: data.confirmNewPassword,
       });
     },
-    // No specific onSuccess needed here unless we want to invalidate user queries or show global toast.
-    // Component-level feedback is usually better for password change.
   });
 
   return {
-    user, // Contains { authenticated: boolean, userId?: number }
+    user,
     isLoading,
     isAuthenticated: user?.authenticated === true,
     login: loginMutation.mutateAsync,

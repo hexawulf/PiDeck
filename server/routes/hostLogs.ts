@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { PIDECK_LOGS_DIR, PM2_LOGS_DIR } from '../config';
 
 const execAsync = promisify(exec);
 const r = Router();
@@ -28,15 +29,14 @@ function labelFromFilename(filename: string): string {
     .trim();
 }
 
-// Allowlist (absolute paths only)
 const ALLOWLIST_LOGS: Record<string, { name: string; label: string; path: string; source: 'nginx' | 'pm2' | 'project' }> = {
   'nginx_access': { name: 'access.log', label: 'Nginx Access Log', path: '/var/log/nginx/access.log', source: 'nginx' },
   'nginx_error': { name: 'error.log', label: 'Nginx Error Log', path: '/var/log/nginx/error.log', source: 'nginx' },
-  'pm2_pideck_out': { name: 'pideck-out.log', label: 'PM2 PiDeck Output', path: path.join(process.env.HOME || '/home/zk', '.pm2/logs/pideck-out.log'), source: 'pm2' },
-  'pm2_pideck_err': { name: 'pideck-error.log', label: 'PM2 PiDeck Error', path: path.join(process.env.HOME || '/home/zk', '.pm2/logs/pideck-error.log'), source: 'pm2' },
-  'pideck_cron': { name: 'pideck-cron.log', label: 'PiDeck Cron', path: '/home/zk/logs/pideck-cron.log', source: 'project' },
-  'codepatchwork': { name: 'codepatchwork.log', label: 'CodePatchwork', path: '/home/zk/logs/codepatchwork.log', source: 'project' },
-  'synology': { name: 'synology.log', label: 'Synology', path: '/home/zk/logs/synology.log', source: 'project' }
+  'pm2_pideck_out': { name: 'pideck-out.log', label: 'PM2 PiDeck Output', path: path.join(PM2_LOGS_DIR, 'pideck-out.log'), source: 'pm2' },
+  'pm2_pideck_err': { name: 'pideck-error.log', label: 'PM2 PiDeck Error', path: path.join(PM2_LOGS_DIR, 'pideck-error.log'), source: 'pm2' },
+  'pideck_cron': { name: 'pideck-cron.log', label: 'PiDeck Cron', path: path.join(PIDECK_LOGS_DIR, 'pideck-cron.log'), source: 'project' },
+  'codepatchwork': { name: 'codepatchwork.log', label: 'CodePatchwork', path: path.join(PIDECK_LOGS_DIR, 'codepatchwork.log'), source: 'project' },
+  'synology': { name: 'synology.log', label: 'Synology', path: path.join(PIDECK_LOGS_DIR, 'synology.log'), source: 'project' }
 };
 
 // Get rotated log files for nginx
@@ -79,10 +79,9 @@ async function getNginxRotatedLogs(): Promise<LogItem[]> {
   return logs;
 }
 
-// Scan /home/zk/logs directory
 async function scanHomeLogs(): Promise<LogItem[]> {
   const logs: LogItem[] = [];
-  const logDir = '/home/zk/logs';
+  const logDir = PIDECK_LOGS_DIR;
   
   try {
     const files = await fs.promises.readdir(logDir);
@@ -227,12 +226,14 @@ r.get('/:id', async (req, res) => {
     // Use system tail for large files
     let text = log.large ? await tailFileLarge(log.path, tail) : tailFile(log.path, tail);
     
-    // Apply grep filter if provided
     const grep = String(req.query.grep || '').trim();
     if (grep) {
+      if (grep.length > 200) {
+        return res.status(400).json({ message: 'grep pattern too long (max 200 chars)' });
+      }
       try {
-        const rx = grep.startsWith('/') && grep.endsWith('/') ? 
-          new RegExp(grep.slice(1,-1), 'i') : new RegExp(grep, 'i');
+        const pattern = grep.startsWith('/') && grep.endsWith('/') ? grep.slice(1,-1) : grep;
+        const rx = new RegExp(pattern, 'i');
         text = text.split('\n').filter(l => rx.test(l)).join('\n');
       } catch {
         const q = grep.toLowerCase();
@@ -240,9 +241,9 @@ r.get('/:id', async (req, res) => {
       }
     }
     
-    // Handle download request
     if (req.query.download === '1') {
-      res.setHeader('Content-Disposition', `attachment; filename="${log.name}.log"`);
+      const safeName = log.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}.log"`);
     }
     
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');

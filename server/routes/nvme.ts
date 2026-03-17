@@ -4,10 +4,9 @@ import { exec } from 'child_process'
 const router = Router()
 
 router.get('/api/metrics/nvme', (_req, res) => {
-  exec('sudo smartctl -a /dev/nvme0', (err, stdout, stderr) => {
-    if (err || stderr) {
-      const details = stderr || (err ? err.message : "Unknown exec error");
-      return res.status(500).json({ error: 'SMART data unavailable', details });
+  exec('sudo smartctl -a /dev/nvme0', (err, stdout) => {
+    if (err) {
+      return res.status(500).json({ error: 'SMART data unavailable', details: err.message });
     }
 
     const lines = stdout.split('\n')

@@ -27,58 +27,20 @@ export default function Login() {
     }
 
     try {
-      // Attempt login
       await login(password);
-
-      // Verify session by checking /api/auth/me
-      const meResponse = await fetch('/api/auth/me', {
-        credentials: 'include'
-      });
-
-      if (meResponse.ok) {
-        const meData = await meResponse.json();
-        if (meData.authenticated) {
-          toast({
-            title: "Success",
-            description: "Login successful",
-          });
-          return;
-        }
-      }
-
-      // Session verification failed
-      toast({
-        title: "Login Failed",
-        description: "Session could not be established. Please try again.",
-        variant: "destructive",
-      });
-
-    } catch (error: any) {
-      // Extract X-Auth-Reason from error if available
-      let errorMessage = loginError || "Invalid password";
-
-      // Try to parse error for more details
-      if (error?.message) {
+      toast({ title: "Success", description: "Login successful" });
+    } catch (error: unknown) {
+      let errorMessage = "Invalid password";
+      if (error instanceof Error) {
         try {
-          const errorData = JSON.parse(error.message.split(': ')[1]);
-          if (errorData.reason) {
-            const reasonMap: Record<string, string> = {
-              'bad_password_compare': 'Invalid password',
-              'missing_password': 'Password is required',
-              'locked_out': 'Account locked due to too many failed attempts',
-              'origin_blocked': 'Request blocked by security policy',
-              'session_write_failed': 'Session could not be saved',
-              'bad_body_parse': 'Invalid request format'
-            };
-            errorMessage = reasonMap[errorData.reason] || errorData.message || errorMessage;
-          } else if (errorData.message) {
-            errorMessage = errorData.message;
-          }
+          const parts = error.message.split(': ');
+          const body = parts.length > 1 ? parts.slice(1).join(': ') : parts[0];
+          const parsed = JSON.parse(body);
+          errorMessage = parsed.message || errorMessage;
         } catch {
-          // Keep default error message
+          errorMessage = error.message || errorMessage;
         }
       }
-
       toast({
         title: "Login Failed",
         description: errorMessage,

@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useAuthGate } from "@/hooks/use-auth-gate";
 import { Link, useLocation } from "wouter";
@@ -19,7 +18,6 @@ import {
   RefreshCw,
   LogOut,
   LogIn,
-  Info,
   Activity,
   FileText,
   Grid,
@@ -31,8 +29,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 import AboutModal from "@/components/modals/about-modal";
 
-// Forward ref for components used in tabs
-import React from 'react'; // Already here, but good to note
+import React from 'react';
 import SettingsPanel from '@/components/settings-panel'; // Import the new component
 
 type TabId = "dashboard" | "logs" | "apps" | "cron" | "settings";
@@ -72,26 +69,25 @@ export default function Dashboard() {
   }, [isAuthed]);
 
   useEffect(() => {
-    if (systemAlerts.data) {
-      systemAlerts.data.forEach(alert => {
-        if (!displayedAlertIds.current.has(alert.id)) {
-          toast({
-            title: "System Alert",
-            description: alert.message,
-            variant: "destructive", // Or a custom 'warning' variant if available/needed
-            duration: 10000, // Show for 10 seconds
-          });
-          displayedAlertIds.current.add(alert.id);
-        }
-      });
+    const alerts = systemAlerts.data;
+    if (!alerts?.length) return;
 
-      // Clean up old alert IDs from the ref if they are no longer active
-      const activeAlertIds = new Set(systemAlerts.data.map(a => a.id));
-      displayedAlertIds.current.forEach(id => {
-        if (!activeAlertIds.has(id)) {
-          displayedAlertIds.current.delete(id);
-        }
-      });
+    for (const alert of alerts) {
+      if (!displayedAlertIds.current.has(alert.id)) {
+        toast({
+          title: "System Alert",
+          description: alert.message,
+          variant: "destructive",
+          duration: 10000,
+        });
+        displayedAlertIds.current.add(alert.id);
+      }
+    }
+
+    const activeAlertIds = new Set(alerts.map(a => a.id));
+    const staleIds = [...displayedAlertIds.current].filter(id => !activeAlertIds.has(id));
+    for (const id of staleIds) {
+      displayedAlertIds.current.delete(id);
     }
   }, [systemAlerts.data, toast]);
 

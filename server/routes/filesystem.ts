@@ -4,10 +4,9 @@ import { exec } from 'child_process'
 const router = Router()
 
 router.get('/api/metrics/filesystems', (_req, res) => {
-  exec('df -h --output=source,size,used,avail,pcent,target', (err, stdout, stderr) => {
-    if (err || stderr) {
-      const details = stderr || (err ? err.message : "Unknown exec error");
-      return res.status(500).json({ error: 'Failed to run df -h', details });
+  exec('df -h --output=source,size,used,avail,pcent,target', (err, stdout) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to run df -h', details: err.message });
     }
 
     const lines = stdout.trim().split('\n').slice(1) // skip header

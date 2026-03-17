@@ -3,11 +3,11 @@ import { readdir, stat, realpath } from "fs/promises";
 import { resolve, basename } from "path";
 import { spawn } from "child_process";
 import type { LogIndexEntry } from "@shared/schema";
+import { PIDECK_LOGS_DIR } from "../config";
 
 const rasplogsRouter = Router();
 
-
-const LOGS_DIR = "/home/zk/logs";
+const LOGS_DIR = PIDECK_LOGS_DIR;
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MiB
 
 const ALLOWED_EXTENSIONS = [".log", ".txt", ".journal"];
@@ -71,7 +71,9 @@ rasplogsRouter.get("/rasplogs", async (_req, res) => {
 // GET /api/rasplogs/:name -> tail/stream a log file
 rasplogsRouter.get("/rasplogs/:name", async (req, res) => {
   const { name } = req.params;
-  const { tail = "1000", grep, follow } = req.query;
+  const { grep, follow } = req.query;
+  const tailNum = Math.max(1, Math.min(parseInt(String(req.query.tail || "1000"), 10) || 1000, 10000));
+  const tail = String(tailNum);
 
   const filePath = resolve(LOGS_DIR, name);
 
