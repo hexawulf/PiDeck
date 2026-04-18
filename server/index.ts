@@ -3,6 +3,7 @@ import "./env";
 import path from "path";
 import express, { type Request, type Response, type NextFunction } from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import cors from "cors";
 import { fileURLToPath } from "url";
 
@@ -10,6 +11,7 @@ import { fileURLToPath } from "url";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import compatRouter from "./routes/compat";
+import { pool } from "./storage";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,6 +23,7 @@ const SESSION_SECRET =
 
 // ---------- app ----------
 const app = express();
+const PgStore = connectPgSimple(session);
 
 // Behind Cloudflare/Nginx (needed for secure cookies & proto detection)
 app.set("trust proxy", 1);
@@ -35,6 +38,11 @@ app.use(
   session({
     name: "pideck.sid",
     secret: SESSION_SECRET,
+    store: new PgStore({
+      pool,
+      createTableIfMissing: true,
+      tableName: "user_sessions",
+    }),
     resave: false,
     saveUninitialized: false,
     rolling: true,

@@ -34,10 +34,18 @@ const ALLOWLIST_LOGS: Record<string, { name: string; label: string; path: string
   'nginx_error': { name: 'error.log', label: 'Nginx Error Log', path: '/var/log/nginx/error.log', source: 'nginx' },
   'pm2_pideck_out': { name: 'pideck-out.log', label: 'PM2 PiDeck Output', path: path.join(PM2_LOGS_DIR, 'pideck-out.log'), source: 'pm2' },
   'pm2_pideck_err': { name: 'pideck-error.log', label: 'PM2 PiDeck Error', path: path.join(PM2_LOGS_DIR, 'pideck-error.log'), source: 'pm2' },
+  'pitasker_out': { name: 'out.log', label: 'PiTasker Output', path: '/var/log/pitasker/out.log', source: 'pm2' },
+  'pitasker_err': { name: 'error.log', label: 'PiTasker Error', path: '/var/log/pitasker/error.log', source: 'pm2' },
+  'pitasker_combined': { name: 'combined.log', label: 'PiTasker Combined', path: '/var/log/pitasker/combined.log', source: 'pm2' },
   'pideck_cron': { name: 'pideck-cron.log', label: 'PiDeck Cron', path: path.join(PIDECK_LOGS_DIR, 'pideck-cron.log'), source: 'project' },
   'codepatchwork': { name: 'codepatchwork.log', label: 'CodePatchwork', path: path.join(PIDECK_LOGS_DIR, 'codepatchwork.log'), source: 'project' },
   'synology': { name: 'synology.log', label: 'Synology', path: path.join(PIDECK_LOGS_DIR, 'synology.log'), source: 'project' }
 };
+
+async function getReadableStat(filePath: string): Promise<fs.Stats> {
+  await fs.promises.access(filePath, fs.constants.R_OK);
+  return fs.promises.stat(filePath);
+}
 
 // Get rotated log files for nginx
 async function getNginxRotatedLogs(): Promise<LogItem[]> {
@@ -55,7 +63,7 @@ async function getNginxRotatedLogs(): Promise<LogItem[]> {
       if (nginxPatterns.some(pattern => pattern.test(file))) {
         const filePath = path.join(baseDir, file);
         try {
-          const stat = await fs.promises.stat(filePath);
+          const stat = await getReadableStat(filePath);
           const id = `nginx_${file.replace(/[^a-zA-Z0-9]/g, '_')}`;
           logs.push({
             id,
@@ -93,7 +101,7 @@ async function scanHomeLogs(): Promise<LogItem[]> {
       const filePath = path.join(logDir, file);
       
       try {
-        const stat = await fs.promises.stat(filePath);
+        const stat = await getReadableStat(filePath);
         if (stat.isDirectory()) continue;
         
         const shouldInclude = 
@@ -131,7 +139,7 @@ async function getAllLogs(): Promise<LogItem[]> {
   // Add allowlisted logs (these take priority in de-duplication)
   for (const [id, log] of Object.entries(ALLOWLIST_LOGS)) {
     try {
-      const stat = await fs.promises.stat(log.path);
+      const stat = await getReadableStat(log.path);
       logs.push({
         id,
         name: log.name,

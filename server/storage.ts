@@ -9,7 +9,7 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
 }
 
-const pool = new Pool({
+export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
