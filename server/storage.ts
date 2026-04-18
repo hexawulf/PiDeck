@@ -13,13 +13,8 @@ export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-pool.on('connect', () => {
-  console.log('[PgStorage] Connected to PostgreSQL database.');
-});
-
 pool.on('error', (err) => {
-  console.error('[PgStorage] Unexpected error on idle client', err);
-  process.exit(-1);
+  console.error('[PgStorage] Unexpected error on idle PostgreSQL client', err);
 });
 
 export class PgStorage implements IStorage {
@@ -70,6 +65,7 @@ export class PgStorage implements IStorage {
 }
 
 export const storage = new PgStorage();
+let initPromise: Promise<void> | null = null;
 
 async function ensureAdminUserExists() {
   try {
@@ -85,6 +81,19 @@ async function ensureAdminUserExists() {
   }
 }
 
-ensureAdminUserExists().catch(err => {
-  console.error("[PgStorage] Failed to ensure admin user during module load:", err);
-});
+export function initializeStorage(): Promise<void> {
+  if (initPromise) {
+    return initPromise;
+  }
+
+  initPromise = (async () => {
+    await pool.query("SELECT 1");
+    console.log("[PgStorage] PostgreSQL pool ready.");
+    await ensureAdminUserExists();
+  })().catch((error) => {
+    initPromise = null;
+    throw error;
+  });
+
+  return initPromise;
+}

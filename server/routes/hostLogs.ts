@@ -1,12 +1,16 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { PIDECK_LOGS_DIR, PM2_LOGS_DIR } from '../config';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const r = Router();
+const LARGE_LOG_BYTES = 50 * 1024 * 1024;
+const READ_WINDOW_BYTES = 1024 * 1024;
+const MAX_TAIL_LINES = 5000;
+const NGINX_LOG_DIR = '/var/log/nginx';
 
 interface LogItem {
   id: string;
@@ -19,6 +23,11 @@ interface LogItem {
   large?: boolean;
 }
 
+interface ValidatedLogFile {
+  path: string;
+  stat: fs.Stats;
+}
+
 function labelFromFilename(filename: string): string {
   return filename
     .replace(/\.log(\.\d+)?(\.gz)?$/, '')
@@ -27,6 +36,15 @@ function labelFromFilename(filename: string): string {
     .replace(/[-_.]+/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase())
     .trim();
+}
+
+function isRotatedTextLog(filename: string): boolean {
+  return filename.endsWith('.log') || /\.log\.\d+$/.test(filename);
+}
+
+function isWithinDir(filePath: string, baseDir: string): boolean {
+  const relative = path.relative(baseDir, filePath);
+  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
 const ALLOWLIST_LOGS: Record<string, { name: string; label: string; path: string; source: 'nginx' | 'pm2' | 'project' }> = {
@@ -42,41 +60,61 @@ const ALLOWLIST_LOGS: Record<string, { name: string; label: string; path: string
   'synology': { name: 'synology.log', label: 'Synology', path: path.join(PIDECK_LOGS_DIR, 'synology.log'), source: 'project' }
 };
 
-async function getReadableStat(filePath: string): Promise<fs.Stats> {
-  await fs.promises.access(filePath, fs.constants.R_OK);
-  return fs.promises.stat(filePath);
+async function validateReadableFile(filePath: string, allowedBaseDir?: string): Promise<ValidatedLogFile | null> {
+  try {
+    const lstat = await fs.promises.lstat(filePath);
+    if (!lstat.isFile() || lstat.isSymbolicLink()) {
+      return null;
+    }
+
+    const resolvedPath = await fs.promises.realpath(filePath);
+    if (resolvedPath !== filePath) {
+      return null;
+    }
+
+    if (allowedBaseDir && !isWithinDir(resolvedPath, allowedBaseDir)) {
+      return null;
+    }
+
+    await fs.promises.access(resolvedPath, fs.constants.R_OK);
+    const stat = await fs.promises.stat(resolvedPath);
+    if (!stat.isFile()) {
+      return null;
+    }
+
+    return { path: resolvedPath, stat };
+  } catch {
+    return null;
+  }
 }
 
 // Get rotated log files for nginx
 async function getNginxRotatedLogs(): Promise<LogItem[]> {
   const logs: LogItem[] = [];
-  const baseDir = '/var/log/nginx';
   
   try {
-    const files = await fs.promises.readdir(baseDir);
+    const files = await fs.promises.readdir(NGINX_LOG_DIR);
     const nginxPatterns = [
-      /^access\.log(\.\d+|\.[\w\d]+)?$/,
-      /^error\.log(\.\d+|\.[\w\d]+)?$/
+      /^access\.log(?:\.\d+)?$/,
+      /^error\.log(?:\.\d+)?$/
     ];
     
     for (const file of files) {
       if (nginxPatterns.some(pattern => pattern.test(file))) {
-        const filePath = path.join(baseDir, file);
-        try {
-          const stat = await getReadableStat(filePath);
+        const filePath = path.join(NGINX_LOG_DIR, file);
+        const validated = await validateReadableFile(filePath, NGINX_LOG_DIR);
+        if (validated) {
           const id = `nginx_${file.replace(/[^a-zA-Z0-9]/g, '_')}`;
           logs.push({
             id,
             name: file,
             label: `Nginx ${labelFromFilename(file)}`,
-            path: filePath,
-            size: stat.size,
-            mtime: stat.mtime.toISOString(),
+            path: validated.path,
+            size: validated.stat.size,
+            mtime: validated.stat.mtime.toISOString(),
             source: 'nginx',
-            large: stat.size > 50 * 1024 * 1024
+            large: validated.stat.size > LARGE_LOG_BYTES
           });
-        } catch {
-          // Skip files we can't stat
         }
       }
     }
@@ -97,32 +135,22 @@ async function scanHomeLogs(): Promise<LogItem[]> {
     for (const file of files) {
       if (file.startsWith('.')) continue;
       if (file.endsWith('.lock') || file.endsWith('.bak')) continue;
+      if (!isRotatedTextLog(file)) continue;
       
       const filePath = path.join(logDir, file);
-      
-      try {
-        const stat = await getReadableStat(filePath);
-        if (stat.isDirectory()) continue;
-        
-        const shouldInclude = 
-          file.endsWith('.log') ||
-          /\.log\.\d/.test(file) ||
-          file.endsWith('.gz');
-        
-        if (shouldInclude) {
-          logs.push({
-            id: `home_${file.replace(/[^a-zA-Z0-9]/g, '_')}`,
-            name: file,
-            label: labelFromFilename(file),
-            path: filePath,
-            size: stat.size,
-            mtime: stat.mtime.toISOString(),
-            source: 'home',
-            large: stat.size > 50 * 1024 * 1024
-          });
-        }
-      } catch {
-        // Skip files we can't stat
+      const validated = await validateReadableFile(filePath, logDir);
+
+      if (validated) {
+        logs.push({
+          id: `home_${file.replace(/[^a-zA-Z0-9]/g, '_')}`,
+          name: file,
+          label: labelFromFilename(file),
+          path: validated.path,
+          size: validated.stat.size,
+          mtime: validated.stat.mtime.toISOString(),
+          source: 'home',
+          large: validated.stat.size > LARGE_LOG_BYTES
+        });
       }
     }
   } catch {
@@ -138,20 +166,18 @@ async function getAllLogs(): Promise<LogItem[]> {
   
   // Add allowlisted logs (these take priority in de-duplication)
   for (const [id, log] of Object.entries(ALLOWLIST_LOGS)) {
-    try {
-      const stat = await getReadableStat(log.path);
+    const validated = await validateReadableFile(log.path);
+    if (validated) {
       logs.push({
         id,
         name: log.name,
         label: log.label,
-        path: log.path,
-        size: stat.size,
-        mtime: stat.mtime.toISOString(),
+        path: validated.path,
+        size: validated.stat.size,
+        mtime: validated.stat.mtime.toISOString(),
         source: log.source,
-        large: stat.size > 50 * 1024 * 1024
+        large: validated.stat.size > LARGE_LOG_BYTES
       });
-    } catch {
-      // Skip files that don't exist or can't be read
     }
   }
   
@@ -182,7 +208,7 @@ async function getLogById(id: string): Promise<LogItem | null> {
 function tailFile(file: string, n = 500): string {
   if (!fs.existsSync(file)) return '';
   const stat = fs.statSync(file);
-  const size = Math.min(stat.size, 1024 * 1024); // cap to 1MB
+  const size = Math.min(stat.size, READ_WINDOW_BYTES); // cap to 1MB
   const fd = fs.openSync(file, 'r');
   const buf = Buffer.alloc(size);
   fs.readSync(fd, buf, 0, size, stat.size - size);
@@ -194,7 +220,9 @@ function tailFile(file: string, n = 500): string {
 // Tail using system command for large files
 async function tailFileLarge(file: string, n = 1000): Promise<string> {
   try {
-    const { stdout } = await execAsync(`tail -n ${n} "${file}"`);
+    const { stdout } = await execFileAsync('tail', ['-n', String(n), file], {
+      maxBuffer: READ_WINDOW_BYTES * 2,
+    });
     return stdout;
   } catch {
     return '';
@@ -222,17 +250,15 @@ r.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Log not found' });
     }
     
-    // Check if file exists and is readable
-    try {
-      await fs.promises.access(log.path, fs.constants.R_OK);
-    } catch {
-      return res.status(404).json({ message: 'Log file not accessible' });
+    const validated = await validateReadableFile(log.path);
+    if (!validated) {
+      return res.status(404).json({ message: 'Log file is no longer available' });
     }
     
-    const tail = Math.min(Math.max(parseInt(String(req.query.tail || 1000), 10) || 1000, 1), 5000);
+    const tail = Math.min(Math.max(parseInt(String(req.query.tail || 1000), 10) || 1000, 1), MAX_TAIL_LINES);
     
     // Use system tail for large files
-    let text = log.large ? await tailFileLarge(log.path, tail) : tailFile(log.path, tail);
+    let text = log.large ? await tailFileLarge(validated.path, tail) : tailFile(validated.path, tail);
     
     const grep = String(req.query.grep || '').trim();
     if (grep) {

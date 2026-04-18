@@ -11,22 +11,25 @@ import { fileURLToPath } from "url";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import compatRouter from "./routes/compat";
-import { pool } from "./storage";
+import { initializeStorage, pool } from "./storage";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ---------- config ----------
 const PORT = Number(process.env.PORT || 5006);
-const SESSION_SECRET =
-  process.env.SESSION_SECRET || "CHANGE_ME_SESSION_SECRET_LONG_RANDOM";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const SESSION_SECRET = process.env.SESSION_SECRET || "CHANGE_ME_SESSION_SECRET_LONG_RANDOM";
+const SESSION_COOKIE_DOMAIN =
+  process.env.SESSION_COOKIE_DOMAIN || process.env.COOKIE_DOMAIN || undefined;
+const TRUST_PROXY = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) || 1 : 1;
 
 // ---------- app ----------
 const app = express();
 const PgStore = connectPgSimple(session);
 
 // Behind Cloudflare/Nginx (needed for secure cookies & proto detection)
-app.set("trust proxy", 1);
+app.set("trust proxy", TRUST_PROXY);
 
 // Parsers & hardening
 app.disable("x-powered-by");
@@ -42,6 +45,8 @@ app.use(
       pool,
       createTableIfMissing: true,
       tableName: "user_sessions",
+      ttl: 24 * 60 * 60,
+      pruneSessionInterval: 15 * 60,
     }),
     resave: false,
     saveUninitialized: false,
@@ -49,11 +54,11 @@ app.use(
     proxy: true,
     cookie: {
       httpOnly: true,
-      secure: true, // ok because trust proxy = 1 and we're behind TLS at CF+Nginx
-      sameSite: "none",
+      secure: IS_PRODUCTION,
+      sameSite: "lax",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
       path: "/",
-      domain: ".piapps.dev"
+      ...(SESSION_COOKIE_DOMAIN ? { domain: SESSION_COOKIE_DOMAIN } : {}),
     },
   }),
 );
@@ -81,6 +86,12 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
 
 // ---------- Mount real API routes ----------
 (async () => {
+  if (IS_PRODUCTION && !process.env.SESSION_SECRET) {
+    throw new Error("SESSION_SECRET must be set in production.");
+  }
+
+  await initializeStorage();
+
   // Back-compat router BEFORE API routes; never intercept /api/*
   app.use((req, res, next) => {
     const u = (req.originalUrl || req.url || "").toLowerCase();
@@ -118,8 +129,8 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
     console.error(err);
   });
 
-  server.listen(
-    { port: PORT, host: "0.0.0.0", reusePort: true },
-    () => log(`serving on port ${PORT}`),
-  );
-})();
+  server.listen({ port: PORT, host: "0.0.0.0" }, () => log(`serving on port ${PORT}`));
+})().catch((error) => {
+  console.error("[bootstrap] Failed to start PiDeck:", error);
+  process.exit(1);
+});
