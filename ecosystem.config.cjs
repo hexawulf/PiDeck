@@ -6,7 +6,7 @@ module.exports = {
     interpreter: 'node',
     exec_mode: 'fork',
     watch: false,
-    max_memory_restart: '256M',
+    max_memory_restart: '512M',
     restart_delay: 5000,
     max_restarts: 10,
     merge_logs: true,
