@@ -220,7 +220,7 @@ export default function AppMonitor() {
                             disabled={isContainerActionPending}
                             className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
                           >
-                            <Play className="w-4 h-4 text-green-400" />
+                            <Play className="w-4 h-4 text-pi-success" />
                           </Button>
                           <Button
                             variant="outline"

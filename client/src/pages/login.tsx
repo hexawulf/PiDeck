@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Server, Eye, EyeOff } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function Login() {
   const [password, setPassword] = useState("");
@@ -51,13 +52,14 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pi-darker to-pi-dark">
+      <ThemeToggle className="fixed top-4 right-4" />
       <div className="max-w-md w-full mx-4">
         <Card className="bg-pi-card border-pi-border shadow-2xl">
           <CardContent className="p-8">
             <div className="text-center mb-8">
               <div className="flex items-center justify-center mb-4">
                 <div className="w-12 h-12 bg-pi-accent rounded-lg flex items-center justify-center">
-                  <Server className="w-6 h-6 text-white" />
+                  <Server className="w-6 h-6 text-pi-on-accent" />
                 </div>
               </div>
               <Link href="/dashboard">
@@ -77,7 +79,7 @@ export default function Login() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter admin password"
-                    className="w-full px-4 py-3 bg-pi-darker border-pi-border pi-text placeholder:pi-text-muted focus:ring-2 focus:ring-pi-accent focus:border-transparent pr-10"
+                    className="w-full px-4 py-3 bg-pi-darker border-pi-border text-pi-text placeholder:text-pi-text-muted focus:ring-2 focus:ring-pi-accent focus:border-transparent pr-10"
                     disabled={isLoginPending}
                   />
                   <button
@@ -96,7 +98,7 @@ export default function Login() {
               
               <Button 
                 type="submit" 
-                className="w-full pi-accent hover:bg-blue-600 text-white font-semibold py-3 px-4 transition-colors duration-200"
+                className="w-full bg-pi-accent hover:bg-pi-accent-hover text-pi-on-accent font-semibold py-3 px-4 transition-colors duration-200"
                 disabled={isLoginPending}
               >
                 {isLoginPending ? "Signing In..." : "Sign In"}

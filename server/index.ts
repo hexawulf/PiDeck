@@ -12,6 +12,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import compatRouter from "./routes/compat";
 import { initializeStorage, pool } from "./storage";
+import { installCsp } from "./security";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,7 +71,10 @@ app.use(cors({
 }));
 
 // ---------- STATIC & SPA: PUBLIC (no auth) ----------
-const staticDir = path.resolve(__dirname, "../dist/public");
+// Resolve next to the running bundle (dist/index.js → dist/public), same as
+// serveStatic() in ./vite, so an alternate build dir serves its own assets.
+const staticDir = path.resolve(__dirname, "public");
+if (IS_PRODUCTION) installCsp(app, staticDir); // before static so index.html gets the header
 app.use(express.static(staticDir));
 
 // Health is public

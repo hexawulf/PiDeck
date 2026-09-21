@@ -31,7 +31,7 @@ export default function ProcessList() {
             <List className="w-5 h-5 mr-2" /> Top Processes
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col items-center justify-center h-full text-pi-muted">
+        <CardContent className="flex flex-col items-center justify-center h-full text-pi-text-muted">
           <ServerCrash className="w-12 h-12 mb-2 text-pi-error" />
           <p>Error loading process data.</p>
         </CardContent>

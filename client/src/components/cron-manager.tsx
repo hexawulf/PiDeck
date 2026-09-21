@@ -133,7 +133,7 @@ export default function CronManager() {
                           className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
                           title="Run job manually"
                         >
-                          <Play className="w-4 h-4 text-green-400" />
+                          <Play className="w-4 h-4 text-pi-success" />
                         </Button>
                         <Button
                           variant="outline"

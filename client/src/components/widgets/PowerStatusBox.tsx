@@ -15,16 +15,16 @@ export function PowerStatusBox() {
   const statusLabel = data?.status ?? 'Unavailable'
 
   return (
-    <div className="rounded-2xl border p-4 shadow bg-[#0f172a] text-white w-full max-w-sm">
+    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full max-w-sm">
       <h3 className="text-lg font-semibold mb-2">Power Status</h3>
       {isLoading ? (
         <p>Loading...</p>
       ) : error || !data ? (
-        <p className="text-red-400">Unavailable</p>
+        <p className="text-pi-error">Unavailable</p>
       ) : (
         <div className="space-y-1 text-sm">
           <p>{statusLabel}</p>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-pi-text-muted">
             Voltage: {data.voltage !== null && data.voltage !== undefined ? data.voltage.toFixed(2) + 'V' : 'N/A'}
           </p>
         </div>

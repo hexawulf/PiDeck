@@ -137,3 +137,9 @@ docker-compose*
 
 # Backup and temporary files
 cookies.txt
+# PiDeck 2.0 test harness
+dist-dev/
+.e2e/
+.env.test
+test-results/
+playwright-report/

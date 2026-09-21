@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useAuthGate } from "@/hooks/use-auth-gate";
 import { Link, useLocation } from "wouter";
 import { useSystemData } from "@/hooks/use-system-data";
-import { useTheme } from "@/components/theme-provider";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
@@ -13,8 +13,6 @@ import AppMonitor from "@/components/app-monitor";
 import CronManager from "@/components/cron-manager";
 import {
   Server,
-  Sun,
-  Moon,
   RefreshCw,
   LogOut,
   LogIn,
@@ -48,7 +46,6 @@ export default function Dashboard() {
   const { logout, isLogoutPending, isAuthenticated } = useAuth();
   const { isAuthed, status } = useAuthGate();
   const { systemInfo, systemAlerts, refreshAll, updateSystem, isSystemUpdating } = useSystemData(isAuthed);
-  const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const displayedAlertIds = useRef<Set<string>>(new Set());
   const [location, navigate] = useLocation();
@@ -104,10 +101,6 @@ export default function Dashboard() {
     }
   };
 
-  const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
-  };
-
   const tabs: TabDefinition[] = [
     { id: "dashboard", label: "Dashboard", icon: Activity, component: SystemOverview },
     { id: "logs", label: "Logs", icon: FileText, component: LogViewer },
@@ -147,7 +140,7 @@ export default function Dashboard() {
   if (status === 'checking') {
     return (
       <div className="min-h-screen bg-pi-dark flex items-center justify-center">
-        <div className="text-white text-lg">Loading...</div>
+        <div className="text-pi-text text-lg">Loading...</div>
       </div>
     );
   }
@@ -167,7 +160,7 @@ export default function Dashboard() {
             {/* Logo & Title */}
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-pi-accent rounded-lg flex items-center justify-center">
-                <Server className="w-5 h-5 text-white" />
+                <Server className="w-5 h-5 text-pi-on-accent" />
               </div>
               <div>
                 <h1
@@ -202,18 +195,7 @@ export default function Dashboard() {
               <AboutModal />
 
               {/* Theme Toggle */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleTheme}
-                className="p-2 bg-transparent hover:bg-pi-card-hover border-pi-border"
-              >
-                {theme === "dark" ? (
-                  <Sun className="w-5 h-5" />
-                ) : (
-                  <Moon className="w-5 h-5" />
-                )}
-              </Button>
+              <ThemeToggle />
 
               {/* Change Password Button */}
               {isAuthenticated && (
@@ -275,7 +257,7 @@ export default function Dashboard() {
       </header>
 
       {rebootRequired && (
-        <div className="bg-red-700 text-white px-4 py-2 rounded-xl text-center shadow-lg animate-pulse mx-4 mt-4">
+        <div className="bg-red-700 text-pi-on-accent px-4 py-2 rounded-xl text-center shadow-lg animate-pulse mx-4 mt-4">
           ⚠️ System reboot required to activate latest kernel updates
         </div>
       )}

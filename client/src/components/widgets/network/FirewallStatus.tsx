@@ -20,21 +20,21 @@ export function FirewallStatus() {
 
   const actionColor = (action: string) => {
     const a = action.toUpperCase()
-    if (a.startsWith('ALLOW')) return 'text-green-400'
-    if (a.startsWith('LIMIT')) return 'text-yellow-400'
-    return 'text-red-400'
+    if (a.startsWith('ALLOW')) return 'text-pi-success'
+    if (a.startsWith('LIMIT')) return 'text-pi-warning'
+    return 'text-pi-error'
   }
 
   return (
-    <div className="rounded-2xl border p-4 shadow bg-[#0f172a] text-white w-full">
+    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full">
       <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
         Firewall Status
         {data && (
           <Badge
             className={
               data.enabled
-                ? 'bg-green-500/20 text-green-400'
-                : 'bg-red-500/20 text-red-400'
+                ? 'bg-pi-success-soft text-pi-success'
+                : 'bg-pi-error-soft text-pi-error'
             }
           >
             {data.enabled ? '🟢 Active' : '🔴 Disabled'}
@@ -42,31 +42,31 @@ export function FirewallStatus() {
         )}
       </h3>
       {isLoading ? (
-        <p className="text-gray-400">Loading...</p>
+        <p className="text-pi-text-muted">Loading...</p>
       ) : error || !data ? (
-        <p className="text-red-400">Unavailable</p>
+        <p className="text-pi-error">Unavailable</p>
       ) : (
         <div className="text-sm space-y-2">
           {data.engine && (
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-pi-text-muted">
               Engine: <span className="font-mono">{data.engine}</span>
             </p>
           )}
           {data.note && (
-            <p className="text-xs text-gray-400 italic">{data.note}</p>
+            <p className="text-xs text-pi-text-muted italic">{data.note}</p>
           )}
           {rules.length === 0 ? (
-            <p className="text-gray-400">No firewall rules configured</p>
+            <p className="text-pi-text-muted">No firewall rules configured</p>
           ) : (
             <>
               {rules.length > MAX_DISPLAY && (
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-pi-text-muted">
                   Showing {MAX_DISPLAY} of {rules.length} rules
                 </p>
               )}
               <div className="overflow-y-auto max-h-64">
                 <table className="text-sm w-full">
-                  <thead className="text-gray-400 text-xs sticky top-0 bg-[#0f172a]">
+                  <thead className="text-pi-text-muted text-xs sticky top-0 bg-pi-card">
                     <tr>
                       <th className="text-left py-1">To</th>
                       <th className="text-left py-1">Action</th>
@@ -75,7 +75,7 @@ export function FirewallStatus() {
                   </thead>
                   <tbody>
                     {displayRules.map((r: any, idx: number) => (
-                      <tr key={idx} className="border-t border-gray-800" title={r.comment || undefined}>
+                      <tr key={idx} className="border-t border-pi-border" title={r.comment || undefined}>
                         <td className="font-mono py-1 pr-2 truncate max-w-[120px]">{r.to}</td>
                         <td className="text-xs pr-2 whitespace-nowrap">
                           <span className={actionColor(r.action)}>

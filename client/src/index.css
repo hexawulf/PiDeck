@@ -2,7 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Theme tokens
+ * ────────────────────────────────────────────────────────────────────
+ *  <html class="light|dark">  ← set before first paint by client/index.html,
+ *            │                   then kept in sync by ThemeProvider
+ *            ▼
+ *  :root  = LIGHT values      .dark = DARK values
+ *            │
+ *            ├─ shadcn tokens (--background, --card, …)  → components/ui/*
+ *            └─ --pi-* tokens → tailwind `pi` colors (bg-pi-card, text-pi-text, …)
+ *                               and the .pi-* helper classes below
+ *
+ *  Components must use tokens, never raw palette classes or hex
+ *  (enforced by scripts/check-theme-tokens.sh).
+ *  --pi-terminal-* is intentionally identical in both themes: the log
+ *  pane is a terminal and stays dark.
+ */
 :root {
+  color-scheme: light;
+
   --background: hsl(0, 0%, 100%);
   --foreground: hsl(20, 14.3%, 4.1%);
   --muted: hsl(60, 4.8%, 95.9%);
@@ -24,21 +43,36 @@
   --ring: hsl(20, 14.3%, 4.1%);
   --radius: 0.5rem;
 
-  /* PiDeck custom colors */
-  --pi-dark: hsl(222, 84%, 5%);
-  --pi-darker: hsl(222, 84%, 3%);
-  --pi-card: hsl(215, 28%, 17%);
-  --pi-card-hover: hsl(215, 20%, 25%);
-  --pi-border: hsl(215, 14%, 34%);
-  --pi-text: hsl(210, 40%, 98%);
-  --pi-text-muted: hsl(215, 20%, 65%);
-  --pi-accent: hsl(217, 91%, 60%);
-  --pi-success: hsl(142, 76%, 36%);
-  --pi-warning: hsl(32, 95%, 44%);
-  --pi-error: hsl(0, 84%, 60%);
+  /* PiDeck palette — light */
+  --pi-dark: hsl(210, 40%, 96%);          /* page background   (slate-100) */
+  --pi-darker: hsl(210, 40%, 98%);        /* inset surfaces    (slate-50)  */
+  --pi-card: hsl(0, 0%, 100%);            /* cards, widgets                */
+  --pi-card-hover: hsl(214, 32%, 91%);    /* hover             (slate-200) */
+  --pi-input: hsl(0, 0%, 100%);
+  --pi-border: hsl(213, 27%, 84%);        /*                   (slate-300) */
+  --pi-text: hsl(222, 47%, 11%);          /*                   (slate-900) */
+  --pi-text-muted: hsl(215, 19%, 35%);    /*                   (slate-600) */
+  --pi-accent: hsl(221, 83%, 53%);        /*                   (blue-600)  */
+  --pi-accent-hover: hsl(224, 76%, 48%);  /*                   (blue-700)  */
+  --pi-on-accent: hsl(0, 0%, 100%);
+  --pi-success: hsl(142, 72%, 29%);       /*                   (green-700) */
+  --pi-warning: hsl(26, 90%, 37%);        /*                   (amber-700) */
+  --pi-error: hsl(0, 74%, 42%);           /*                   (red-700)   */
+  --pi-success-soft: hsl(141, 84%, 93%);  /*                   (green-100) */
+  --pi-warning-soft: hsl(48, 96%, 89%);   /*                   (amber-100) */
+  --pi-error-soft: hsl(0, 93%, 94%);      /*                   (red-100)   */
+  --pi-chart-1: hsl(243, 75%, 59%);       /* disk read    (indigo-600)  */
+  --pi-chart-2: hsl(142, 76%, 36%);       /* disk write   (green-600)   */
+  --pi-chart-3: hsl(221, 83%, 53%);       /* net received (blue-600)    */
+  --pi-chart-4: hsl(161, 94%, 30%);       /* net sent     (emerald-600) */
+  --pi-terminal-bg: hsl(0, 0%, 0%);
+  --pi-terminal-text: hsl(220, 14%, 96%);
+  --pi-terminal-muted: hsl(218, 11%, 65%);
 }
 
 .dark {
+  color-scheme: dark;
+
   --background: hsl(222, 84%, 5%);
   --foreground: hsl(210, 40%, 98%);
   --muted: hsl(215, 28%, 17%);
@@ -58,6 +92,32 @@
   --destructive: hsl(0, 62.8%, 30.6%);
   --destructive-foreground: hsl(210, 40%, 98%);
   --ring: hsl(215, 20%, 65%);
+
+  /* PiDeck palette — dark (unchanged from 1.x; status = the former -400 shades) */
+  --pi-dark: hsl(222, 84%, 5%);
+  --pi-darker: hsl(222, 84%, 3%);
+  --pi-card: hsl(215, 28%, 17%);
+  --pi-card-hover: hsl(215, 20%, 25%);
+  --pi-input: hsl(222, 84%, 3%);
+  --pi-border: hsl(215, 14%, 34%);
+  --pi-text: hsl(210, 40%, 98%);
+  --pi-text-muted: hsl(215, 20%, 65%);
+  --pi-accent: hsl(221, 83%, 53%);        /* blue-600: AA with white (was blue-500, 3.6:1) */
+  --pi-accent-hover: hsl(224, 76%, 48%);
+  --pi-on-accent: hsl(0, 0%, 100%);
+  --pi-success: hsl(142, 69%, 58%);
+  --pi-warning: hsl(50, 98%, 64%);
+  --pi-error: hsl(0, 91%, 71%);           /* red-400: AA on --pi-card */
+  --pi-success-soft: hsla(142, 69%, 58%, 0.2);
+  --pi-warning-soft: hsla(50, 98%, 64%, 0.2);
+  --pi-error-soft: hsla(0, 91%, 71%, 0.2);
+  --pi-chart-1: hsl(242, 51%, 68%);
+  --pi-chart-2: hsl(144, 42%, 65%);
+  --pi-chart-3: hsl(217, 91%, 60%);
+  --pi-chart-4: hsl(160, 84%, 39%);
+  --pi-terminal-bg: hsl(0, 0%, 0%);
+  --pi-terminal-text: hsl(220, 14%, 96%);
+  --pi-terminal-muted: hsl(218, 11%, 65%);
 }
 
 @layer base {
@@ -122,7 +182,7 @@
 
 .tab-button.active {
   background-color: var(--pi-accent);
-  color: white;
+  color: var(--pi-on-accent);
 }
 
 .tab-button:not(.active) {
@@ -159,47 +219,28 @@
 
 /* Status indicators */
 .status-running {
-  @apply bg-green-500;
+  background-color: var(--pi-success);
 }
 
 .status-stopped {
-  @apply bg-red-500;
+  background-color: var(--pi-error);
 }
 
 .status-warning {
-  @apply bg-yellow-500;
+  background-color: var(--pi-warning);
 }
 
 .status-online {
-  @apply bg-green-500/20 text-green-400;
+  background-color: var(--pi-success-soft);
+  color: var(--pi-success);
 }
 
 .status-offline {
-  @apply bg-red-500/20 text-red-400;
+  background-color: var(--pi-error-soft);
+  color: var(--pi-error);
 }
 
 .status-restart {
-  @apply bg-yellow-500/20 text-yellow-400;
-}
-
-/* ---- PiDeck: Dark-mode password visibility fix ---- */
-.dark input[type="password"] {
-  color: #0f172a !important;           /* slate-900 (very dark) */
-  caret-color: #0f172a !important;
-}
-
-/* Show a readable placeholder while empty */
-.dark input[type="password"]::placeholder {
-  color: #64748b !important;           /* slate-500 */
-  opacity: 1;
-}
-
-/* Chrome/Edge autofill keeps text white unless overridden */
-.dark input[type="password"]:-webkit-autofill,
-.dark input[type="password"]:-webkit-autofill:hover,
-.dark input[type="password"]:-webkit-autofill:focus,
-.dark input[type="password"]:-webkit-autofill:active {
-  -webkit-text-fill-color: #0f172a !important;
-  caret-color: #0f172a !important;
-  transition: background-color 9999s ease-out 0s; /* avoid yellow flash */
+  background-color: var(--pi-warning-soft);
+  color: var(--pi-warning);
 }

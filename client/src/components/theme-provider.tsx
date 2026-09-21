@@ -1,73 +1,66 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import {
+  type ResolvedTheme,
+  type Theme,
+  DARK_QUERY,
+  applyTheme,
+  readStoredTheme,
+  resolveTheme,
+  systemPrefersDark,
+  themeFromDocument,
+  writeStoredTheme,
+} from "@/lib/theme";
 
-type Theme = "dark" | "light" | "system";
-
-type ThemeProviderProps = {
-  children: React.ReactNode;
-  defaultTheme?: Theme;
-  storageKey?: string;
-};
+// Load:    client/index.html script resolves + sets <html class>; we adopt it.
+// Runtime: toggle() stores an explicit light/dark; while the stored value is
+//          "system" we follow OS changes via matchMedia.
 
 type ThemeProviderState = {
   theme: Theme;
+  resolvedTheme: ResolvedTheme;
   setTheme: (theme: Theme) => void;
+  toggleTheme: () => void;
 };
 
-const initialState: ThemeProviderState = {
-  theme: "system",
-  setTheme: () => null,
-};
+const ThemeProviderContext = createContext<ThemeProviderState | undefined>(undefined);
 
-const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
-
-export function ThemeProvider({
-  children,
-  defaultTheme = "dark",
-  storageKey = "pideck-ui-theme",
-  ...props
-}: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setThemeState] = useState<Theme>(readStoredTheme);
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(
+    () => themeFromDocument() ?? resolveTheme(readStoredTheme(), systemPrefersDark()),
   );
 
   useEffect(() => {
-    const root = window.document.documentElement;
+    applyTheme(resolvedTheme);
+  }, [resolvedTheme]);
 
-    root.classList.remove("light", "dark");
-
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light";
-
-      root.classList.add(systemTheme);
-      return;
-    }
-
-    root.classList.add(theme);
+  useEffect(() => {
+    if (theme !== "system" || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia(DARK_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setResolvedTheme(e.matches ? "dark" : "light");
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
   }, [theme]);
 
-  const value = {
-    theme,
-    setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme);
-      setTheme(theme);
-    },
-  };
+  const setTheme = useCallback((next: Theme) => {
+    writeStoredTheme(next);
+    setThemeState(next);
+    setResolvedTheme(resolveTheme(next, systemPrefersDark()));
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme(resolvedTheme === "dark" ? "light" : "dark");
+  }, [resolvedTheme, setTheme]);
 
   return (
-    <ThemeProviderContext.Provider {...props} value={value}>
+    <ThemeProviderContext.Provider value={{ theme, resolvedTheme, setTheme, toggleTheme }}>
       {children}
     </ThemeProviderContext.Provider>
   );
 }
 
-export const useTheme = () => {
+export function useTheme(): ThemeProviderState {
   const context = useContext(ThemeProviderContext);
-
-  if (context === undefined)
-    throw new Error("useTheme must be used within a ThemeProvider");
-
+  if (context === undefined) throw new Error("useTheme must be used within a ThemeProvider");
   return context;
-};
+}

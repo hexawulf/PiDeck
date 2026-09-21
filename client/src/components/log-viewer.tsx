@@ -80,16 +80,16 @@ const LogLineHighlighter: React.FC<{ line: string }> = ({ line }) => {
     if (match.index > lastIndex) parts.push(line.substring(lastIndex, match.index));
 
     if (match[1]) {
-      parts.push(<span key={lastIndex} className="text-cyan-400">{match[0]}</span>);
+      parts.push(<span key={lastIndex} className="text-cyan-400">{match[0]}</span>); // theme-ok: terminal pane is dark in both themes
     } else if (match[3]) {
-      parts.push(<span key={lastIndex} className="text-orange-400">{match[0]}</span>);
+      parts.push(<span key={lastIndex} className="text-orange-400">{match[0]}</span>); // theme-ok: terminal pane is dark in both themes
     } else if (match[5]) {
       const upper = match[0].toUpperCase();
       const cls =
-        upper === "ERROR" ? "text-red-500 font-bold" :
-        upper === "WARN" ? "text-yellow-500 font-bold" :
-        upper === "SUCCESS" ? "text-green-500 font-bold" :
-        "text-blue-400";
+        upper === "ERROR" ? "text-red-500 font-bold" : // theme-ok: terminal pane is dark in both themes
+        upper === "WARN" ? "text-yellow-500 font-bold" : // theme-ok: terminal pane is dark in both themes
+        upper === "SUCCESS" ? "text-green-500 font-bold" : // theme-ok: terminal pane is dark in both themes
+        "text-blue-400"; // theme-ok: terminal pane is dark in both themes
       parts.push(<span key={lastIndex} className={cls}>{match[0]}</span>);
     } else {
       parts.push(match[0]);
@@ -118,14 +118,14 @@ function LogListItem({
       onClick={onClick}
       className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors ${
         selected
-          ? "bg-pi-accent text-white"
+          ? "bg-pi-accent text-pi-on-accent"
           : "hover:bg-pi-card-hover text-pi-text"
       }`}
     >
       <div className="flex items-center gap-2 min-w-0">
         <CheckCircle2
           className={`h-3 w-3 flex-shrink-0 ${
-            selected ? "text-white" : "text-green-500"
+            selected ? "text-pi-on-accent" : "text-pi-success"
           }`}
         />
         <div className="flex-1 min-w-0">
@@ -135,7 +135,7 @@ function LogListItem({
           {!compact && (
             <div
               className={`text-[10px] mt-0.5 ${
-                selected ? "text-white/70" : "text-pi-text-muted"
+                selected ? "text-pi-on-accent opacity-70" : "text-pi-text-muted"
               }`}
             >
               {relativeTime(log.mtime)} · {formatSize(log.size)}
@@ -367,7 +367,7 @@ export default function LogViewer() {
   if (logsError) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-red-500">{logsError}</p>
+        <p className="text-pi-error">{logsError}</p>
       </div>
     );
   }
@@ -404,7 +404,7 @@ export default function LogViewer() {
                     title={`${CATEGORY_META[key].label} (${count})`}
                   >
                     <Icon className="h-4 w-4 text-pi-text-muted" />
-                    <span className="absolute -top-1.5 -right-2 text-[9px] bg-pi-accent text-white rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5 leading-none">
+                    <span className="absolute -top-1.5 -right-2 text-[9px] bg-pi-accent text-pi-on-accent rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5 leading-none">
                       {count}
                     </span>
                   </div>
@@ -606,7 +606,7 @@ export default function LogViewer() {
             </div>
           </CardHeader>
           <CardContent className="flex-1 min-h-0 flex flex-col">
-            <div className="bg-black rounded-lg p-4 max-h-[600px] lg:max-h-none flex-1 min-h-0 overflow-auto font-mono text-sm custom-scrollbar">
+            <div className="bg-pi-terminal-bg rounded-lg p-4 max-h-[600px] lg:max-h-none flex-1 min-h-0 overflow-auto font-mono text-sm custom-scrollbar">
               {error && (
                 <div className="text-red-500 mb-4 flex items-center gap-2">
                   <AlertCircle className="h-4 w-4" />
@@ -615,27 +615,27 @@ export default function LogViewer() {
               )}
 
               {!selectedLog && !error && (
-                <div className="text-gray-500 text-center py-20">
+                <div className="text-pi-terminal-muted text-center py-20">
                   <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   Select a log from the list to view its contents
                 </div>
               )}
 
               {selectedLog && !error && logContent.length === 0 && !isLoading && (
-                <div className="text-gray-500 text-center py-20">
+                <div className="text-pi-terminal-muted text-center py-20">
                   No log entries found
                 </div>
               )}
 
               {isLoading && logContent.length === 0 && (
-                <div className="text-gray-500 text-center py-20">
+                <div className="text-pi-terminal-muted text-center py-20">
                   <RefreshCw className="h-8 w-8 mx-auto mb-4 animate-spin" />
                   Loading...
                 </div>
               )}
 
               {logContent.map((line, idx) => (
-                <div key={idx} className="leading-relaxed text-gray-100">
+                <div key={idx} className="leading-relaxed text-pi-terminal-text">
                   <LogLineHighlighter line={line} />
                 </div>
               ))}

@@ -17,21 +17,21 @@ export function FilesystemUsageBox() {
   const filesystems = data || []
 
   return (
-    <div className="rounded-2xl border p-4 shadow bg-[#0f172a] text-white w-full max-w-2xl">
+    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full max-w-2xl">
       <h3 className="text-lg font-semibold mb-2">Filesystem Usage</h3>
       {isLoading ? (
-        <p className="text-gray-400">Loading filesystem data...</p>
+        <p className="text-pi-text-muted">Loading filesystem data...</p>
       ) : error ? (
         <div className="text-sm">
-          <p className="text-yellow-400 mb-2">Filesystem data temporarily unavailable</p>
-          <p className="text-gray-400 text-xs">{error.message}</p>
+          <p className="text-pi-warning mb-2">Filesystem data temporarily unavailable</p>
+          <p className="text-pi-text-muted text-xs">{error.message}</p>
         </div>
       ) : filesystems.length === 0 ? (
-        <p className="text-gray-400">No filesystem data available</p>
+        <p className="text-pi-text-muted">No filesystem data available</p>
       ) : (
         <table className="text-sm w-full">
           <thead>
-            <tr className="text-gray-400">
+            <tr className="text-pi-text-muted">
               <th className="text-left">Mount</th>
               <th className="text-left">Used</th>
               <th className="text-left">Free</th>

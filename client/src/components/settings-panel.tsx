@@ -91,7 +91,7 @@ const SettingsPanel: React.FC = () => {
               id="currentPassword"
               type="password"
               {...register("currentPassword")}
-              className="bg-pi-input border-pi-border focus:ring-pi-accent"
+              className="bg-pi-input text-pi-text placeholder:text-pi-text-muted border-pi-border focus:ring-pi-accent"
               autoComplete="current-password"
             />
             {errors.currentPassword && <p className="text-sm text-pi-error">{errors.currentPassword.message}</p>}
@@ -103,7 +103,7 @@ const SettingsPanel: React.FC = () => {
               id="newPassword"
               type="password"
               {...register("newPassword")}
-              className="bg-pi-input border-pi-border focus:ring-pi-accent"
+              className="bg-pi-input text-pi-text placeholder:text-pi-text-muted border-pi-border focus:ring-pi-accent"
               autoComplete="new-password"
             />
             {errors.newPassword && <p className="text-sm text-pi-error">{errors.newPassword.message}</p>}
@@ -115,13 +115,13 @@ const SettingsPanel: React.FC = () => {
               id="confirmNewPassword"
               type="password"
               {...register("confirmNewPassword")}
-              className="bg-pi-input border-pi-border focus:ring-pi-accent"
+              className="bg-pi-input text-pi-text placeholder:text-pi-text-muted border-pi-border focus:ring-pi-accent"
               autoComplete="new-password"
             />
             {errors.confirmNewPassword && <p className="text-sm text-pi-error">{errors.confirmNewPassword.message}</p>}
           </div>
 
-          <Button type="submit" className="w-full bg-pi-accent hover:bg-pi-accent-hover text-white" disabled={isChangingPassword}>
+          <Button type="submit" className="w-full bg-pi-accent hover:bg-pi-accent-hover text-pi-on-accent" disabled={isChangingPassword}>
             {isChangingPassword ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

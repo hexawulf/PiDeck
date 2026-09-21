@@ -39,7 +39,7 @@ export function DiskIOGraph() {
   if (historicalData.isLoading) return <p className="pi-text-muted">Loading Disk I/O data...</p>;
   if (historicalData.error || !historicalData.data) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-pi-muted">
+      <div className="flex flex-col items-center justify-center h-full text-pi-text-muted">
         <ServerCrash className="w-12 h-12 mb-2 text-pi-error" />
         <p>Error loading Disk I/O data.</p>
       </div>
@@ -63,21 +63,21 @@ export function DiskIOGraph() {
           <AreaChart data={chartData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
             <defs>
               <linearGradient id="colorRead" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
+                <stop offset="5%" stopColor="var(--pi-chart-1)" stopOpacity={0.8}/>
+                <stop offset="95%" stopColor="var(--pi-chart-1)" stopOpacity={0}/>
               </linearGradient>
               <linearGradient id="colorWrite" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#82ca9d" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#82ca9d" stopOpacity={0}/>
+                <stop offset="5%" stopColor="var(--pi-chart-2)" stopOpacity={0.8}/>
+                <stop offset="95%" stopColor="var(--pi-chart-2)" stopOpacity={0}/>
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-            <XAxis dataKey="time" tickFormatter={formatTime} stroke="#a0a0a0" fontSize={12} />
-            <YAxis unit="KB/s" stroke="#a0a0a0" fontSize={12} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--pi-border)" strokeOpacity={0.6} />
+            <XAxis dataKey="time" tickFormatter={formatTime} stroke="var(--pi-text-muted)" fontSize={12} />
+            <YAxis unit="KB/s" stroke="var(--pi-text-muted)" fontSize={12} />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: "12px" }} />
-            <Area type="monotone" dataKey="read" stroke="#8884d8" fillOpacity={1} fill="url(#colorRead)" unit="KB/s" name="Read Speed" />
-            <Area type="monotone" dataKey="write" stroke="#82ca9d" fillOpacity={1} fill="url(#colorWrite)" unit="KB/s" name="Write Speed" />
+            <Area type="monotone" dataKey="read" stroke="var(--pi-chart-1)" fillOpacity={1} fill="url(#colorRead)" unit="KB/s" name="Read Speed" />
+            <Area type="monotone" dataKey="write" stroke="var(--pi-chart-2)" fillOpacity={1} fill="url(#colorWrite)" unit="KB/s" name="Write Speed" />
           </AreaChart>
         </ResponsiveContainer>
       </CardContent>
@@ -98,7 +98,7 @@ export function NetworkBandwidthGraph() {
   if (historicalData.isLoading) return <p className="pi-text-muted">Loading Network Bandwidth data...</p>;
   if (historicalData.error || !historicalData.data) {
      return (
-      <div className="flex flex-col items-center justify-center h-full text-pi-muted">
+      <div className="flex flex-col items-center justify-center h-full text-pi-text-muted">
         <ServerCrash className="w-12 h-12 mb-2 text-pi-error" />
         <p>Error loading Network data.</p>
       </div>
@@ -121,21 +121,21 @@ export function NetworkBandwidthGraph() {
           <AreaChart data={chartData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
              <defs>
               <linearGradient id="colorRx" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                <stop offset="5%" stopColor="var(--pi-chart-3)" stopOpacity={0.8}/>
+                <stop offset="95%" stopColor="var(--pi-chart-3)" stopOpacity={0}/>
               </linearGradient>
               <linearGradient id="colorTx" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                <stop offset="5%" stopColor="var(--pi-chart-4)" stopOpacity={0.8}/>
+                <stop offset="95%" stopColor="var(--pi-chart-4)" stopOpacity={0}/>
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-            <XAxis dataKey="time" tickFormatter={formatTime} stroke="#a0a0a0" fontSize={12} />
-            <YAxis unit="KB/s" stroke="#a0a0a0" fontSize={12} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--pi-border)" strokeOpacity={0.6} />
+            <XAxis dataKey="time" tickFormatter={formatTime} stroke="var(--pi-text-muted)" fontSize={12} />
+            <YAxis unit="KB/s" stroke="var(--pi-text-muted)" fontSize={12} />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: "12px" }} />
-            <Area type="monotone" dataKey="received" stroke="#3b82f6" fillOpacity={1} fill="url(#colorRx)" unit="KB/s" name="Received" />
-            <Area type="monotone" dataKey="sent" stroke="#10b981" fillOpacity={1} fill="url(#colorTx)" unit="KB/s" name="Sent" />
+            <Area type="monotone" dataKey="received" stroke="var(--pi-chart-3)" fillOpacity={1} fill="url(#colorRx)" unit="KB/s" name="Received" />
+            <Area type="monotone" dataKey="sent" stroke="var(--pi-chart-4)" fillOpacity={1} fill="url(#colorTx)" unit="KB/s" name="Sent" />
           </AreaChart>
         </ResponsiveContainer>
       </CardContent>

@@ -69,9 +69,9 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
   if (!data) return null;
 
   const getTemperatureColor = (temp: number) => {
-    if (temp > 70) return "text-red-400";
-    if (temp > 60) return "text-yellow-400";
-    return "text-green-400";
+    if (temp > 70) return "text-pi-error";
+    if (temp > 60) return "text-pi-warning";
+    return "text-pi-success";
   };
 
   return (
@@ -82,7 +82,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
           <div className="flex items-center justify-between mb-2"> {/* Adjusted mb-4 to mb-2 */}
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                <Cpu className="w-5 h-5 text-blue-400" />
+                <Cpu className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
                 <h3 className="text-sm font-medium pi-text-muted">CPU Usage</h3>
@@ -105,7 +105,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
-                <Zap className="w-5 h-5 text-green-400" />
+                <Zap className="w-5 h-5 text-pi-success" />
               </div>
               <div>
                 <h3 className="text-sm font-medium pi-text-muted">Memory</h3>
@@ -131,7 +131,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-orange-500/20 rounded-lg flex items-center justify-center">
-                <Thermometer className="w-5 h-5 text-orange-400" />
+                <Thermometer className="w-5 h-5 text-orange-600 dark:text-orange-400" />
               </div>
               <div>
                 <h3 className="text-sm font-medium pi-text-muted">Temperature</h3>
@@ -142,7 +142,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
             </div>
           </div>
           <div className="flex items-center space-x-2 mt-1"> {/* Added mt-1 for spacing */}
-            <div className={`w-2 h-2 rounded-full ${(data.temperature ?? 0) < 70 ? 'bg-green-500' : (data.temperature ?? 0) < 80 ? 'bg-yellow-500' : 'bg-red-500'}`} />
+            <div className={`w-2 h-2 rounded-full ${(data.temperature ?? 0) < 70 ? 'bg-pi-success' : (data.temperature ?? 0) < 80 ? 'bg-pi-warning' : 'bg-pi-error'}`} />
             <span className="text-xs pi-text-muted">
               {(data.temperature ?? 0) < 70 ? 'Normal' : (data.temperature ?? 0) < 80 ? 'Warm' : 'Hot'}
             </span>
@@ -156,7 +156,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
-                <Wifi className="w-5 h-5 text-purple-400" />
+                <Wifi className="w-5 h-5 text-purple-600 dark:text-purple-400" />
               </div>
               <div>
                 <h3 className="text-sm font-medium pi-text-muted">Network</h3>
@@ -262,7 +262,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
               onClick={onUpdateSystem}
               disabled={isSystemUpdating}
             >
-              <Download className={`w-5 h-5 text-green-400 ${isSystemUpdating ? 'animate-spin' : ''}`} />
+              <Download className={`w-5 h-5 text-pi-success ${isSystemUpdating ? 'animate-spin' : ''}`} />
               <span className="text-xs pi-text">Update System</span>
             </Button>
             <Button
@@ -270,7 +270,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
               className="flex flex-col items-center space-y-1 p-3 h-auto bg-pi-darker hover:bg-pi-card-hover border-pi-border"
               onClick={onOpenApps}
             >
-              <ListChecks className="w-5 h-5 text-purple-400" />
+              <ListChecks className="w-5 h-5 text-purple-600 dark:text-purple-400" />
               <span className="text-xs pi-text">Manage Apps</span>
             </Button>
             <Button
@@ -278,7 +278,7 @@ export default function SystemOverview({ onOpenApps, onOpenLogs, onUpdateSystem,
               className="flex flex-col items-center space-y-1 p-3 h-auto bg-pi-darker hover:bg-pi-card-hover border-pi-border"
               onClick={onOpenLogs}
             >
-              <BarChart3 className="w-5 h-5 text-orange-400" />
+              <BarChart3 className="w-5 h-5 text-orange-600 dark:text-orange-400" />
               <span className="text-xs pi-text">View Logs</span>
             </Button>
           </div>

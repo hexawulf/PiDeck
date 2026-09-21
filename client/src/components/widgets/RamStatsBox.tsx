@@ -17,15 +17,15 @@ export function RamStatsBox() {
   const ramData = data || { total: 0, used: 0, free: 0, usage: 0 }
 
   return (
-    <div className="rounded-2xl border p-4 shadow bg-[#0f172a] text-white w-full">
+    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full">
       <h3 className="text-lg font-semibold mb-2">RAM Stats</h3>
       {isLoading ? (
-        <p className="text-gray-400">Loading RAM data...</p>
+        <p className="text-pi-text-muted">Loading RAM data...</p>
       ) : error ? (
         <div className="text-sm">
-          <p className="text-yellow-400 mb-2">RAM data temporarily unavailable</p>
-          <p className="text-gray-400 text-xs">{error.message}</p>
-          <div className="mt-2 text-gray-400 space-y-1">
+          <p className="text-pi-warning mb-2">RAM data temporarily unavailable</p>
+          <p className="text-pi-text-muted text-xs">{error.message}</p>
+          <div className="mt-2 text-pi-text-muted space-y-1">
             <p>Total: N/A</p>
             <p>Used: N/A</p>
             <p>Free: N/A</p>

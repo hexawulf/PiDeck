@@ -18,6 +18,7 @@ import hostLogsRouter from "./routes/hostLogs";
 
 import { loginSchema } from "@shared/schema";
 import { rateLimitLogin } from "./middleware/rateLimitLogin";
+import { envPasswordMatches } from "./services/env-password";
 
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
@@ -106,22 +107,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { password } = loginSchema.parse(req.body);
 
-      // 1) Primary: validate via AuthService (DB/hashed)
-      const validationResult = await AuthService.validatePassword(password);
+      // 1) Env/file bootstrap password first: a match must not touch the DB
+      //    admin's failed-attempt counter (see services/env-password.ts).
+      // 2) Otherwise validate via AuthService (DB/hashed, with lockout).
+      const envMatch = envPasswordMatches(password);
+      const validationResult = envMatch
+        ? { isValid: true, user: undefined, error: undefined }
+        : await AuthService.validatePassword(password);
 
-      // 2) Fallback: also accept password from ENV or file (for bootstrap / no-DB admin)
-      let expected = (process.env.APP_PASSWORD || "").trim();
-      if (!expected && process.env.APP_PASSWORD_FILE) {
-        try {
-          expected = fs.readFileSync(process.env.APP_PASSWORD_FILE, "utf8").trim();
-        } catch {
-          // ignore file read errors; fallback stays empty
-        }
-      }
-      const supplied = (password || "").trim();
-      const envMatch = expected.length > 0 && supplied === expected;
-
-      if (!validationResult.isValid && !envMatch) {
+      if (!validationResult.isValid) {
         if (validationResult.error === "account_locked") {
           let message = "Account is locked due to too many failed login attempts.";
           if (validationResult.user?.account_locked_until) {
