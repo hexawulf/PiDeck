@@ -2,7 +2,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { describe, expect, it } from "vitest";
-import { cspDirectives, inlineScriptHashes } from "../../server/security";
+import { CLOUDFLARE_INSIGHTS, cspDirectives, inlineScriptHashes } from "../../server/security";
 
 const sha = (s: string) => `'sha256-${crypto.createHash("sha256").update(s, "utf8").digest("base64")}'`;
 
@@ -22,9 +22,10 @@ describe("inlineScriptHashes", () => {
 });
 
 describe("cspDirectives", () => {
-  it("allows only self + the given hashes for scripts, no unsafe-inline", () => {
+  it("allows self, the given hashes and the Cloudflare beacon for scripts; no unsafe-inline", () => {
     const d = cspDirectives(["'sha256-abc'"]);
-    expect(d["script-src"]).toEqual(["'self'", "'sha256-abc'"]);
+    expect(d["script-src"]).toEqual(["'self'", "'sha256-abc'", CLOUDFLARE_INSIGHTS.script]);
+    expect(d["connect-src"]).toEqual(["'self'", CLOUDFLARE_INSIGHTS.connect]);
     expect(d["script-src"].join(" ")).not.toContain("unsafe");
     expect(d["object-src"]).toEqual(["'none'"]);
     expect(d["frame-ancestors"]).toEqual(["'none'"]);

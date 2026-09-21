@@ -16,6 +16,14 @@ import helmet from "helmet";
 
 const INLINE_SCRIPT_RE = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
 
+// Cloudflare Web Analytics: the edge injects beacon.min.js into proxied pages
+// and it reports back to cloudflareinsights.com. Remove both if the zone's
+// automatic RUM injection is turned off.
+export const CLOUDFLARE_INSIGHTS = {
+  script: "https://static.cloudflareinsights.com",
+  connect: "https://cloudflareinsights.com",
+};
+
 export function inlineScriptHashes(html: string): string[] {
   const hashes: string[] = [];
   for (const m of html.matchAll(INLINE_SCRIPT_RE)) {
@@ -28,12 +36,12 @@ export function inlineScriptHashes(html: string): string[] {
 export function cspDirectives(scriptHashes: string[]): Record<string, string[]> {
   return {
     "default-src": ["'self'"],
-    "script-src": ["'self'", ...scriptHashes],
+    "script-src": ["'self'", ...scriptHashes, CLOUDFLARE_INSIGHTS.script],
     // Radix (popper positioning) and Recharts write inline style attributes.
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "data:"],
     "font-src": ["'self'", "data:"],
-    "connect-src": ["'self'"],
+    "connect-src": ["'self'", CLOUDFLARE_INSIGHTS.connect],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],

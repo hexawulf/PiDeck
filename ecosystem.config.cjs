@@ -13,7 +13,8 @@ module.exports = {
     env_file: '.env',
     env: {
       NODE_ENV: 'production',
-      PORT: 5006
+      PORT: 5006,
+      CSP_ENFORCE: 'true'   // server/security.ts: enforce CSP (Report-Only when unset)
     }
   }]
 }

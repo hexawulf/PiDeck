@@ -30,5 +30,5 @@ npx vite build --outDir "$OUT/public" --emptyOutDir >>"$LOG" 2>&1
 npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir="$OUT" >>"$LOG" 2>&1
 
 echo "serving dist-dev on :$PORT (log: $LOG)"
-exec env NODE_ENV=production PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \
+exec env NODE_ENV=production CSP_ENFORCE=true PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \
   node "$OUT/index.js" 2>&1 | tee -a "$LOG"
