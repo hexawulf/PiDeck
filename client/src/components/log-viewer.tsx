@@ -492,7 +492,7 @@ export default function LogViewer() {
                             <span className="text-[11px] font-semibold text-pi-text-muted uppercase tracking-wider group-hover:text-pi-text transition-colors">
                               {label}
                             </span>
-                            <span className="text-[10px] bg-pi-card-hover text-pi-text-muted rounded-full px-1.5 py-0.5 leading-none tabular-nums">
+                            <span className="text-[10px] bg-pi-card-hover text-pi-text rounded-full px-1.5 py-0.5 leading-none tabular-nums">
                               {catLogs.length}
                             </span>
                           </div>
