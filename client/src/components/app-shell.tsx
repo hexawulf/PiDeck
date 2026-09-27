@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/theme-toggle";
 import AboutModal from "@/components/modals/about-modal";
+import { RefreshControl } from "@/components/refresh-control";
 import { useAuth } from "@/hooks/use-auth";
 import { useAlerts } from "@/hooks/use-alerts";
 import { useRefreshAll } from "@/hooks/use-refresh-all";
@@ -96,6 +97,7 @@ export default function AppShell({ tab }: { tab: TabId }) {
             </div>
 
             <div className="flex items-center space-x-3">
+              <RefreshControl />
               <AboutModal />
               <ThemeToggle />
               <Tooltip>
