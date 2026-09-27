@@ -69,6 +69,7 @@ Then add `{ id, title, icon, defaultSize: { w, h }, component }` to `WIDGETS`.
 - ❌ No `rounded-lg+`, `shadow`, `max-w-*` under `components/widgets/` (`npm run check:theme` fails)
 - ✅ Validate every response with a schema in `widgets/schemas.ts` (also used by `tests/e2e/contract.spec.ts`)
 - ✅ Colors from `--pi-*` tokens only (`text-pi-text-muted`, `bg-pi-chart-1`, …)
+- ✅ Accent: `bg-pi-accent` for fills (with `text-pi-on-accent`), `text-pi-accent-text` for accent text and icons — `text-pi-accent` fails AA on dark cards and `check:theme`
 
 ### TanStack Query Hooks Pattern
 **Reference**: `client/src/hooks/use-docker.ts` — one hook per resource plus colocated mutation hooks.

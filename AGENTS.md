@@ -117,6 +117,6 @@ Before creating a PR, verify:
 ## Common Gotchas
 - **Session cookies**: Require `credentials: 'include'` on all fetch calls
 - **API paths**: Must start with `/api/` (enforced by routing logic)
-- **Theme**: Use `--pi-*` tokens (`bg-pi-card`, `text-pi-text`); raw colors fail `npm run check:theme`
+- **Theme**: Use `--pi-*` tokens (`bg-pi-card`, `text-pi-text`); raw colors fail `npm run check:theme`. `--pi-accent` is for fills (`bg-pi-accent`); accent text and icons use `--pi-accent-text` (`text-pi-accent-text`)
 - **Refetch intervals**: Set appropriately (5s for critical, 15s for metrics, 60s for historical)
 - **Shell commands**: Use `child_process.exec()` for system commands, always handle stderr

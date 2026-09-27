@@ -10,7 +10,7 @@ export function IpConfigWidget() {
         <div className="custom-scrollbar max-h-64 space-y-3 overflow-y-auto">
           {interfaces.map((iface) => (
             <div key={iface.ifname} className="border-b border-pi-border pb-2 last:border-0">
-              <p className="font-semibold text-pi-accent">{iface.ifname}</p>
+              <p className="font-semibold text-pi-accent-text">{iface.ifname}</p>
               {iface.addr.length > 0 && (
                 <p className="text-xs text-pi-text-muted">
                   IPv4: <span className="font-mono">{iface.addr.join(", ")}</span>

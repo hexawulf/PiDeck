@@ -61,6 +61,7 @@ export default {
           "text-muted": "var(--pi-text-muted)",
           input: "var(--pi-input)",
           accent: "var(--pi-accent)",
+          "accent-text": "var(--pi-accent-text)",
           "accent-hover": "var(--pi-accent-hover)",
           "on-accent": "var(--pi-on-accent)",
           success: "var(--pi-success)",

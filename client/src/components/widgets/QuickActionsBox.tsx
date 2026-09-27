@@ -24,7 +24,7 @@ export function QuickActionsBox() {
   return (
     <div className="grid h-full grid-cols-2 gap-2">
       <button type="button" className={tile} onClick={() => void refreshAll()}>
-        <RefreshCw className="h-5 w-5 text-pi-accent" aria-hidden />
+        <RefreshCw className="h-5 w-5 text-pi-accent-text" aria-hidden />
         Refresh data
       </button>
       <button type="button" className={tile} onClick={onUpdate} disabled={update.isPending} data-testid="update-system">

@@ -417,7 +417,7 @@ export default function LogViewer() {
               <CardHeader className="pb-2 pt-3 px-3 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <HardDrive className="h-4 w-4 text-pi-accent" />
+                    <HardDrive className="h-4 w-4 text-pi-accent-text" />
                     <CardTitle className="text-sm font-semibold">
                       Logs
                       <span className="ml-1.5 text-[10px] font-normal text-pi-text-muted">
