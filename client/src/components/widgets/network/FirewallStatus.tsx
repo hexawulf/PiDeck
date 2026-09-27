@@ -36,7 +36,7 @@ export function FirewallStatus() {
                   Showing {MAX_DISPLAY} of {d.rules.length} rules
                 </p>
               )}
-              <div className="custom-scrollbar max-h-56 overflow-y-auto">
+              <div>
                 <table className="w-full table-fixed text-sm">
                   <thead className="sticky top-0 bg-pi-card text-xs text-pi-text-muted">
                     <tr>

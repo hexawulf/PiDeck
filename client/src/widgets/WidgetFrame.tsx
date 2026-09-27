@@ -1,4 +1,4 @@
-import { Component, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, RotateCw } from "lucide-react";
@@ -49,6 +49,7 @@ export function WidgetFrame({
   icon: Icon,
   actions,
   className,
+  bodyClassName,
   children,
 }: {
   id: string;
@@ -56,11 +57,14 @@ export function WidgetFrame({
   icon?: LucideIcon;
   actions?: ReactNode;
   className?: string;
+  bodyClassName?: string;
   children: ReactNode;
 }) {
   // Bumping the key remounts the body, so Retry starts from a clean slate.
   const [generation, setGeneration] = useState(0);
   const titleId = `widget-${id}-title`;
+  const body = useRef<HTMLDivElement>(null);
+  const overflowing = useOverflow(body);
   return (
     <section
       aria-labelledby={titleId}
@@ -70,20 +74,51 @@ export function WidgetFrame({
         className,
       )}
     >
-      <header className="flex items-center gap-2 px-4 pb-2 pt-3">
+      <header className="flex min-h-10 items-center gap-2 px-[var(--pi-card-pad)] pb-2 pt-[calc(var(--pi-card-pad)*0.75)]">
         {Icon && <Icon className="h-4 w-4 shrink-0 text-pi-text-muted" aria-hidden />}
         <h2 id={titleId} className="truncate text-sm font-semibold">
           {title}
         </h2>
         {actions && <div className="ml-auto flex items-center gap-1">{actions}</div>}
       </header>
-      <div className="min-h-0 flex-1 px-4 pb-4 text-sm">
+      {/* The card's only scroll container; focusable while it overflows so
+          keyboard users can scroll it (axe scrollable-region-focusable). */}
+      <div
+        ref={body}
+        tabIndex={overflowing ? 0 : undefined}
+        aria-labelledby={overflowing ? titleId : undefined}
+        role={overflowing ? "group" : undefined}
+        className={cn(
+          "pi-widget-body min-h-0 flex-1 overflow-auto px-[var(--pi-card-pad)] pb-[var(--pi-card-pad)] text-[length:var(--pi-font-body)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-pi-accent",
+          bodyClassName,
+        )}
+      >
         <WidgetErrorBoundary key={generation} id={id} onRetry={() => setGeneration((g) => g + 1)}>
           {children}
         </WidgetErrorBoundary>
       </div>
     </section>
   );
+}
+
+/** True while the element's content is taller or wider than its box. */
+function useOverflow(ref: React.RefObject<HTMLElement>): boolean {
+  const [over, setOver] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const check = () => setOver(el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1);
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    const content = new MutationObserver(check);
+    content.observe(el, { childList: true, subtree: true });
+    check();
+    return () => {
+      ro.disconnect();
+      content.disconnect();
+    };
+  }, [ref]);
+  return over;
 }
 
 export function ErrorNotice({

@@ -7,7 +7,7 @@ export function IpConfigWidget() {
   return (
     <QueryState query={query} isEmpty={(d) => d.interfaces.length === 0} emptyText="No active interfaces">
       {({ interfaces }) => (
-        <div className="custom-scrollbar max-h-64 space-y-3 overflow-y-auto">
+        <div className="space-y-3">
           {interfaces.map((iface) => (
             <div key={iface.ifname} className="border-b border-pi-border pb-2 last:border-0">
               <p className="font-semibold text-pi-accent-text">{iface.ifname}</p>

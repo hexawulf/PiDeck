@@ -5,7 +5,7 @@ import { useRefreshAll } from "@/hooks/use-refresh-all";
 import { useUpdateSystem } from "@/hooks/use-system-info";
 
 const tile =
-  "flex h-full min-h-[4.5rem] flex-col items-center justify-center gap-1 rounded-md border border-pi-border bg-pi-darker p-2 text-xs hover:bg-pi-card-hover disabled:opacity-50";
+  "flex h-full min-h-[3.5rem] flex-col items-center justify-center gap-1 rounded-md border border-pi-border bg-pi-darker p-2 text-xs hover:bg-pi-card-hover disabled:opacity-50";
 
 export function QuickActionsBox() {
   const refreshAll = useRefreshAll();

@@ -18,6 +18,15 @@
  *  (enforced by scripts/check-theme-tokens.sh).
  *  --pi-terminal-* is intentionally identical in both themes: the log
  *  pane is a terminal and stays dark.
+ *
+ *  <html data-density="comfortable|compact">  ← UiPrefsProvider (prefs.density)
+ *            │   independent of light/dark
+ *            ▼
+ *  :root = comfortable     [data-density="compact"] = compact
+ *            └─ --pi-card-pad, --pi-gap, --pi-cell-pad-y, --pi-font-body,
+ *               --pi-chart-h → WidgetFrame, the phone stack, .pi-widget-body
+ *               tables, HistoryChart. The grid's row height and margin are
+ *               the JS twin of these (GRID_METRICS in DashboardGrid.tsx).
  */
 :root {
   color-scheme: light;
@@ -120,6 +129,40 @@
   --pi-terminal-bg: hsl(0, 0%, 0%);
   --pi-terminal-text: hsl(220, 14%, 96%);
   --pi-terminal-muted: hsl(218, 11%, 65%);
+}
+
+/* Density tokens (E13) — see the diagram at the top. */
+:root {
+  --pi-card-pad: 1rem;
+  --pi-gap: 1rem;
+  --pi-cell-pad-y: 0.25rem;
+  --pi-font-body: 0.875rem;
+  --pi-chart-h: 220px;
+}
+
+:root[data-density="compact"] {
+  --pi-card-pad: 0.625rem;
+  --pi-gap: 0.5rem;
+  --pi-cell-pad-y: 0.0625rem;
+  --pi-font-body: 0.8125rem;
+  --pi-chart-h: 150px;
+}
+
+/* react-grid-layout (lazy chunk CSS loads later, so these carry .pi-grid for
+   specificity): themed drop placeholder and a resize corner visible in dark mode. */
+.pi-grid .react-grid-item.react-grid-placeholder {
+  background: var(--pi-accent);
+  opacity: 0.15;
+  border-radius: var(--radius);
+}
+.pi-grid .react-grid-item > .react-resizable-handle::after {
+  border-color: var(--pi-text-muted);
+}
+
+/* Table rows inside widget bodies follow the density (beats Tailwind's py-1). */
+.pi-widget-body :is(td, th) {
+  padding-top: var(--pi-cell-pad-y);
+  padding-bottom: var(--pi-cell-pad-y);
 }
 
 @layer base {

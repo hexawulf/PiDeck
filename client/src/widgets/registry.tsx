@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import { memo, type ComponentType } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity, Cpu, Gauge, HardDrive, Info, List, MemoryStick, Network, Plug, Server, Settings,
@@ -25,37 +25,52 @@ import { IpConfigWidget } from "@/components/widgets/network/IpConfigWidget";
 import { ListeningPortsWidget } from "@/components/widgets/network/ListeningPortsWidget";
 import { FirewallStatus } from "@/components/widgets/network/FirewallStatus";
 
-/** Size on a 12-column grid; h is in grid rows (1 row ≈ a stat card). */
-export type WidgetSize = { w: 3 | 4 | 6 | 8 | 12; h: 1 | 2 };
+/*
+ * Sizes are react-grid-layout units: w of 12 columns, h in grid rows
+ * (30px rows + 16px gaps in comfortable density: 4 rows ≈ a stat card,
+ * 8 rows ≈ a chart). defaultSize × registry order = the default layout
+ * (prefs.ts packs it left to right, like the P1 CSS grid did).
+ */
+export type WidgetSize = { w: number; h: number };
 
 export type WidgetDef = {
   id: string;
   title: string;
   icon: LucideIcon;
   defaultSize: WidgetSize;
+  minSize?: WidgetSize;
+  maxSize?: WidgetSize;
+  /** Memoized: bodies take no props, so grid re-renders (drag, edit) skip them (E21). */
   component: ComponentType;
 };
 
+const STAT = { defaultSize: { w: 3, h: 4 }, minSize: { w: 2, h: 3 }, maxSize: { w: 6, h: 8 } };
+const SMALL = { defaultSize: { w: 3, h: 4 }, minSize: { w: 2, h: 3 } };
+const THIRD = { defaultSize: { w: 4, h: 5 }, minSize: { w: 3, h: 3 } };
+const HALF = { defaultSize: { w: 6, h: 8 }, minSize: { w: 3, h: 5 } };
+const CHART = { defaultSize: { w: 6, h: 8 }, minSize: { w: 4, h: 7 } };
+const TALL_THIRD = { defaultSize: { w: 4, h: 8 }, minSize: { w: 3, h: 5 } };
+
 // Order here is the default dashboard order.
 export const WIDGETS: readonly WidgetDef[] = [
-  { id: "cpu", title: "CPU Usage", icon: Cpu, defaultSize: { w: 3, h: 1 }, component: CpuBox },
-  { id: "memory", title: "Memory", icon: Zap, defaultSize: { w: 3, h: 1 }, component: MemoryBox },
-  { id: "temperature", title: "Temperature", icon: Thermometer, defaultSize: { w: 3, h: 1 }, component: TemperatureBox },
-  { id: "network", title: "Network", icon: Wifi, defaultSize: { w: 3, h: 1 }, component: NetworkBox },
-  { id: "system-info", title: "System Information", icon: Info, defaultSize: { w: 6, h: 2 }, component: SystemInfoBox },
-  { id: "top-processes", title: "Top Processes", icon: List, defaultSize: { w: 6, h: 2 }, component: TopProcessesBox },
-  { id: "disk-io", title: "Disk I/O", icon: HardDrive, defaultSize: { w: 6, h: 2 }, component: DiskIoBox },
-  { id: "net-bandwidth", title: "Network Bandwidth", icon: Activity, defaultSize: { w: 6, h: 2 }, component: NetworkBandwidthBox },
-  { id: "cpu-freq", title: "CPU Frequency", icon: Gauge, defaultSize: { w: 3, h: 1 }, component: CpuFreqBox },
-  { id: "nvme", title: "NVMe Health", icon: Server, defaultSize: { w: 3, h: 1 }, component: NvmeHealthBox },
-  { id: "thermal-zones", title: "Thermal Sensors", icon: Waves, defaultSize: { w: 3, h: 1 }, component: ThermalZoneBox },
-  { id: "power-status", title: "Power Status", icon: BatteryCharging, defaultSize: { w: 3, h: 1 }, component: PowerStatusBox },
-  { id: "ram", title: "RAM", icon: MemoryStick, defaultSize: { w: 4, h: 1 }, component: RamStatsBox },
-  { id: "swap", title: "Swap", icon: Plug, defaultSize: { w: 4, h: 1 }, component: SwapUsageBox },
-  { id: "quick-actions", title: "Quick Actions", icon: Settings, defaultSize: { w: 4, h: 1 }, component: QuickActionsBox },
-  { id: "filesystems", title: "Filesystem Usage", icon: HardDrive, defaultSize: { w: 6, h: 2 }, component: FilesystemUsageBox },
-  { id: "mounts", title: "Mounts", icon: FolderTree, defaultSize: { w: 6, h: 2 }, component: MountInfoBox },
-  { id: "ip-config", title: "IP Configuration", icon: Network, defaultSize: { w: 4, h: 2 }, component: IpConfigWidget },
-  { id: "listening-ports", title: "Listening Ports", icon: Radio, defaultSize: { w: 4, h: 2 }, component: ListeningPortsWidget },
-  { id: "firewall", title: "Firewall", icon: Shield, defaultSize: { w: 4, h: 2 }, component: FirewallStatus },
+  { id: "cpu", title: "CPU Usage", icon: Cpu, ...STAT, component: memo(CpuBox) },
+  { id: "memory", title: "Memory", icon: Zap, ...STAT, component: memo(MemoryBox) },
+  { id: "temperature", title: "Temperature", icon: Thermometer, ...STAT, component: memo(TemperatureBox) },
+  { id: "network", title: "Network", icon: Wifi, ...STAT, component: memo(NetworkBox) },
+  { id: "system-info", title: "System Information", icon: Info, ...HALF, component: memo(SystemInfoBox) },
+  { id: "top-processes", title: "Top Processes", icon: List, ...HALF, component: memo(TopProcessesBox) },
+  { id: "disk-io", title: "Disk I/O", icon: HardDrive, ...CHART, component: memo(DiskIoBox) },
+  { id: "net-bandwidth", title: "Network Bandwidth", icon: Activity, ...CHART, component: memo(NetworkBandwidthBox) },
+  { id: "cpu-freq", title: "CPU Frequency", icon: Gauge, ...SMALL, component: memo(CpuFreqBox) },
+  { id: "nvme", title: "NVMe Health", icon: Server, ...SMALL, component: memo(NvmeHealthBox) },
+  { id: "thermal-zones", title: "Thermal Sensors", icon: Waves, ...SMALL, component: memo(ThermalZoneBox) },
+  { id: "power-status", title: "Power Status", icon: BatteryCharging, ...SMALL, component: memo(PowerStatusBox) },
+  { id: "ram", title: "RAM", icon: MemoryStick, ...THIRD, component: memo(RamStatsBox) },
+  { id: "swap", title: "Swap", icon: Plug, ...THIRD, component: memo(SwapUsageBox) },
+  { id: "quick-actions", title: "Quick Actions", icon: Settings, ...THIRD, component: memo(QuickActionsBox) },
+  { id: "filesystems", title: "Filesystem Usage", icon: HardDrive, ...HALF, component: memo(FilesystemUsageBox) },
+  { id: "mounts", title: "Mounts", icon: FolderTree, ...HALF, component: memo(MountInfoBox) },
+  { id: "ip-config", title: "IP Configuration", icon: Network, ...TALL_THIRD, component: memo(IpConfigWidget) },
+  { id: "listening-ports", title: "Listening Ports", icon: Radio, ...TALL_THIRD, component: memo(ListeningPortsWidget) },
+  { id: "firewall", title: "Firewall", icon: Shield, ...TALL_THIRD, component: memo(FirewallStatus) },
 ];

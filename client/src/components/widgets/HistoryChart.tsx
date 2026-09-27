@@ -96,7 +96,7 @@ export function HistoryChart({ id, label, series, current }: { id: string; label
         emptyText={`No samples in the last ${range}. The server records one per minute while it is running.`}
       >
         {() => (
-          <div className="h-[220px] min-w-0">
+          <div className="h-[var(--pi-chart-h)] min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>

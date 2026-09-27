@@ -7,7 +7,7 @@ export function ListeningPortsWidget() {
   return (
     <QueryState query={query} isEmpty={(d) => d.listening.length === 0} emptyText="No listening ports">
       {({ listening }) => (
-        <div className="custom-scrollbar max-h-64 overflow-y-auto">
+        <div>
           <table className="w-full table-fixed text-sm">
             <thead className="sticky top-0 bg-pi-card text-xs text-pi-text-muted">
               <tr>
