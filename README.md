@@ -2,12 +2,15 @@
 
 A sleek, full-stack web application for monitoring and managing Raspberry Pi servers. Built with modern technologies, PiDeck provides a centralized control hub for system monitoring, service management, and log analysis.
 
-**Current version: 2.0.1** — 2.0 GUI refresh (phase 1) plus log-filter security fixes and a server-side sampler. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
+**Current version: 2.1.0** — 2.0 GUI refresh phase 2: customisable dashboard layout, density and refresh controls. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
 
 ![PiDeck 2.0 dashboard (dark theme)](./docs/screenshots/dashboard.png)
 
 ## ✨ What's new in 2.0
 
+- **Customisable dashboard** (2.1): drag, resize, hide and reorder widgets in Edit mode (keyboard-accessible); layout is saved per browser
+- **Density and refresh controls** (2.1): Comfortable / Compact, Live / Relaxed / Slow refresh, and Pause/Resume in the header
+- **Portable preferences** (2.1): export, import and reset dashboard settings under Settings
 - **Deep-linkable tabs**: `/dashboard`, `/logs`, `/apps`, `/cron` and `/settings` are real URLs; the back button works
 - **Resilient widgets**: every card validates its data and has its own error boundary, so one failing endpoint never blanks the dashboard
 - **Leaner polling**: each tab only fetches its own data
@@ -129,7 +132,7 @@ npm run test:e2e       # E2E on a separate build at :5017, never the prod dist/
 - **Logs** (`/logs`): View system and application logs
 - **Apps** (`/apps`): Manage Docker containers and PM2 processes
 - **Cron** (`/cron`): Monitor and execute scheduled tasks
-- **Settings** (`/settings`): Change the admin password
+- **Settings** (`/settings`): Change the admin password; dashboard density, refresh speed, widgets, export/import/reset of preferences
 
 ### Security Features
 - bcrypt password hashing

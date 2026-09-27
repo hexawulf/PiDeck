@@ -5,6 +5,28 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-09-28
+
+Second phase of the 2.0 GUI refresh (plan: `docs/plans/2.0-gui.md`, tag `2.0-p2`).
+
+### Added
+- Customisable dashboard grid (react-grid-layout, loaded as its own lazy chunk): **Edit** mode with drag grip, resize corner, keyboard Move up / Move down / Hide buttons; Esc or Done leaves it
+- Show/hide widgets and Reset layout from the Edit toolbar or Settings
+- Density setting (Comfortable / Compact) via `data-density` theme tokens
+- Refresh speed in the header (Live / Relaxed / Slow), Pause/Resume and an always-visible "Paused" badge; manual refresh still works while paused
+- Settings › Dashboard card: density, refresh speed, widgets, Reset layout, Export / Import of preferences (validated, inline error), Reset all
+- Preferences are saved per browser (`pideck:prefs:v1`), sync across tabs, and fall back safely on corrupt or blocked storage
+- Unit tests 131 → 172, E2E 55 → 77 (layout, refresh, settings/density, axe serious/critical check)
+
+### Changed
+- Below the `md` breakpoint the dashboard is a plain column in saved order (no grid handles)
+- Each card has a single scroll container (the card body), keyboard-focusable when it overflows
+- Below `sm` the header hides the key icon to fit 390 px
+
+### Fixed
+- Logs category count badge contrast in dark mode (4.24:1 → 10.40:1)
+- Phone-width header overflow from the new Pause button
+
 ## [2.0.1] - 2026-09-27
 
 ### Security
