@@ -30,8 +30,10 @@ client/src/
 │   ├── widgets/         # Feature widgets (fetch + display data)
 │   ├── modals/          # Dialog/modal components
 │   └── *.tsx            # Domain components (app-shell, app-monitor, etc.)
-├── pages/               # Route-level pages
-├── hooks/               # React hooks (TanStack Query wrappers)
+├── pages/               # Route-level pages (dashboard, settings, login)
+├── hooks/               # React hooks (TanStack Query wrappers, useRefetch)
+├── prefs/               # UI prefs: prefs.ts (pure storage/layout), UiPrefsProvider
+├── widgets/             # registry, WidgetFrame, DashboardGrid (lazy, RGL), schemas
 ├── lib/                 # Utilities (queryClient, utils)
 ├── App.tsx              # Root component + routing
 └── main.tsx             # Entry point
@@ -62,7 +64,9 @@ export function MountInfoBox() {
   );
 }
 ```
-Then add `{ id, title, icon, defaultSize: { w, h }, component }` to `WIDGETS`.
+Then add `{ id, title, icon, defaultSize, minSize?, maxSize?, component: memo(MyBox) }` to `WIDGETS`.
+Sizes are grid units: `w` of 12 columns, `h` in 30px rows (4 ≈ stat card, 8 ≈ chart). Registry order
+is the default layout; saved layouts get new widgets appended at the bottom automatically.
 
 **Rules**:
 - ✅ Body only: `WidgetFrame` draws title, border, radius, shadow and catches render errors
@@ -76,19 +80,32 @@ Then add `{ id, title, icon, defaultSize: { w, h }, component }` to `WIDGETS`.
 A query polls only while a component using it is mounted, so keep hooks per resource
 (`useSystemInfo`, `useHistory`, `useAlerts`, `useDocker`, `usePm2`, `useCron`) — never one hook for everything.
 
-**Refetch Intervals**:
-- **5s**: Critical real-time data (system info, alerts)
-- **10s**: Docker containers, PM2 processes
-- **15s**: Metrics (mounts, filesystem, network)
-- **60s**: Historical data
+**Refetch Intervals** — always through `useRefetch(baseMs)` (`hooks/useRefetch.ts`), never a raw number:
+it applies the header speed (Live ×1, Relaxed ×2, Slow ×5) and returns `false` while paused.
+`useWidgetQuery` already does this. Base values:
+- **5s**: system info · **10s**: Docker, PM2, most metrics · **15–30s**: mounts, network · **60s**: history
+- **Exception**: `useAlerts` keeps a fixed 7s and ignores speed/Pause so alert toasts always arrive (E1).
+
+### UI Prefs Pattern
+**Reference**: `client/src/prefs/prefs.ts`, `client/src/prefs/UiPrefsProvider.tsx`
+- `useUiPrefs()` reads; `useUiPrefsDispatch()` changes (`setLayout`, `hide`, `show`, `resetLayout`,
+  `setDensity`, `setSpeed`, `setPaused`, `replace`). Persisted to `localStorage["pideck:prefs:v1"]`;
+  `paused` is session-only and never saved.
+- Adding a section: add a zod schema to `SECTIONS` in `prefs.ts` (a bad section falls back alone).
+- Layout geometry (compact, reading order, keyboard moves) lives in `prefs.ts`, not in the grid, so
+  react-grid-layout stays in the lazy `DashboardGrid` chunk. Don't import `react-grid-layout` elsewhere.
+- Save layout only on discrete events (drag/resize stop, hide/show, reset) — never on `onLayoutChange`.
+
+### Density
+`<html data-density="comfortable|compact">` drives `--pi-card-pad`, `--pi-gap`, `--pi-cell-pad-y`,
+`--pi-font-body`, `--pi-chart-h` (`index.css`). Use these tokens for spacing inside cards instead of fixed
+padding; the grid's row height/margin mirror them in `GRID_METRICS` (`DashboardGrid.tsx`).
 
 ### Styling Guidelines
-- **Headings**: `text-lg font-semibold mb-2`
-- **Muted text**: `text-gray-400`
-- **Warnings**: `text-yellow-400`
-- **Errors**: `text-red-400`
-- **Scrollable areas**: `overflow-y-auto max-h-[160px] custom-scrollbar`
-- **Tables**: Fixed layout with `table-fixed`, `truncate` for overflow
+- **Muted text**: `text-pi-text-muted` · **Warnings**: `text-pi-warning` · **Errors**: `text-pi-error`
+- **Scrolling**: don't add inner `max-h`/`overflow` boxes in widget bodies — the `WidgetFrame` body is the
+  card's single scroll container (and becomes keyboard-focusable when it overflows)
+- **Tables**: Fixed layout with `table-fixed`, `truncate` for overflow; row padding follows density
 
 ### Shadcn/ui Components
 **Location**: `client/src/components/ui/`  
@@ -114,7 +131,9 @@ import { Card } from '@/components/ui/card'
 - **App**: `client/src/App.tsx` - Routing with Wouter
 - **Query Client**: `client/src/lib/queryClient.ts` - TanStack Query config + apiRequest helper
 - **Auth Hook**: `client/src/hooks/use-auth.ts` - Login/logout logic
-- **Shell/routes**: `client/src/components/app-shell.tsx` - header + tabs at `/:tab`
+- **Shell/routes**: `client/src/components/app-shell.tsx` - header (incl. `RefreshControl`) + tabs at `/:tab`
+- **Prefs**: `client/src/prefs/UiPrefsProvider.tsx` - wraps the shell in `App.tsx`
+- **Dashboard**: `client/src/pages/dashboard.tsx` (toolbar, phone stack) → lazy `widgets/DashboardGrid.tsx`
 
 ### Example Files (Good Patterns)
 - **Widget**: `client/src/components/widgets/MountInfoBox.tsx`
