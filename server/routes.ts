@@ -15,6 +15,8 @@ import dockerRouter from "./routes/docker";
 import pm2Router from "./routes/pm2";
 import rasplogsRouter from "./routes/rasplogs";
 import hostLogsRouter from "./routes/hostLogs";
+import thermalZonesRouter from "./routes/thermalZones";
+import powerStatusRouter from "./routes/powerStatus";
 
 import { loginSchema } from "@shared/schema";
 import { rateLimitLogin } from "./middleware/rateLimitLogin";
@@ -213,6 +215,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", requireAuthUnlessLogin, rasplogsRouter);
   app.use("/api/hostlogs", requireAuthUnlessLogin, hostLogsRouter);
   app.use("/api/rasplogs", requireAuthUnlessLogin, hostLogsRouter); // backward-compat alias
+  // These two routers declare full /api/metrics/* paths; app.get keeps req.url intact.
+  app.get("/api/metrics/thermal-zones", requireAuth, thermalZonesRouter);
+  app.get("/api/metrics/power-status", requireAuth, powerStatusRouter);
 
   // These ad-hoc endpoints are also protected by the wrapper above
   app.get("/api/system/history", async (_req, res) => {
