@@ -17,14 +17,14 @@ import Dashboard from "@/pages/dashboard";
 import LogViewer from "@/components/log-viewer";
 import AppMonitor from "@/components/app-monitor";
 import CronManager from "@/components/cron-manager";
-import SettingsPanel from "@/components/settings-panel";
+import Settings from "@/pages/settings";
 
 export const TABS = [
   { id: "dashboard", label: "Dashboard", icon: Activity, component: Dashboard },
   { id: "logs", label: "Logs", icon: FileText, component: LogViewer },
   { id: "apps", label: "Apps", icon: Grid, component: AppMonitor },
   { id: "cron", label: "Cron", icon: Clock, component: CronManager },
-  { id: "settings", label: "Settings", icon: SettingsIcon, component: SettingsPanel },
+  { id: "settings", label: "Settings", icon: SettingsIcon, component: Settings },
 ] as const;
 export type TabId = (typeof TABS)[number]["id"];
 
@@ -72,7 +72,7 @@ export default function AppShell({ tab }: { tab: TabId }) {
     <div className="min-h-screen bg-pi-dark">
       <AlertToasts />
       <header className="z-10 w-full bg-pi-dark px-4 py-3 text-pi-text shadow-md">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-pi-accent">
@@ -84,7 +84,7 @@ export default function AppShell({ tab }: { tab: TabId }) {
                     PiDeck
                   </Link>
                 </h1>
-                <p className="text-sm pi-text-muted">Raspberry Pi Admin</p>
+                <p className="hidden text-sm pi-text-muted sm:block">Raspberry Pi Admin</p>
               </div>
             </div>
 
@@ -96,22 +96,25 @@ export default function AppShell({ tab }: { tab: TabId }) {
               {systemInfo.data?.uptime && <div className="text-sm pi-text-muted">Uptime: {systemInfo.data.uptime}</div>}
             </div>
 
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2 sm:space-x-3">
               <RefreshControl />
               <AboutModal />
               <ThemeToggle />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" className={iconButton} aria-label="Change password" asChild>
-                    <Link href="/settings">
-                      <KeySquare className="h-5 w-5" />
-                    </Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Change Password</p>
-                </TooltipContent>
-              </Tooltip>
+              {/* Below sm the header is full; the Settings tab has the same form. */}
+              <span className="hidden sm:inline-flex">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="sm" className={iconButton} aria-label="Change password" asChild>
+                      <Link href="/settings">
+                        <KeySquare className="h-5 w-5" />
+                      </Link>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Change Password</p>
+                  </TooltipContent>
+                </Tooltip>
+              </span>
               <Button
                 variant="outline"
                 size="sm"
