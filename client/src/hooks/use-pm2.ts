@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useRefetch } from "./useRefetch";
 import type { PM2Process } from "@shared/schema";
 
 const KEY = ["/api/pm2/processes"];
@@ -7,7 +8,7 @@ const KEY = ["/api/pm2/processes"];
 export type ProcessAction = "restart" | "stop";
 
 export function usePm2() {
-  return useQuery<PM2Process[]>({ queryKey: KEY, refetchInterval: 10000 });
+  return useQuery<PM2Process[]>({ queryKey: KEY, refetchInterval: useRefetch(10000) });
 }
 
 export function useProcessAction() {

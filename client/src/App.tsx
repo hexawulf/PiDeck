@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import Login from "@/pages/login";
 import AppShell, { isTabId } from "@/components/app-shell";
 import NotFound from "@/pages/not-found";
+import { UiPrefsProvider } from "@/prefs/UiPrefsProvider";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -44,7 +45,9 @@ function AppRoutes() {
         {(params) =>
           isTabId(params.tab) ? (
             <ProtectedRoute>
-              <AppShell tab={params.tab} />
+              <UiPrefsProvider>
+                <AppShell tab={params.tab} />
+              </UiPrefsProvider>
             </ProtectedRoute>
           ) : (
             <Redirect to="/dashboard" replace />

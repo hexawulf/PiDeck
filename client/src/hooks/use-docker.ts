@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useRefetch } from "./useRefetch";
 import type { DockerContainersResponse } from "@shared/schema";
 
 const KEY = ["/api/docker/containers"];
@@ -7,7 +8,7 @@ const KEY = ["/api/docker/containers"];
 export type ContainerAction = "restart" | "stop" | "start";
 
 export function useDocker() {
-  return useQuery<DockerContainersResponse>({ queryKey: KEY, refetchInterval: 10000 });
+  return useQuery<DockerContainersResponse>({ queryKey: KEY, refetchInterval: useRefetch(10000) });
 }
 
 export function useContainerAction() {

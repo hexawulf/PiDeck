@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import { getQueryFn } from "@/lib/queryClient";
+import { useRefetch } from "@/hooks/useRefetch";
 
 const fetchJson = getQueryFn<unknown>({ on401: "throw" });
 
@@ -19,11 +20,13 @@ export class UnexpectedDataError extends Error {
 }
 
 /**
- * Poll `url` every `baseMs` and validate with `schema`. Key is `[url]`, so
+ * Poll `url` every `baseMs` (scaled by the header speed, off while paused —
+ * see useRefetch) and validate with `schema`. Key is `[url]`, so
  * every widget reading the same endpoint shares one request. The query only
  * polls while a component using it is mounted — hidden widgets cost nothing.
  */
 export function useWidgetQuery<S extends z.ZodTypeAny>(url: string, baseMs: number | false, schema: S) {
+  const refetchInterval = useRefetch(baseMs);
   return useQuery<z.infer<S>, Error>({
     queryKey: [url],
     queryFn: async (ctx) => {
@@ -32,7 +35,7 @@ export function useWidgetQuery<S extends z.ZodTypeAny>(url: string, baseMs: numb
       if (!parsed.success) throw new UnexpectedDataError(url, parsed.error.issues);
       return parsed.data;
     },
-    refetchInterval: baseMs,
+    refetchInterval,
   });
 }
 
