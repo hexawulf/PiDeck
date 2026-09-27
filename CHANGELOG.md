@@ -5,6 +5,18 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-09-27
+
+### Security
+- Logs: grep patterns can no longer be read as grep options (`--help`, `-v`, `-f<file>` are searched as text); the grep process is stopped when a live stream closes
+- Logs: regex filters are length-capped and nested quantifiers such as `(a+)+` are rejected, so a filter can no longer hang the server; invalid regexes return 400
+
+### Changed
+- Log filters are plain text by default; wrap a pattern in `/…/` for a regex (e.g. `/error|warn/`)
+- History and temperature alerts come from a 60s server-side sampler instead of browser polls: charts have no gaps when no tab is open, alerts fire with nobody watching, and `/api/system/info` no longer writes to the database
+- Disk and network rates in history are true one-minute averages
+- Graceful shutdown on SIGTERM/SIGINT
+
 ## [2.0.0-p1] - 2026-09-27
 
 First phase of the 2.0 GUI refresh (plan: `docs/plans/2.0-gui.md`, tag `2.0-p1`).
