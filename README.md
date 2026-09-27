@@ -4,6 +4,8 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 
 **Current version: 2.0.0-p1** — first phase of the 2.0 GUI refresh. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
 
+![PiDeck 2.0 dashboard (dark theme)](./docs/screenshots/dashboard.png)
+
 ## ✨ What's new in 2.0
 
 - **Deep-linkable tabs**: `/dashboard`, `/logs`, `/apps`, `/cron` and `/settings` are real URLs; the back button works
