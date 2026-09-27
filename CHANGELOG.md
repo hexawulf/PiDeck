@@ -5,6 +5,36 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-p1] - 2026-09-27
+
+First phase of the 2.0 GUI refresh (plan: `docs/plans/2.0-gui.md`, tag `2.0-p1`).
+P2 (layout, density, refresh) and P3 (power-user features) follow.
+
+### Added
+- Routed tabs: `/dashboard`, `/logs`, `/apps`, `/cron`, `/settings` are real URLs, so deep links and the back button work
+- Widget registry (`client/src/widgets/registry.tsx`) with a shared frame and a per-widget error boundary ("Widget failed – Retry")
+- zod schemas for every widget endpoint; a malformed response only affects that card
+- Separate CPU, Memory, Temperature, Network, System Information, Top Processes, Thermal Sensors and Power Status widgets
+- Chart time-range picker (15m / 1h / 6h / 24h), downsampled to ≤300 points with visible gaps where no data was recorded
+- `--pi-accent-text` theme token for accent-coloured text and icons (AA in light and dark)
+- E2E specs for navigation, error resilience, phone width and a live endpoint contract check
+
+### Changed
+- One data hook per resource instead of `useSystemData`; each tab polls only its own data
+- Cards use theme tokens only; `check-theme-tokens.sh` enforces it
+- `/` goes to `/dashboard`; `/change-password` goes to `/settings`
+- Listening Ports scrolls through all ports instead of stopping at 10
+- Firewall badge uses an outline style for dark-mode contrast
+- About shows the version from `package.json`
+
+### Fixed
+- Chart timestamps read as UTC (were 8 h off in Taipei)
+- Opening `/logs` in a browser showed raw JSON
+- Thermal-zones and power-status API routes were never registered (widgets got 404)
+
+### Removed
+- Stub "Thermal & Power" card, `*-row` wrappers, `system-overview`, `resource-graphs`, `process-list`, the 12 hand-written fetchers
+
 ## [1.0.0] - 2025-06-20
 
 ### Added

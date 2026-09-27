@@ -2,14 +2,24 @@
 
 A sleek, full-stack web application for monitoring and managing Raspberry Pi servers. Built with modern technologies, PiDeck provides a centralized control hub for system monitoring, service management, and log analysis.
 
-![PiDeck Dashboard](./docs/screenshots/dashboard.png)
+**Current version: 2.0.0-p1** — first phase of the 2.0 GUI refresh. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
+
+## ✨ What's new in 2.0
+
+- **Deep-linkable tabs**: `/dashboard`, `/logs`, `/apps`, `/cron` and `/settings` are real URLs; the back button works
+- **Resilient widgets**: every card validates its data and has its own error boundary, so one failing endpoint never blanks the dashboard
+- **Leaner polling**: each tab only fetches its own data
+- **Better charts**: 15m / 1h / 6h / 24h ranges, clean axes, gaps where no data was recorded, correct time zones
+- **Light, dark and system themes** built on accessible (WCAG AA) theme tokens
+- **Thermal Sensors and Power Status** widgets backed by real endpoints
 
 ## 🚀 Features
 
 ### System Monitoring
-- **Real-time Metrics**: CPU usage, memory consumption, system temperature
-- **System Information**: Hostname, OS details, kernel version, uptime
-- **Network Status**: IP address and connectivity monitoring
+- **Real-time Metrics**: CPU, memory, temperature and network, with history charts
+- **System Information**: Hostname, OS details, kernel version, uptime, top processes
+- **Hardware Health**: Thermal sensors, power status, NVMe health, disk and swap usage
+- **Network Status**: IP configuration, listening ports and firewall status
 
 ### Service Management
 - **Docker Containers**: View, start, stop, and restart containers
@@ -27,10 +37,10 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 - **Schedule Analysis**: Human-readable cron schedule interpretation
 
 ### User Interface
-- **Dark Theme**: Optimized for server administration
-- **Responsive Design**: Works on desktop and mobile devices
+- **Light / Dark / System Theme**: Follows your OS by default, no flash on load
+- **Responsive Design**: Works on desktop and mobile devices (down to 390px)
 - **Real-time Updates**: Live data refresh without page reload
-- **Intuitive Navigation**: Tab-based interface for easy access
+- **Routed Tabs**: Bookmark or share any tab; the header stays put when switching
 
 ## 🛠️ Tech Stack
 
@@ -47,12 +57,17 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 - **TailwindCSS** for styling
 - **Shadcn/ui** component library
 - **TanStack Query** for server state management
+- **zod** schemas validating every widget response
+- **Recharts** for history charts
 - **Wouter** for client-side routing
 
 ### Database & Storage
-- **PostgreSQL** with Drizzle ORM (production ready)
-- **In-memory storage** for development
-- **Session-based authentication**
+- **PostgreSQL** with Drizzle ORM
+- **Session-based authentication** (sessions stored in PostgreSQL)
+
+### Testing
+- **Vitest** for unit tests
+- **Playwright** + axe for end-to-end, accessibility and API contract tests
 
 ## 🔧 Quick Start
 
@@ -72,17 +87,33 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 
 2. **Install dependencies**
    ```bash
-   npm install
+   npm install --legacy-peer-deps
+   ```
+   `--legacy-peer-deps` is needed until `@vitejs/plugin-react` supports Vite 8.
+
+3. **Configure the environment**
+   ```bash
+   cp .env.example .env
+   nano .env   # set SESSION_SECRET and DATABASE_URL
    ```
 
-3. **Start development server**
+4. **Start development server**
    ```bash
    npm run dev
    ```
 
-4. **Access the dashboard**
+5. **Access the dashboard**
    - Open http://localhost:5006
-   - Login with password: `admin`
+   - Login with password: `admin` (change it right away under **Settings**)
+
+### Running tests
+```bash
+npm run check          # TypeScript
+npm test               # unit tests (Vitest)
+npm run check:theme    # theme-token lint
+npx playwright install chromium
+npm run test:e2e       # E2E on a separate build at :5017, never the prod dist/
+```
 
 ## 📖 Usage
 
@@ -92,10 +123,11 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 - Secure localhost-only access by default
 
 ### Navigation
-- **Dashboard**: System overview and quick actions
-- **Logs**: View system and application logs
-- **Apps**: Manage Docker containers and PM2 processes
-- **Cron**: Monitor and execute scheduled tasks
+- **Dashboard** (`/dashboard`): System overview, history charts and quick actions
+- **Logs** (`/logs`): View system and application logs
+- **Apps** (`/apps`): Manage Docker containers and PM2 processes
+- **Cron** (`/cron`): Monitor and execute scheduled tasks
+- **Settings** (`/settings`): Change the admin password
 
 ### Security Features
 - bcrypt password hashing

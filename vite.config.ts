@@ -2,12 +2,17 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { fileURLToPath } from "url";
+// Imported (not read from disk): server/vite.ts bundles this file into dist/index.js,
+// where __dirname is dist/ and has no package.json.
+import pkg from "./package.json" with { type: "json" };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig({
   appType: "spa",
+  // package.json is the single source of truth for the version shown in About.
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   root: path.resolve(__dirname, "client"),
   plugins: [react()],
   resolve: {

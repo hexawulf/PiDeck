@@ -3,6 +3,11 @@ import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
+// Injected by vite.config.ts from package.json; absent under vitest.
+declare const __APP_VERSION__: string;
+const APP_VERSION = typeof __APP_VERSION__ === "undefined" ? "dev" : __APP_VERSION__;
+const RELEASE_DATE = "September 2026";
+
 export default function AboutModal() {
   return (
     <Dialog>
@@ -35,8 +40,9 @@ export default function AboutModal() {
               <li>Shell Integration: child_process</li>
               <li>Frontend: React 18, Vite, TypeScript</li>
               <li>Styling: TailwindCSS, Shadcn/ui</li>
-              <li>State Management: TanStack Query</li>
-              <li>Routing: Wouter</li>
+              <li>State Management: TanStack Query, zod-validated widgets</li>
+              <li>Charts: Recharts</li>
+              <li>Routing: Wouter (deep-linkable tabs)</li>
               <li>Database: PostgreSQL + Drizzle ORM</li>
               <li>Auth: Session-based authentication</li>
             </ul>
@@ -60,8 +66,8 @@ export default function AboutModal() {
             </a>
           </div>
           <div>
-            <p>Version: v1.0.0</p>
-            <p>Release Date: June 2025</p>
+            <p>Version: v{APP_VERSION}</p>
+            <p>Release Date: {RELEASE_DATE}</p>
           </div>
         </div>
       </DialogContent>
