@@ -48,6 +48,7 @@ npm run db:push
 - **Session secret**: `SESSION_SECRET` env var (default: `CHANGE_ME_SESSION_SECRET_LONG_RANDOM`)
 - **Admin password**: `PIDECK_PASSWORD` or `ADMIN_PASSWORD` or `APP_PASSWORD` env vars
 - **Database**: `DATABASE_URL` for PostgreSQL connection
+- **Sampler**: `PIDECK_SAMPLER=off` disables the 60s history/alert sampler (see [server/AGENTS.md](server/AGENTS.md)); it is also off when `NODE_ENV=test`
 
 ## JIT Index (what to open, not what to paste)
 

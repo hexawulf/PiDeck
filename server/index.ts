@@ -11,6 +11,7 @@ import { fileURLToPath } from "url";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import compatRouter from "./routes/compat";
+import { startSampler } from "./services/sampler";
 import { initializeStorage, pool } from "./storage";
 import { installCsp } from "./security";
 
@@ -96,6 +97,9 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
 
   await initializeStorage();
 
+  // History rows + temperature alerts every 60s (off with PIDECK_SAMPLER=off).
+  const sampler = startSampler();
+
   // Back-compat router BEFORE API routes; never intercept /api/*
   app.use((req, res, next) => {
     const u = (req.originalUrl || req.url || "").toLowerCase();
@@ -134,6 +138,18 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
   });
 
   server.listen({ port: PORT, host: "0.0.0.0" }, () => log(`serving on port ${PORT}`));
+
+  // Graceful stop for pm2 reload / Ctrl-C: stop sampling, stop accepting
+  // connections, exit. Open SSE log streams would hold server.close(), so
+  // exit anyway after 1.5s (pm2's kill_timeout default is 1.6s).
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.once(signal, () => {
+      log(`${signal} received, shutting down`);
+      sampler?.stop();
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 1500).unref();
+    });
+  }
 })().catch((error) => {
   console.error("[bootstrap] Failed to start PiDeck:", error);
   process.exit(1);

@@ -4,7 +4,9 @@
 #              Never writes dist/ (prod, served by pm2 on :5006). Logs in with a
 #              throwaway password from .e2e/password via APP_PASSWORD_FILE;
 #              APP_PASSWORD is forced empty so a prod value in .env is ignored.
-# Modified:    2026-09-21
+#              PIDECK_SAMPLER=off: this build shares the prod database, and
+#              its sampler would double the prod history rows.
+# Modified:    2026-09-27
 # Usage:       scripts/e2e-server.sh [--dry-run]
 set -euo pipefail
 
@@ -30,5 +32,5 @@ npx vite build --outDir "$OUT/public" --emptyOutDir >>"$LOG" 2>&1
 npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir="$OUT" >>"$LOG" 2>&1
 
 echo "serving dist-dev on :$PORT (log: $LOG)"
-exec env NODE_ENV=production CSP_ENFORCE=true PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \
+exec env NODE_ENV=production CSP_ENFORCE=true PIDECK_SAMPLER=off PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \
   node "$OUT/index.js" 2>&1 | tee -a "$LOG"

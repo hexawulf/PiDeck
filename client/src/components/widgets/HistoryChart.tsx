@@ -93,7 +93,7 @@ export function HistoryChart({ id, label, series, current }: { id: string; label
       <QueryState
         query={query}
         isEmpty={() => points.length === 0}
-        emptyText={`No samples in the last ${range}. History is only recorded while PiDeck is open.`}
+        emptyText={`No samples in the last ${range}. The server records one per minute while it is running.`}
       >
         {() => (
           <div className="h-[220px] min-w-0">
@@ -149,7 +149,7 @@ export function HistoryChart({ id, label, series, current }: { id: string; label
           </div>
         )}
       </QueryState>
-      <p className="text-xs text-pi-text-muted">Data only while PiDeck is open — gaps mean no tab was polling.</p>
+      <p className="text-xs text-pi-text-muted">Sampled every minute by the server — gaps mean it wasn't running.</p>
     </div>
   );
 }

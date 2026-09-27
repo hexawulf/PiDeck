@@ -21,11 +21,17 @@ import { sql } from "drizzle-orm";
 
 const execAsync = promisify(exec);
 
-// To store the previous network stats for calculating bandwidth
-let previousNetworkStats: { rx: number, tx: number, timestamp: number } | null = null;
+// Disk and network rates are deltas of kernel counters since the previous
+// reading. Each caller keeps its own baseline: the 60s sampler gets per-minute
+// averages for history, and browser polls of /api/system/info don't shrink or
+// reorder the sampler's window (or vice versa).
+export type RateBaseline = {
+  disk: { read: number; write: number; timestamp: number } | null;
+  net: { rx: number; tx: number; timestamp: number } | null;
+};
+export const createRateBaseline = (): RateBaseline => ({ disk: null, net: null });
 
-// To store the previous disk stats for calculating I/O speed
-let previousDiskStats: { read: number; write: number; timestamp: number } | null = null;
+const clientBaseline = createRateBaseline();
 
 // In-memory store for active alerts
 interface ActiveAlert {
@@ -38,55 +44,58 @@ let activeAlerts: ActiveAlert[] = [];
 const TEMPERATURE_THRESHOLD = 70; // Celsius
 
 export class SystemService {
+  /**
+   * Read-only snapshot for /api/system/info. History rows and alerts are
+   * written by the server-side sampler (services/sampler.ts), not by polls.
+   */
   static async getSystemInfo(): Promise<SystemInfo> {
     try {
-      const [hostname, os, kernel, arch, uptime, cpu, memory, temp, ip, diskIO, networkBandwidth, processes] = await Promise.all([
-        this.getHostname(),
-        this.getOS(),
-        this.getKernel(),
-        this.getArchitecture(),
-        this.getUptime(),
-        this.getCPUUsage(),
-        this.getMemoryUsage(),
-        this.getTemperature(),
-        this.getIPAddress(),
-        this.getDiskIO(),
-        this.getNetworkBandwidth(),
-        this.getProcessList(),
-      ]);
-
-      const systemData: SystemInfo = {
-        hostname,
-        os,
-        kernel,
-        architecture: arch,
-        uptime,
-        cpu,
-        memory,
-        temperature: temp,
-        network: {
-          ip,
-          status: "Connected"
-        },
-        diskIO,
-        networkBandwidth,
-        processes
-      };
-
-      // Log historical data asynchronously
-      this.logHistoricalData(systemData).catch(err => console.error("Failed to log historical data:", err));
-
-      // Check for temperature alerts
-      this.checkTemperatureAlert(systemData.temperature);
-
-      return systemData;
+      return await this.collectMetrics(clientBaseline);
     } catch (error) {
       console.error("Error getting system info:", error);
       throw new Error("Failed to retrieve system information");
     }
   }
 
-  private static checkTemperatureAlert(currentTemperature: number): void {
+  /** Gather all metrics; rates are measured against `baseline`. No side effects beyond it. */
+  static async collectMetrics(baseline: RateBaseline): Promise<SystemInfo> {
+    const [hostname, os, kernel, arch, uptime, cpu, memory, temp, ip, diskIO, networkBandwidth, processes] = await Promise.all([
+      this.getHostname(),
+      this.getOS(),
+      this.getKernel(),
+      this.getArchitecture(),
+      this.getUptime(),
+      this.getCPUUsage(),
+      this.getMemoryUsage(),
+      this.getTemperature(),
+      this.getIPAddress(),
+      this.getDiskIO(baseline),
+      this.getNetworkBandwidth(baseline),
+      this.getProcessList(),
+    ]);
+
+    const systemData: SystemInfo = {
+      hostname,
+      os,
+      kernel,
+      architecture: arch,
+      uptime,
+      cpu,
+      memory,
+      temperature: temp,
+      network: {
+        ip,
+        status: "Connected"
+      },
+      diskIO,
+      networkBandwidth,
+      processes
+    };
+
+    return systemData;
+  }
+
+  static checkTemperatureAlert(currentTemperature: number): void {
     const existingAlert = activeAlerts.find(alert => alert.type === 'temperature');
     if (currentTemperature > TEMPERATURE_THRESHOLD) {
       if (!existingAlert) {
@@ -115,7 +124,7 @@ export class SystemService {
     return activeAlerts;
   }
 
-private static async getDiskIO(): Promise<DiskIO> {
+private static async getDiskIO(baseline: RateBaseline): Promise<DiskIO> {
   try {
     const content = await fs.readFile('/proc/diskstats', 'utf8');
     let readSectors = 0;
@@ -133,6 +142,7 @@ private static async getDiskIO(): Promise<DiskIO> {
     let readSpeed = 0;
     let writeSpeed = 0;
 
+    const previousDiskStats = baseline.disk;
     if (previousDiskStats) {
       const diffSec = (now - previousDiskStats.timestamp) / 1000;
       if (diffSec > 0) {
@@ -143,12 +153,12 @@ private static async getDiskIO(): Promise<DiskIO> {
       }
     } else {
       // First call - sample again after a short delay for immediate data
-      previousDiskStats = { read: readSectors, write: writeSectors, timestamp: now };
+      baseline.disk = { read: readSectors, write: writeSectors, timestamp: now };
       await new Promise(r => setTimeout(r, 500));
-      return this.getDiskIO();
+      return this.getDiskIO(baseline);
     }
 
-    previousDiskStats = { read: readSectors, write: writeSectors, timestamp: now };
+    baseline.disk = { read: readSectors, write: writeSectors, timestamp: now };
 
     const utilization = Math.min((readSpeed + writeSpeed) / 10, 100);
     const result: DiskIO = {
@@ -163,7 +173,7 @@ private static async getDiskIO(): Promise<DiskIO> {
     return { readSpeed: 0, writeSpeed: 0, utilization: 0 };
   }
 }
-private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
+private static async getNetworkBandwidth(baseline: RateBaseline): Promise<NetworkBandwidth> {
   try {
     const interfaces = (await fs.readdir('/sys/class/net')).filter(i => i !== 'lo');
     let rx = 0;
@@ -183,6 +193,7 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
     let rxSpeed = 0;
     let txSpeed = 0;
 
+    const previousNetworkStats = baseline.net;
     if (previousNetworkStats) {
       const diffSec = (now - previousNetworkStats.timestamp) / 1000;
       if (diffSec > 0) {
@@ -193,12 +204,12 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
       }
     } else {
       // First call - sample again after a short delay for immediate data
-      previousNetworkStats = { rx, tx, timestamp: now };
+      baseline.net = { rx, tx, timestamp: now };
       await new Promise(res => setTimeout(res, 500));
-      return this.getNetworkBandwidth();
+      return this.getNetworkBandwidth(baseline);
     }
 
-    previousNetworkStats = { rx, tx, timestamp: now };
+    baseline.net = { rx, tx, timestamp: now };
 
     const result: NetworkBandwidth = {
       rx: Math.round(rxSpeed),
@@ -236,29 +247,25 @@ private static async getNetworkBandwidth(): Promise<NetworkBandwidth> {
     }
   }
 
-  private static async logHistoricalData(data: SystemInfo): Promise<void> {
-    try {
-        const timestamp = new Date();
-        const metricRecord: InsertHistoricalMetric = {
-          timestamp: timestamp.toISOString(),
-          cpuUsage: Math.round(data.cpu ?? 0),
-          memoryUsage: Math.round(data.memory?.percentage ?? 0),
-          temperature: Math.round(data.temperature ?? 0),
-          diskReadSpeed: Math.round(data.diskIO?.readSpeed ?? 0),
-          diskWriteSpeed: Math.round(data.diskIO?.writeSpeed ?? 0),
-          networkRx: Math.round(data.networkBandwidth?.rx ?? 0),
-          networkTx: Math.round(data.networkBandwidth?.tx ?? 0),
-        };
-      await db.insert(historicalMetrics).values(metricRecord);
-      // console.log("[db] Inserted historical record @", timestamp.toISOString());
+  /** Insert one history row. Throws on failure so the sampler can report it. */
+  static async logHistoricalData(data: SystemInfo): Promise<void> {
+    const metricRecord: InsertHistoricalMetric = {
+      timestamp: new Date().toISOString(),
+      cpuUsage: Math.round(data.cpu ?? 0),
+      memoryUsage: Math.round(data.memory?.percentage ?? 0),
+      temperature: Math.round(data.temperature ?? 0),
+      diskReadSpeed: Math.round(data.diskIO?.readSpeed ?? 0),
+      diskWriteSpeed: Math.round(data.diskIO?.writeSpeed ?? 0),
+      networkRx: Math.round(data.networkBandwidth?.rx ?? 0),
+      networkTx: Math.round(data.networkBandwidth?.tx ?? 0),
+    };
+    await db.insert(historicalMetrics).values(metricRecord);
+  }
 
-      // Prune old data (older than 24 hours)
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      await db.delete(historicalMetrics).where(sql`${historicalMetrics.timestamp} < ${twentyFourHoursAgo}`);
-
-    } catch (error) {
-      console.error("Error logging historical data:", error);
-    }
+  /** Drop history older than 24 hours (the window /api/system/history serves). */
+  static async pruneHistory(): Promise<void> {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    await db.delete(historicalMetrics).where(sql`${historicalMetrics.timestamp} < ${twentyFourHoursAgo}`);
   }
 
   static async getHistoricalData(): Promise<HistoricalMetric[]> {

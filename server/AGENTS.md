@@ -209,6 +209,22 @@ rg -n "db\.(select|insert|update)" server
 rg -n "'/api/" server/routes
 ```
 
+### Background sampler
+**Location**: `server/services/sampler.ts`, started from `server/index.ts` after `initializeStorage()`.
+
+- Every 60s: collect metrics → evaluate temperature alert (in memory, per process) → insert one
+  `historical_metrics` row and prune rows older than 24h, behind `pg_try_advisory_xact_lock`
+  so only one instance writes.
+- Ticks never overlap; a failing tick is logged once per distinct error and the timer keeps going.
+- **Off** when `NODE_ENV=test` or `PIDECK_SAMPLER=off` (set by `scripts/e2e-server.sh`: the E2E
+  build shares the production database). With it off, no history rows and no alerts are produced.
+- `/api/system/info` is read-only; disk/network rates are deltas against a per-caller baseline
+  (`createRateBaseline()`), so the sampler and browser polls don't share one.
+
+### Log filters
+User `?grep=` values go through `server/services/log-filter.ts`: literal by default, regex only for
+`/…/`, ≤200 chars, no newline/NUL. Pass them to grep only as `-e <pattern> --`, never as the first argument.
+
 ## Common Gotchas
 - **Route registration**: New routes must be imported in `server/routes.ts`
 - **Error handling**: Always return JSON errors, never throw unhandled exceptions
