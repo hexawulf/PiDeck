@@ -1,57 +1,48 @@
-import { useQuery } from '@tanstack/react-query'
-
-const fetchFsUsage = async () => {
-  const res = await fetch('/api/metrics/filesystems', { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch filesystem data')
-  const data = await res.json()
-  return Array.isArray(data) ? data : []
-}
+import { formatMB } from "@/lib/format";
+import { useWidgetQuery } from "@/widgets/useWidgetQuery";
+import { filesystemsSchema } from "@/widgets/schemas";
+import { QueryState } from "@/widgets/WidgetFrame";
 
 export function FilesystemUsageBox() {
-  const { data, error, isLoading } = useQuery({
-    queryKey: ['filesystem-usage'],
-    queryFn: fetchFsUsage,
-    refetchInterval: 10000,
-  })
-
-  const filesystems = data || []
-
+  const query = useWidgetQuery("/api/metrics/filesystems", 10000, filesystemsSchema);
   return (
-    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full max-w-2xl">
-      <h3 className="text-lg font-semibold mb-2">Filesystem Usage</h3>
-      {isLoading ? (
-        <p className="text-pi-text-muted">Loading filesystem data...</p>
-      ) : error ? (
-        <div className="text-sm">
-          <p className="text-pi-warning mb-2">Filesystem data temporarily unavailable</p>
-          <p className="text-pi-text-muted text-xs">{error.message}</p>
-        </div>
-      ) : filesystems.length === 0 ? (
-        <p className="text-pi-text-muted">No filesystem data available</p>
-      ) : (
-        <table className="text-sm w-full">
-          <thead>
-            <tr className="text-pi-text-muted">
-              <th className="text-left">Mount</th>
-              <th className="text-left">Used</th>
-              <th className="text-left">Free</th>
-              <th className="text-left">Size</th>
-              <th className="text-left">%</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filesystems.map((fs: any, i: number) => (
-              <tr key={i}>
-                <td className="truncate max-w-[120px]">{fs.mount}</td>
-                <td>{fs.used}MB</td>
-                <td>{fs.avail}MB</td>
-                <td>{fs.size}MB</td>
-                <td>{fs.pcent}%</td>
+    <QueryState query={query} isEmpty={(d) => d.length === 0} emptyText="No filesystem data available">
+      {(filesystems) => (
+        <div className="custom-scrollbar max-h-64 overflow-y-auto">
+          <table className="w-full table-fixed text-sm">
+            <thead className="sticky top-0 bg-pi-card text-xs text-pi-text-muted">
+              <tr>
+                <th scope="col" className="py-1 text-left font-medium">Mount</th>
+                <th scope="col" className="w-20 py-1 text-right font-medium">Used</th>
+                <th scope="col" className="w-20 py-1 text-right font-medium">Free</th>
+                <th scope="col" className="w-20 py-1 text-right font-medium">Size</th>
+                <th scope="col" className="w-24 py-1 pl-3 text-left font-medium">Use</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-pi-border">
+              {filesystems.map((fs) => (
+                <tr key={`${fs.device ?? ""}:${fs.mount}`}>
+                  <td className="truncate py-1 font-mono text-xs" title={fs.mount}>{fs.mount}</td>
+                  <td className="py-1 text-right tabular-nums">{formatMB(fs.used)}</td>
+                  <td className="py-1 text-right tabular-nums">{formatMB(fs.avail)}</td>
+                  <td className="py-1 text-right tabular-nums">{formatMB(fs.size)}</td>
+                  <td className="py-1 pl-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 flex-1 rounded-full bg-pi-darker" aria-hidden>
+                        <div
+                          className={`h-1.5 rounded-full ${fs.pcent >= 90 ? "bg-pi-error" : fs.pcent >= 75 ? "bg-pi-warning" : "bg-pi-chart-3"}`}
+                          style={{ width: `${Math.min(100, fs.pcent)}%` }}
+                        />
+                      </div>
+                      <span className="w-9 text-right text-xs tabular-nums">{fs.pcent}%</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-    </div>
-  )
+    </QueryState>
+  );
 }

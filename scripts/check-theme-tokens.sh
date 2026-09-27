@@ -4,7 +4,9 @@
 #              Light/dark only works when colors come from --pi-* tokens
 #              (see client/src/index.css). Allowed: components/ui (shadcn),
 #              explicit `dark:` pairs, solid -500+ hues, lines marked theme-ok.
-# Modified:    2026-09-21
+#              Also fails if a widget body under components/widgets/ draws
+#              its own card chrome (WidgetFrame owns border radius, shadow, width).
+# Modified:    2026-09-27
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,9 +22,21 @@ hits="$( { grep -rnE "$PAT_NEUTRAL" "$SRC" --include='*.tsx' --include='*.ts' --
            grep -rnE "$PAT_PALE"    "$SRC" --include='*.tsx' --include='*.ts' --exclude-dir=ui || true; } \
          | grep -v 'theme-ok' | sort -u || true )"
 
+# 3) card chrome inside widget bodies
+PAT_CHROME='\brounded-(lg|xl|2xl|3xl)\b|\bshadow(-[a-z0-9]+)?\b|\bmax-w-'
+chrome="$( { grep -rnE "$PAT_CHROME" "$SRC/components/widgets" --include='*.tsx' --include='*.ts' || true; } \
+           | grep -v 'theme-ok' | sort -u || true )"
+
+status=0
 if [ -n "$hits" ]; then
   printf '%s\n' "${RED}Raw colors found — use --pi-* tokens (bg-pi-card, text-pi-text, text-pi-success, …):${RST}"
   printf '%s\n' "${hits//$ROOT\//}"
-  exit 1
+  status=1
 fi
+if [ -n "$chrome" ]; then
+  printf '%s\n' "${RED}Widget bodies must not draw card chrome (rounded-lg+, shadow, max-w-*) — WidgetFrame does:${RST}"
+  printf '%s\n' "${chrome//$ROOT\//}"
+  status=1
+fi
+[ "$status" -eq 0 ] || exit 1
 printf '%s\n' "${GRN}check-theme-tokens: OK${RST}"

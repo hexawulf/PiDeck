@@ -1,57 +1,35 @@
-import { useQuery } from '@tanstack/react-query'
-
-const fetchMounts = async () => {
-  const res = await fetch('/api/metrics/mounts', { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch mount data')
-  const data = await res.json()
-  return Array.isArray(data) ? data : []
-}
+import { useWidgetQuery } from "@/widgets/useWidgetQuery";
+import { mountsSchema } from "@/widgets/schemas";
+import { QueryState } from "@/widgets/WidgetFrame";
 
 export function MountInfoBox() {
-  const { data, error, isLoading } = useQuery({
-    queryKey: ['mounts'],
-    queryFn: fetchMounts,
-    refetchInterval: 15000,
-  })
-
-  const mounts = data || []
-
+  const query = useWidgetQuery("/api/metrics/mounts", 15000, mountsSchema);
   return (
-    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full max-w-2xl ml-6">
-      <h3 className="text-lg font-semibold mb-2">Mount Info</h3>
-      {isLoading ? (
-        <p className="text-pi-text-muted">Loading mount information...</p>
-      ) : error ? (
-        <div className="text-sm">
-          <p className="text-pi-warning mb-2">Mount data temporarily unavailable</p>
-          <p className="text-pi-text-muted text-xs">{error.message}</p>
-        </div>
-      ) : mounts.length === 0 ? (
-        <p className="text-pi-text-muted">No mount information available</p>
-      ) : (
-        <div className="overflow-y-auto max-h-[160px] custom-scrollbar">
-          <table className="text-sm w-full table-fixed">
-            <thead className="text-pi-text-muted sticky top-0 bg-pi-card z-10">
+    <QueryState query={query} isEmpty={(d) => d.length === 0} emptyText="No mount information available">
+      {(mounts) => (
+        <div className="custom-scrollbar max-h-64 overflow-y-auto">
+          <table className="w-full table-fixed text-sm">
+            <thead className="sticky top-0 bg-pi-card text-xs text-pi-text-muted">
               <tr>
-                <th className="text-left w-1/4">Mount</th>
-                <th className="text-left w-1/5">Type</th>
-                <th className="text-left w-2/5">Flags</th>
-                <th className="text-left w-1/4">Device</th>
+                <th scope="col" className="w-1/4 py-1 text-left font-medium">Mount</th>
+                <th scope="col" className="w-1/6 py-1 text-left font-medium">Type</th>
+                <th scope="col" className="py-1 text-left font-medium">Flags</th>
+                <th scope="col" className="w-1/4 py-1 text-left font-medium">Device</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-pi-border">
-              {mounts.map((mnt: any, i: number) => (
-                <tr key={i}>
-                  <td className="pr-2 truncate">{mnt.mountpoint}</td>
-                  <td className="pr-2">{mnt.fstype}</td>
-                  <td className="pr-2 truncate">{mnt.options}</td>
-                  <td className="truncate">{mnt.device}</td>
+              {mounts.map((m, i) => (
+                <tr key={`${m.mountpoint}-${i}`}>
+                  <td className="truncate py-1 pr-2 font-mono text-xs" title={m.mountpoint}>{m.mountpoint}</td>
+                  <td className="truncate py-1 pr-2">{m.fstype}</td>
+                  <td className="truncate py-1 pr-2 text-xs" title={m.options}>{m.options}</td>
+                  <td className="truncate py-1 font-mono text-xs" title={m.device}>{m.device}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-    </div>
-  )
+    </QueryState>
+  );
 }

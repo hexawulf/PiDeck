@@ -1,12 +1,13 @@
-// Theme E2E. SAFETY: only tab buttons and the theme toggle are ever clicked —
-// never restart/stop/reboot/update controls.
+// Theme E2E. SAFETY: only tab links and the theme toggle are ever clicked —
+// never restart/stop/reboot/update controls (and ./fixtures blocks them anyway).
 //
 //  no-flash ─ bundle blocked → only the inline script can set <html class>
 //  toggle   ─ click → class + storage flip → reload persists
 //  system   ─ OS change while "system" → class follows
 //  pages    ─ every page × theme: axe AA contrast, screenshot, no CSP violation
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 const KEY = "pideck-ui-theme";
 const TABS = ["Dashboard", "Logs", "Apps", "Cron", "Settings"] as const;
@@ -60,7 +61,7 @@ test.describe("no-flash script (React bundle blocked)", () => {
 });
 
 test.describe("toggle", () => {
-  for (const path of ["/login", "/dashboard", "/change-password"]) {
+  for (const path of ["/login", "/dashboard", "/settings"]) {
     test(`flips and persists on ${path}`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: "light" });
       await page.goto(path);
@@ -121,15 +122,10 @@ for (const theme of ["light", "dark"] as const) {
       await ctx.close();
     });
 
-    test("change-password", async ({ page }) => {
-      await page.goto("/change-password");
-      await audit(page, "change-password");
-    });
-
     for (const tab of TABS) {
       test(`dashboard › ${tab}`, async ({ page }) => {
         await page.goto("/dashboard");
-        await page.getByRole("button", { name: tab, exact: true }).click();
+        await page.getByRole("link", { name: tab, exact: true }).click();
         await page.waitForLoadState("networkidle");
         await audit(page, `tab-${tab.toLowerCase()}`);
       });

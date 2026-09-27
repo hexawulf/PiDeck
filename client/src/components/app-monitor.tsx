@@ -1,4 +1,5 @@
-import { useSystemData } from "@/hooks/use-system-data";
+import { useDocker, useContainerAction, type ContainerAction } from "@/hooks/use-docker";
+import { usePm2, useProcessAction, type ProcessAction } from "@/hooks/use-pm2";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,33 +15,18 @@ import {
 } from "lucide-react";
 
 export default function AppMonitor() {
-  const { 
-    dockerContainers, 
-    pm2Processes, 
-    restartContainer, 
-    stopContainer, 
-    startContainer,
-    restartProcess,
-    stopProcess,
-    isContainerActionPending,
-    isProcessActionPending
-  } = useSystemData();
+  const dockerContainers = useDocker();
+  const pm2Processes = usePm2();
+  const containerAction = useContainerAction();
+  const processAction = useProcessAction();
+  const isContainerActionPending = containerAction.isPending;
+  const isProcessActionPending = processAction.isPending;
   
   const { toast } = useToast();
 
-  const handleContainerAction = async (action: string, id: string, name: string) => {
+  const handleContainerAction = async (action: ContainerAction, id: string, name: string) => {
     try {
-      switch (action) {
-        case 'restart':
-          await restartContainer(id);
-          break;
-        case 'stop':
-          await stopContainer(id);
-          break;
-        case 'start':
-          await startContainer(id);
-          break;
-      }
+      await containerAction.mutateAsync({ id, action });
       toast({
         title: "Success",
         description: `Container ${name} ${action}ed successfully`,
@@ -54,16 +40,9 @@ export default function AppMonitor() {
     }
   };
 
-  const handleProcessAction = async (action: string, name: string) => {
+  const handleProcessAction = async (action: ProcessAction, name: string) => {
     try {
-      switch (action) {
-        case 'restart':
-          await restartProcess(name);
-          break;
-        case 'stop':
-          await stopProcess(name);
-          break;
-      }
+      await processAction.mutateAsync({ name, action });
       toast({
         title: "Success",
         description: `Process ${name} ${action}ed successfully`,

@@ -7,8 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { useAuth } from "@/hooks/use-auth";
 
 import Login from "@/pages/login";
-import Dashboard from "@/pages/dashboard";
-import ChangePassword from "@/pages/change-password";
+import AppShell, { isTabId } from "@/components/app-shell";
 import NotFound from "@/pages/not-found";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -31,19 +30,26 @@ function AppRoutes() {
     <Switch>
       {/* Public routes */}
       <Route path="/login" component={Login} />
-      <Route path="/" component={() => <Redirect to="/login" />} />
-
-      {/* Protected routes */}
-      <Route path="/change-password">
-        <ProtectedRoute>
-          <ChangePassword />
-        </ProtectedRoute>
+      <Route path="/">
+        <Redirect to="/dashboard" replace />
       </Route>
 
-      <Route path="/dashboard">
-        <ProtectedRoute>
-          <Dashboard />
-        </ProtectedRoute>
+      {/* Password change lives in Settings since 2.0 */}
+      <Route path="/change-password">
+        <Redirect to="/settings" replace />
+      </Route>
+
+      {/* One route for every tab, so the shell stays mounted across tabs */}
+      <Route path="/:tab">
+        {(params) =>
+          isTabId(params.tab) ? (
+            <ProtectedRoute>
+              <AppShell tab={params.tab} />
+            </ProtectedRoute>
+          ) : (
+            <Redirect to="/dashboard" replace />
+          )
+        }
       </Route>
 
       {/* Catch-all */}

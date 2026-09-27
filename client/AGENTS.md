@@ -29,7 +29,7 @@ client/src/
 │   ├── ui/              # Shadcn components (NEVER edit manually)
 │   ├── widgets/         # Feature widgets (fetch + display data)
 │   ├── modals/          # Dialog/modal components
-│   └── *.tsx            # Domain components (system-overview, etc.)
+│   └── *.tsx            # Domain components (app-shell, app-monitor, etc.)
 ├── pages/               # Route-level pages
 ├── hooks/               # React hooks (TanStack Query wrappers)
 ├── lib/                 # Utilities (queryClient, utils)
@@ -40,84 +40,40 @@ client/src/
 ### Naming Conventions
 - **Components**: PascalCase with descriptive suffixes
   - Widgets: `*Box.tsx` (e.g., `MountInfoBox.tsx`, `RamStatsBox.tsx`)
-  - Domain components: Lowercase with hyphens (e.g., `system-overview.tsx`)
+  - Domain components: Lowercase with hyphens (e.g., `app-monitor.tsx`)
   - Pages: Lowercase with hyphens (e.g., `dashboard.tsx`, `login.tsx`)
-- **Hooks**: `use-*` (e.g., `use-system-data.ts`, `use-auth.ts`)
+- **Hooks**: `use-*` (e.g., `use-system-info.ts`, `use-auth.ts`)
 - **Imports**: Use `@/*` alias for client code, `@shared/*` for shared types
 
 ### Widget Pattern (✅ COPY THIS)
-**Reference**: `client/src/components/widgets/MountInfoBox.tsx`
+**Reference**: `client/src/components/widgets/MountInfoBox.tsx`, registry in `client/src/widgets/registry.tsx`
 
 ```tsx
-import { useQuery } from '@tanstack/react-query'
+import { useWidgetQuery } from "@/widgets/useWidgetQuery";
+import { mountsSchema } from "@/widgets/schemas";   // add a zod schema per endpoint
+import { QueryState } from "@/widgets/WidgetFrame";
 
-const fetchData = async () => {
-  const res = await fetch('/api/metrics/mounts', { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch')
-  return res.json()
-}
-
-export function MyWidget() {
-  const { data, error, isLoading } = useQuery({
-    queryKey: ['my-data'],
-    queryFn: fetchData,
-    refetchInterval: 15000, // 15s for metrics
-  })
-
+export function MountInfoBox() {
+  const query = useWidgetQuery("/api/metrics/mounts", 15000, mountsSchema); // key = [url]
   return (
-    <div className="rounded-2xl border p-4 shadow bg-[#0f172a] text-white w-full max-w-2xl">
-      <h3 className="text-lg font-semibold mb-2">Widget Title</h3>
-      {isLoading ? (
-        <p className="text-gray-400">Loading...</p>
-      ) : error ? (
-        <p className="text-yellow-400">{error.message}</p>
-      ) : (
-        <div>{/* render data */}</div>
-      )}
-    </div>
-  )
+    <QueryState query={query} isEmpty={(d) => d.length === 0} emptyText="No mounts">
+      {(mounts) => <table>…</table>}
+    </QueryState>
+  );
 }
 ```
+Then add `{ id, title, icon, defaultSize: { w, h }, component }` to `WIDGETS`.
 
 **Rules**:
-- ✅ Always use `credentials: 'include'` on fetch calls
-- ✅ Use TanStack Query with explicit `queryKey` and `refetchInterval`
-- ✅ Handle loading, error, and success states explicitly
-- ✅ Use dark theme colors: `bg-[#0f172a]`, `text-white`, `text-gray-400`
-- ❌ DON'T fetch directly in components - wrap in hooks or inline fetch functions
+- ✅ Body only: `WidgetFrame` draws title, border, radius, shadow and catches render errors
+- ❌ No `rounded-lg+`, `shadow`, `max-w-*` under `components/widgets/` (`npm run check:theme` fails)
+- ✅ Validate every response with a schema in `widgets/schemas.ts` (also used by `tests/e2e/contract.spec.ts`)
+- ✅ Colors from `--pi-*` tokens only (`text-pi-text-muted`, `bg-pi-chart-1`, …)
 
 ### TanStack Query Hooks Pattern
-**Reference**: `client/src/hooks/use-system-data.ts`
-
-```tsx
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiRequest } from '@/lib/queryClient'
-import type { MyType } from '@shared/schema'
-
-export function useMyData(enabled: boolean = true) {
-  const queryClient = useQueryClient()
-
-  const myQuery = useQuery<MyType>({
-    queryKey: ['/api/my-endpoint'],
-    refetchInterval: enabled ? 5000 : false,
-    enabled,
-  })
-
-  const myMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return apiRequest('POST', `/api/my-endpoint/${id}/action`)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/my-endpoint'] })
-    },
-  })
-
-  return {
-    myData: myQuery,
-    performAction: myMutation.mutateAsync,
-  }
-}
-```
+**Reference**: `client/src/hooks/use-docker.ts` — one hook per resource plus colocated mutation hooks.
+A query polls only while a component using it is mounted, so keep hooks per resource
+(`useSystemInfo`, `useHistory`, `useAlerts`, `useDocker`, `usePm2`, `useCron`) — never one hook for everything.
 
 **Refetch Intervals**:
 - **5s**: Critical real-time data (system info, alerts)
@@ -126,7 +82,6 @@ export function useMyData(enabled: boolean = true) {
 - **60s**: Historical data
 
 ### Styling Guidelines
-- **Base container**: `rounded-2xl border p-4 shadow bg-[#0f172a] text-white`
 - **Headings**: `text-lg font-semibold mb-2`
 - **Muted text**: `text-gray-400`
 - **Warnings**: `text-yellow-400`
@@ -158,13 +113,13 @@ import { Card } from '@/components/ui/card'
 - **App**: `client/src/App.tsx` - Routing with Wouter
 - **Query Client**: `client/src/lib/queryClient.ts` - TanStack Query config + apiRequest helper
 - **Auth Hook**: `client/src/hooks/use-auth.ts` - Login/logout logic
-- **System Data Hook**: `client/src/hooks/use-system-data.ts` - Primary data fetching hook
+- **Shell/routes**: `client/src/components/app-shell.tsx` - header + tabs at `/:tab`
 
 ### Example Files (Good Patterns)
 - **Widget**: `client/src/components/widgets/MountInfoBox.tsx`
-- **Page**: `client/src/pages/dashboard.tsx`
-- **Hook**: `client/src/hooks/use-system-data.ts`
-- **Domain Component**: `client/src/components/system-overview.tsx`
+- **Page**: `client/src/pages/dashboard.tsx` (renders `WIDGETS`)
+- **Hook**: `client/src/hooks/use-docker.ts`
+- **Domain Component**: `client/src/components/app-monitor.tsx`
 
 ## JIT Index Hints
 ```bash

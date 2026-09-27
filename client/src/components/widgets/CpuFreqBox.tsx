@@ -1,40 +1,21 @@
-import { useQuery } from '@tanstack/react-query'
-
-const fetchCpuFreq = async () => {
-  const res = await fetch('/api/metrics/cpu-freq', { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch CPU frequency data')
-  const data = await res.json()
-  return Array.isArray(data) ? data : []
-}
+import { useWidgetQuery } from "@/widgets/useWidgetQuery";
+import { cpuFreqSchema } from "@/widgets/schemas";
+import { QueryState } from "@/widgets/WidgetFrame";
 
 export function CpuFreqBox() {
-  const { data, error, isLoading } = useQuery({
-    queryKey: ['cpu-freq'],
-    queryFn: fetchCpuFreq,
-    refetchInterval: 5000,
-  })
-
-  const frequencies = data || []
-
+  const query = useWidgetQuery("/api/metrics/cpu-freq", 5000, cpuFreqSchema);
   return (
-    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full max-w-sm">
-      <h3 className="text-lg font-semibold mb-2">CPU Frequency</h3>
-      {isLoading ? (
-        <p className="text-pi-text-muted">Loading CPU frequency data...</p>
-      ) : error ? (
-        <div className="text-sm">
-          <p className="text-pi-warning mb-2">CPU frequency data temporarily unavailable</p>
-          <p className="text-pi-text-muted text-xs">{error.message}</p>
-        </div>
-      ) : frequencies.length === 0 ? (
-        <p className="text-pi-text-muted">No CPU frequency data available</p>
-      ) : (
-        <ul className="space-y-1 text-sm">
-          {frequencies.map((core: { core: string; freq: string }) => (
-            <li key={core.core}><strong>{core.core.toUpperCase()}:</strong> {core.freq}</li>
+    <QueryState query={query} isEmpty={(d) => d.length === 0} emptyText="No CPU frequency data available">
+      {(cores) => (
+        <ul className="grid grid-cols-2 gap-x-4 gap-y-1">
+          {cores.map((c) => (
+            <li key={c.core} className="flex justify-between gap-2">
+              <span className="text-pi-text-muted">{c.core.toUpperCase()}</span>
+              <span className="tabular-nums">{c.freq}</span>
+            </li>
           ))}
         </ul>
       )}
-    </div>
-  )
+    </QueryState>
+  );
 }

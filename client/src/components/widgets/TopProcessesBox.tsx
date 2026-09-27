@@ -1,55 +1,34 @@
-import { useQuery } from '@tanstack/react-query'
+import { useSystemInfo } from "@/hooks/use-system-info";
+import { QueryState } from "@/widgets/WidgetFrame";
 
-const fetchTopProcesses = async () => {
-  const res = await fetch('/api/metrics/top-processes', { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch process data')
-  const data = await res.json()
-  return Array.isArray(data) ? data : []
-}
-
+// Top 5 by CPU, straight from /api/system/info (already polled for the header),
+// instead of a second request to /api/metrics/top-processes.
 export function TopProcessesBox() {
-  const { data, error, isLoading } = useQuery({
-    queryKey: ['top-processes'],
-    queryFn: fetchTopProcesses,
-    refetchInterval: 10000,
-  })
-
-  const processes = data || []
-
+  const query = useSystemInfo();
   return (
-    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full overflow-x-auto">
-      <h3 className="text-lg font-semibold mb-2">Top Processes</h3>
-      {isLoading ? (
-        <p className="text-pi-text-muted">Loading process data...</p>
-      ) : error ? (
-        <div className="text-sm">
-          <p className="text-pi-warning mb-2">Process data temporarily unavailable</p>
-          <p className="text-pi-text-muted text-xs">{error.message}</p>
-        </div>
-      ) : processes.length === 0 ? (
-        <p className="text-pi-text-muted">No process data available</p>
-      ) : (
-        <table className="text-sm w-full">
-          <thead className="text-pi-text-muted">
+    <QueryState query={query} isEmpty={(d) => !d.processes?.length} emptyText="No process data available">
+      {(d) => (
+        <table className="w-full table-fixed text-sm">
+          <thead className="text-xs text-pi-text-muted">
             <tr>
-              <th className="text-left">PID</th>
-              <th className="text-left">Name</th>
-              <th className="text-right">CPU%</th>
-              <th className="text-right">MEM%</th>
+              <th scope="col" className="w-20 py-1 text-left font-medium">PID</th>
+              <th scope="col" className="py-1 text-left font-medium">Name</th>
+              <th scope="col" className="w-16 py-1 text-right font-medium">CPU %</th>
+              <th scope="col" className="w-16 py-1 text-right font-medium">Mem %</th>
             </tr>
           </thead>
-          <tbody>
-            {processes.map((p: any) => (
+          <tbody className="divide-y divide-pi-border">
+            {d.processes!.map((p) => (
               <tr key={p.pid}>
-                <td>{p.pid}</td>
-                <td className="truncate max-w-[100px]">{p.name}</td>
-                <td className="text-right">{p.cpu !== null && p.cpu !== undefined ? p.cpu.toFixed(1) : 'N/A'}</td>
-                <td className="text-right">{p.mem !== null && p.mem !== undefined ? p.mem.toFixed(1) : 'N/A'}</td>
+                <td className="py-1 font-mono text-xs">{p.pid}</td>
+                <td className="truncate py-1" title={p.name}>{p.name}</td>
+                <td className="py-1 text-right tabular-nums">{p.cpuUsage.toFixed(1)}</td>
+                <td className="py-1 text-right tabular-nums">{p.memUsage.toFixed(1)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-    </div>
-  )
+    </QueryState>
+  );
 }

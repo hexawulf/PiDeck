@@ -1,32 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
-
-const fetchThermalZones = async () => {
-  const res = await fetch('/api/metrics/thermal-zones', { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch')
-  return res.json()
-}
+import { useWidgetQuery } from "@/widgets/useWidgetQuery";
+import { thermalZonesSchema } from "@/widgets/schemas";
+import { QueryState } from "@/widgets/WidgetFrame";
+import { KeyValueList } from "./KeyValueList";
 
 export function ThermalZoneBox() {
-  const { data, error, isLoading } = useQuery({
-    queryKey: ['thermal-zones'],
-    queryFn: fetchThermalZones,
-    refetchInterval: 10000,
-  })
-
+  const query = useWidgetQuery("/api/metrics/thermal-zones", 10000, thermalZonesSchema);
   return (
-    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full max-w-sm">
-      <h3 className="text-lg font-semibold mb-2">Thermal Sensors</h3>
-      {isLoading ? (
-        <p>Loading...</p>
-      ) : error || !data ? (
-        <p className="text-pi-error">Unavailable</p>
-      ) : (
-        <ul className="space-y-1 text-sm">
-          {data.map((z: { label: string; temp: string }, i: number) => (
-            <li key={i}><strong>{z.label}:</strong> {z.temp}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
+    <QueryState query={query} isEmpty={(d) => d.length === 0} emptyText="No thermal sensors found">
+      {(zones) => <KeyValueList rows={zones.map((z) => [`${z.label}`, z.temp] as [string, string])} />}
+    </QueryState>
+  );
 }

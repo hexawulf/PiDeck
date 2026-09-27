@@ -1,33 +1,22 @@
-import { useQuery } from '@tanstack/react-query'
-
-const fetchNvmeHealth = async () => {
-  const res = await fetch('/api/metrics/nvme', { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch')
-  return res.json()
-}
+import { useWidgetQuery } from "@/widgets/useWidgetQuery";
+import { nvmeSchema } from "@/widgets/schemas";
+import { QueryState } from "@/widgets/WidgetFrame";
+import { KeyValueList } from "./KeyValueList";
 
 export function NvmeHealthBox() {
-  const { data, error, isLoading } = useQuery({
-    queryKey: ['nvme-health'],
-    queryFn: fetchNvmeHealth,
-    refetchInterval: 10000,
-  })
-
+  const query = useWidgetQuery("/api/metrics/nvme", 10000, nvmeSchema);
   return (
-    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full max-w-sm">
-      <h3 className="text-lg font-semibold mb-2">NVMe Status</h3>
-      {isLoading ? (
-        <p>Loading...</p>
-      ) : error || !data ? (
-        <p className="text-pi-error">Unavailable</p>
-      ) : (
-        <ul className="space-y-1 text-sm">
-          <li><strong>Temp:</strong> {data.temperature}°C</li>
-          <li><strong>Power-On Hours:</strong> {data.power_on_hours}</li>
-          <li><strong>Wear Leveling:</strong> {data.wear_leveling_count}</li>
-          <li><strong>Media Errors:</strong> {data.media_errors}</li>
-        </ul>
+    <QueryState query={query}>
+      {(d) => (
+        <KeyValueList
+          rows={[
+            ["Temperature", d.temperature === null ? null : `${d.temperature}°C`],
+            ["Power-on hours", d.power_on_hours],
+            ["Wear leveling", d.wear_leveling_count],
+            ["Media errors", d.media_errors],
+          ]}
+        />
       )}
-    </div>
-  )
+    </QueryState>
+  );
 }

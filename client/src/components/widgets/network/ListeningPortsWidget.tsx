@@ -1,61 +1,35 @@
-import { useQuery } from '@tanstack/react-query'
-
-const fetchListeningPorts = async () => {
-  const res = await fetch('/api/metrics/listening-ports', { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch')
-  return res.json()
-}
+import { useWidgetQuery } from "@/widgets/useWidgetQuery";
+import { listeningPortsSchema } from "@/widgets/schemas";
+import { QueryState } from "@/widgets/WidgetFrame";
 
 export function ListeningPortsWidget() {
-  const { data, error, isLoading } = useQuery({
-    queryKey: ['listening-ports'],
-    queryFn: fetchListeningPorts,
-    refetchInterval: 30000,
-  })
-
-  const ports = data?.listening || []
-  const displayPorts = ports.slice(0, 10) // Show top 10
-
+  const query = useWidgetQuery("/api/metrics/listening-ports", 30000, listeningPortsSchema);
   return (
-    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full">
-      <h3 className="text-lg font-semibold mb-2">
-        Listening Ports
-        {ports.length > 10 && (
-          <span className="text-xs text-pi-text-muted ml-2">
-            (showing 10 of {ports.length})
-          </span>
-        )}
-      </h3>
-      {isLoading ? (
-        <p className="text-pi-text-muted">Loading...</p>
-      ) : error || !data ? (
-        <p className="text-pi-error">Unavailable</p>
-      ) : ports.length === 0 ? (
-        <p className="text-pi-text-muted">No listening ports</p>
-      ) : (
-        <div className="max-h-72 overflow-y-auto text-sm">
-          <table className="w-full">
-            <thead className="text-pi-text-muted text-xs sticky top-0 bg-pi-card">
+    <QueryState query={query} isEmpty={(d) => d.listening.length === 0} emptyText="No listening ports">
+      {({ listening }) => (
+        <div className="custom-scrollbar max-h-64 overflow-y-auto">
+          <table className="w-full table-fixed text-sm">
+            <thead className="sticky top-0 bg-pi-card text-xs text-pi-text-muted">
               <tr>
-                <th className="text-left py-1">Port</th>
-                <th className="text-left py-1">Proto</th>
-                <th className="text-left py-1">IP</th>
-                <th className="text-left py-1">Service</th>
+                <th scope="col" className="w-16 py-1 text-left font-medium">Port</th>
+                <th scope="col" className="w-14 py-1 text-left font-medium">Proto</th>
+                <th scope="col" className="py-1 text-left font-medium">IP</th>
+                <th scope="col" className="py-1 text-left font-medium">Service</th>
               </tr>
             </thead>
-            <tbody>
-              {displayPorts.map((p: any, idx: number) => (
-                <tr key={`${p.proto}-${p.port}-${p.ip}-${idx}`} className="border-t border-pi-border">
-                  <td className="font-mono py-1">{p.port}</td>
-                  <td className="text-xs">{p.proto}</td>
-                  <td className="font-mono text-xs">{p.ip === '0.0.0.0' ? '*' : p.ip}</td>
-                  <td className="text-xs">{p.desc || '-'}</td>
+            <tbody className="divide-y divide-pi-border">
+              {listening.map((p) => (
+                <tr key={`${p.proto}-${p.port}-${p.ip}`}>
+                  <td className="py-1 font-mono">{p.port}</td>
+                  <td className="py-1 text-xs">{p.proto}</td>
+                  <td className="truncate py-1 font-mono text-xs" title={p.ip}>{p.ip === "0.0.0.0" ? "*" : p.ip}</td>
+                  <td className="truncate py-1 text-xs">{p.desc || "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-    </div>
-  )
+    </QueryState>
+  );
 }

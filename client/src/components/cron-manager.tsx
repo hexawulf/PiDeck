@@ -1,4 +1,4 @@
-import { useSystemData } from "@/hooks/use-system-data";
+import { useCron, useRunCronJob } from "@/hooks/use-cron";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,7 +11,10 @@ import {
 } from "lucide-react";
 
 export default function CronManager() {
-  const { cronJobs, runCronJob, isCronJobPending } = useSystemData();
+  const cronJobs = useCron();
+  const runCron = useRunCronJob();
+  const runCronJob = runCron.mutateAsync;
+  const isCronJobPending = runCron.isPending;
   const { toast } = useToast();
 
   const handleRunCronJob = async (command: string, description: string) => {

@@ -1,40 +1,24 @@
-import { useQuery } from '@tanstack/react-query'
-
-const fetchIpConfig = async () => {
-  const res = await fetch('/api/metrics/ip-config', { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch')
-  return res.json()
-}
+import { useWidgetQuery } from "@/widgets/useWidgetQuery";
+import { ipConfigSchema } from "@/widgets/schemas";
+import { QueryState } from "@/widgets/WidgetFrame";
 
 export function IpConfigWidget() {
-  const { data, error, isLoading } = useQuery({
-    queryKey: ['ip-config'],
-    queryFn: fetchIpConfig,
-    refetchInterval: 30000,
-  })
-
+  const query = useWidgetQuery("/api/metrics/ip-config", 30000, ipConfigSchema);
   return (
-    <div className="rounded-2xl border p-4 shadow bg-pi-card text-pi-text w-full">
-      <h3 className="text-lg font-semibold mb-2">IP Configuration</h3>
-      {isLoading ? (
-        <p className="text-pi-text-muted">Loading...</p>
-      ) : error || !data ? (
-        <p className="text-pi-error">Unavailable</p>
-      ) : !data.interfaces || data.interfaces.length === 0 ? (
-        <p className="text-pi-text-muted">No active interfaces</p>
-      ) : (
-        <div className="text-sm space-y-3 max-h-64 overflow-y-auto">
-          {data.interfaces.map((iface: any) => (
+    <QueryState query={query} isEmpty={(d) => d.interfaces.length === 0} emptyText="No active interfaces">
+      {({ interfaces }) => (
+        <div className="custom-scrollbar max-h-64 space-y-3 overflow-y-auto">
+          {interfaces.map((iface) => (
             <div key={iface.ifname} className="border-b border-pi-border pb-2 last:border-0">
-              <p className="font-semibold text-blue-600 dark:text-blue-400">{iface.ifname}</p>
-              {iface.addr && iface.addr.length > 0 && (
+              <p className="font-semibold text-pi-accent">{iface.ifname}</p>
+              {iface.addr.length > 0 && (
                 <p className="text-xs text-pi-text-muted">
-                  IPv4: <span className="font-mono">{iface.addr.join(', ')}</span>
+                  IPv4: <span className="font-mono">{iface.addr.join(", ")}</span>
                 </p>
               )}
-              {iface.ipv6 && iface.ipv6.length > 0 && (
-                <p className="text-xs text-pi-text-muted">
-                  IPv6: <span className="font-mono text-xs">{iface.ipv6.map((ip: string) => ip.substring(0, 20) + (ip.length > 20 ? '...' : '')).join(', ')}</span>
+              {iface.ipv6.length > 0 && (
+                <p className="truncate text-xs text-pi-text-muted" title={iface.ipv6.join(", ")}>
+                  IPv6: <span className="font-mono">{iface.ipv6.join(", ")}</span>
                 </p>
               )}
               {iface.mac && (
@@ -46,6 +30,6 @@ export function IpConfigWidget() {
           ))}
         </div>
       )}
-    </div>
-  )
+    </QueryState>
+  );
 }
