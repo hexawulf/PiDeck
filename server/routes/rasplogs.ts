@@ -4,6 +4,7 @@ import { resolve, basename } from "path";
 import { spawn } from "child_process";
 import type { LogIndexEntry } from "@shared/schema";
 import { PIDECK_LOGS_DIR } from "../config";
+import { grepArgs, LogFilterError, parseTail } from "../services/log-filter";
 
 const rasplogsRouter = Router();
 
@@ -71,9 +72,17 @@ rasplogsRouter.get("/rasplogs", async (_req, res) => {
 // GET /api/rasplogs/:name -> tail/stream a log file
 rasplogsRouter.get("/rasplogs/:name", async (req, res) => {
   const { name } = req.params;
-  const { grep, follow } = req.query;
-  const tailNum = Math.max(1, Math.min(parseInt(String(req.query.tail || "1000"), 10) || 1000, 10000));
-  const tail = String(tailNum);
+  const { follow } = req.query;
+  const tail = String(parseTail(req.query.tail));
+
+  // Pattern goes after -e and before "--", so "-…" can't become a grep option.
+  let grepFilter: string[] | null;
+  try {
+    grepFilter = grepArgs(req.query.grep);
+  } catch (err) {
+    if (err instanceof LogFilterError) return res.status(err.status).json({ message: err.message });
+    throw err;
+  }
 
   const filePath = resolve(LOGS_DIR, name);
 
@@ -107,11 +116,13 @@ rasplogsRouter.get("/rasplogs/:name", async (req, res) => {
     const tailProc = spawn("tail", tailCommand);
 
     let stream: NodeJS.ReadableStream = tailProc.stdout;
+    let grepProc: ReturnType<typeof spawn> | null = null;
 
-    if (grep) {
-      const grepProc = spawn("grep", [grep as string]);
-      tailProc.stdout.pipe(grepProc.stdin);
-      stream = grepProc.stdout;
+    if (grepFilter) {
+      // --line-buffered: otherwise grep holds matches until a 4 KiB block fills
+      grepProc = spawn("grep", ["--line-buffered", ...grepFilter]);
+      tailProc.stdout.pipe(grepProc.stdin!);
+      stream = grepProc.stdout!;
     }
 
     const onData = (data: Buffer) => {
@@ -127,14 +138,15 @@ rasplogsRouter.get("/rasplogs/:name", async (req, res) => {
       clearInterval(hb);
       stream.removeListener("data", onData);
       tailProc.kill();
+      grepProc?.kill();
     });
   } else {
     // Snapshot
     const args = ["-n", tail as string];
     let child;
 
-    if (grep) {
-      const grepProc = spawn("grep", [grep as string, filePath]);
+    if (grepFilter) {
+      const grepProc = spawn("grep", [...grepFilter, filePath]);
       child = spawn("tail", args, { stdio: [grepProc.stdout, "pipe", "pipe"] });
     } else {
       args.push(filePath);

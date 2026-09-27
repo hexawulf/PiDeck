@@ -4,6 +4,7 @@ import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { PIDECK_LOGS_DIR, PM2_LOGS_DIR } from '../config';
+import { lineFilter, LogFilterError } from '../services/log-filter';
 
 const execFileAsync = promisify(execFile);
 const r = Router();
@@ -255,24 +256,23 @@ r.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Log file is no longer available' });
     }
     
+    // Validate the filter before reading anything: substring by default,
+    // /regex/ only when short and free of nested quantifiers (runs on the event loop).
+    let keep: ((line: string) => boolean) | null;
+    try {
+      keep = lineFilter(req.query.grep);
+    } catch (err) {
+      if (err instanceof LogFilterError) return res.status(err.status).json({ message: err.message });
+      throw err;
+    }
+
     const tail = Math.min(Math.max(parseInt(String(req.query.tail || 1000), 10) || 1000, 1), MAX_TAIL_LINES);
     
     // Use system tail for large files
     let text = log.large ? await tailFileLarge(validated.path, tail) : tailFile(validated.path, tail);
     
-    const grep = String(req.query.grep || '').trim();
-    if (grep) {
-      if (grep.length > 200) {
-        return res.status(400).json({ message: 'grep pattern too long (max 200 chars)' });
-      }
-      try {
-        const pattern = grep.startsWith('/') && grep.endsWith('/') ? grep.slice(1,-1) : grep;
-        const rx = new RegExp(pattern, 'i');
-        text = text.split('\n').filter(l => rx.test(l)).join('\n');
-      } catch {
-        const q = grep.toLowerCase();
-        text = text.split('\n').filter(l => l.toLowerCase().includes(q)).join('\n');
-      }
+    if (keep) {
+      text = text.split('\n').filter(keep).join('\n');
     }
     
     if (req.query.download === '1') {
