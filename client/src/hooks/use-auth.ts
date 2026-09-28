@@ -5,6 +5,10 @@ import { useLocation } from "wouter";
 interface AuthStatus {
   authenticated: boolean;
   userId?: number;
+  /** How the session cookie is sent (see components/transport-notice.tsx). */
+  transport?: { secureCookie: boolean; insecureHttp: boolean };
+  /** Signed in and the admin password is still the seeded default. */
+  defaultPassword?: boolean;
 }
 
 export function useAuth() {

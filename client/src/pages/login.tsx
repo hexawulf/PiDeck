@@ -8,11 +8,12 @@ import { Server, Eye, EyeOff } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { TransportNotice } from "@/components/transport-notice";
 
 export default function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const { login, isLoginPending, loginError } = useAuth();
+  const { login, isLoginPending, loginError, user } = useAuth();
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -68,6 +69,7 @@ export default function Login() {
               <p className="pi-text-muted">Raspberry Pi Admin Dashboard</p>
             </div>
             
+            <TransportNotice transport={user?.transport} />
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <Label className="block text-sm font-medium pi-text-muted mb-2">

@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { PIDECK_LOGS_DIR, PM2_LOGS_DIR } from '../config';
+import { PIDECK_LOGS_DIR, hostLogs } from '../config';
 import { lineFilter, LogFilterError } from '../services/log-filter';
 
 const execFileAsync = promisify(execFile);
@@ -48,18 +48,9 @@ function isWithinDir(filePath: string, baseDir: string): boolean {
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
-const ALLOWLIST_LOGS: Record<string, { name: string; label: string; path: string; source: 'nginx' | 'pm2' | 'project' }> = {
-  'nginx_access': { name: 'access.log', label: 'Nginx Access Log', path: '/var/log/nginx/access.log', source: 'nginx' },
-  'nginx_error': { name: 'error.log', label: 'Nginx Error Log', path: '/var/log/nginx/error.log', source: 'nginx' },
-  'pm2_pideck_out': { name: 'pideck-out.log', label: 'PM2 PiDeck Output', path: path.join(PM2_LOGS_DIR, 'pideck-out.log'), source: 'pm2' },
-  'pm2_pideck_err': { name: 'pideck-error.log', label: 'PM2 PiDeck Error', path: path.join(PM2_LOGS_DIR, 'pideck-error.log'), source: 'pm2' },
-  'pitasker_out': { name: 'out.log', label: 'PiTasker Output', path: '/var/log/pitasker/out.log', source: 'pm2' },
-  'pitasker_err': { name: 'error.log', label: 'PiTasker Error', path: '/var/log/pitasker/error.log', source: 'pm2' },
-  'pitasker_combined': { name: 'combined.log', label: 'PiTasker Combined', path: '/var/log/pitasker/combined.log', source: 'pm2' },
-  'pideck_cron': { name: 'pideck-cron.log', label: 'PiDeck Cron', path: path.join(PIDECK_LOGS_DIR, 'pideck-cron.log'), source: 'project' },
-  'codepatchwork': { name: 'codepatchwork.log', label: 'CodePatchwork', path: path.join(PIDECK_LOGS_DIR, 'codepatchwork.log'), source: 'project' },
-  'synology': { name: 'synology.log', label: 'Synology', path: path.join(PIDECK_LOGS_DIR, 'synology.log'), source: 'project' }
-};
+// Fixed log files: generic defaults + PIDECK_HOST_LOGS (see server/config.ts).
+// Missing or unreadable files are simply not listed.
+const HOST_LOGS = hostLogs();
 
 async function validateReadableFile(filePath: string, allowedBaseDir?: string): Promise<ValidatedLogFile | null> {
   try {
@@ -165,12 +156,12 @@ async function scanHomeLogs(): Promise<LogItem[]> {
 async function getAllLogs(): Promise<LogItem[]> {
   const logs: LogItem[] = [];
   
-  // Add allowlisted logs (these take priority in de-duplication)
-  for (const [id, log] of Object.entries(ALLOWLIST_LOGS)) {
+  // Add configured logs (these take priority in de-duplication)
+  for (const log of HOST_LOGS) {
     const validated = await validateReadableFile(log.path);
     if (validated) {
       logs.push({
-        id,
+        id: log.id,
         name: log.name,
         label: log.label,
         path: validated.path,
@@ -181,7 +172,7 @@ async function getAllLogs(): Promise<LogItem[]> {
       });
     }
   }
-  
+
   // Add nginx rotated logs
   const nginxLogs = await getNginxRotatedLogs();
   logs.push(...nginxLogs);

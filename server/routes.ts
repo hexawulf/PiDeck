@@ -22,6 +22,8 @@ import { createSystemUpdateHandler } from "./routes/system-update";
 import { loginSchema } from "@shared/schema";
 import { rateLimitLogin } from "./middleware/rateLimitLogin";
 import { envPasswordMatches } from "./services/env-password";
+import { cookieSecure, insecureHttp } from "./config";
+import { adminPasswordIsDefault } from "./storage";
 
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
@@ -182,11 +184,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // `transport` lets the login page explain a cookie the browser will drop
+  // (Secure cookie over plain HTTP) and warn in PIDECK_INSECURE_HTTP mode.
   app.get("/api/auth/me", (req, res) => {
+    const transport = { secureCookie: cookieSecure(), insecureHttp: insecureHttp() };
     if ((req.session as any)?.authenticated) {
-      res.json({ authenticated: true, userId: (req.session as any).userId });
+      res.json({ authenticated: true, userId: (req.session as any).userId, transport, defaultPassword: adminPasswordIsDefault() });
     } else {
-      res.json({ authenticated: false });
+      res.json({ authenticated: false, transport });
     }
   });
 
@@ -359,8 +364,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const newHash = await AuthService.hashPassword(parsed.newPassword);
       user.password_hash = newHash;
       user.last_password_change = new Date();
-      const { storage } = await import("./storage");
+      const { storage, markAdminPasswordChanged } = await import("./storage");
       await storage.updateUser(user);
+      markAdminPasswordChanged();
 
       res.json({ message: "Password changed successfully." });
     } catch (error) {

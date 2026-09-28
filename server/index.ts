@@ -14,6 +14,7 @@ import compatRouter from "./routes/compat";
 import { startSampler } from "./services/sampler";
 import { initializeStorage, pool } from "./storage";
 import { installCsp } from "./security";
+import { cookieSecure, corsOrigins, insecureHttp } from "./config";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,7 +57,8 @@ app.use(
     proxy: true,
     cookie: {
       httpOnly: true,
-      secure: IS_PRODUCTION,
+      // Secure in production; PIDECK_INSECURE_HTTP=1 lets a plain-HTTP LAN install log in.
+      secure: cookieSecure(),
       sameSite: "lax",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
       path: "/",
@@ -66,10 +68,12 @@ app.use(
 );
 
 // ---------- CORS ----------
-app.use(cors({
-  origin: "https://pideck.piapps.dev",
-  credentials: true,
-}));
+// Same-origin by default (no CORS headers); PIDECK_CORS_ORIGIN lists extra origins.
+const CORS_ORIGINS = corsOrigins();
+if (CORS_ORIGINS) app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
+if (IS_PRODUCTION && insecureHttp()) {
+  console.warn("[security] PIDECK_INSECURE_HTTP=1: session cookie is sent over plain HTTP. Use only on a trusted LAN.");
+}
 
 // ---------- STATIC & SPA: PUBLIC (no auth) ----------
 // Resolve next to the running bundle (dist/index.js → dist/public), same as

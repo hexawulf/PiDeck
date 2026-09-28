@@ -58,7 +58,7 @@ const iconButton = "p-2 bg-transparent hover:bg-pi-card-hover border-pi-border";
  * tabs swaps only <main> and each tab's queries poll only while it is shown.
  */
 export default function AppShell({ tab }: { tab: TabId }) {
-  const { logout, isLogoutPending } = useAuth();
+  const { logout, isLogoutPending, user } = useAuth();
   const systemInfo = useSystemInfo();
   const refreshAll = useRefreshAll();
   const reboot = useQuery<{ rebootRequired?: boolean }>({ queryKey: ["/api/reboot-check"] });
@@ -144,6 +144,17 @@ export default function AppShell({ tab }: { tab: TabId }) {
         </div>
       </header>
 
+      {user?.defaultPassword && (
+        <div role="alert" className="mx-4 mt-4 rounded-xl border border-pi-warning px-4 py-2 text-center text-sm text-pi-text" data-testid="default-password-banner">
+          The admin password is still the default (<code>admin</code>).{" "}
+          <Link href="/settings" className="font-semibold underline">Change it in Settings</Link>.
+        </div>
+      )}
+      {user?.transport?.insecureHttp && typeof window !== "undefined" && window.location.protocol === "http:" && (
+        <div className="mx-4 mt-4 rounded-xl border border-pi-warning px-4 py-2 text-center text-sm text-pi-text" data-testid="insecure-http-banner">
+          Plain HTTP mode: the session cookie is sent unencrypted. Use only on a trusted LAN (docs/INSTALL.md).
+        </div>
+      )}
       {reboot.data?.rebootRequired && (
         <div className="mx-4 mt-4 animate-pulse rounded-xl bg-red-700 px-4 py-2 text-center text-pi-on-accent shadow-lg">
           ⚠️ System reboot required to activate latest kernel updates

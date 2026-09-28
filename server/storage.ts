@@ -1,3 +1,4 @@
+import bcrypt from "bcrypt";
 import pkg from "pg";
 const { Pool } = pkg;
 import { type User, type InsertUser } from "@shared/schema";
@@ -67,14 +68,24 @@ export class PgStorage implements IStorage {
 export const storage = new PgStorage();
 let initPromise: Promise<void> | null = null;
 
+/** bcrypt("admin"): the seeded first-run password. scripts/install.sh replaces it. */
+export const DEFAULT_ADMIN_HASH = "$2b$10$hAevPiEi8nM5HzWk4VcJteq3NIQb3GgHIfDu/aeMCUImiuVfApa8C";
+let adminUsesDefault = false;
+/** True while the DB admin still has the seeded "admin" password (the UI nags). */
+export const adminPasswordIsDefault = () => adminUsesDefault;
+export const markAdminPasswordChanged = () => { adminUsesDefault = false; };
+
 async function ensureAdminUserExists() {
   try {
-    const admin = await storage.getUserByUsername("admin");
+    let admin = await storage.getUserByUsername("admin");
     if (!admin) {
       console.log("[PgStorage] Admin user not found — creating default admin.");
-      const adminPasswordHash = "$2b$10$hAevPiEi8nM5HzWk4VcJteq3NIQb3GgHIfDu/aeMCUImiuVfApa8C";
-      await storage.createUser({ username: "admin", password_hash: adminPasswordHash });
+      admin = await storage.createUser({ username: "admin", password_hash: DEFAULT_ADMIN_HASH });
       console.log("[PgStorage] Default admin user created.");
+    }
+    adminUsesDefault = await bcrypt.compare("admin", admin.password_hash);
+    if (adminUsesDefault) {
+      console.warn("[PgStorage] The admin password is still the default. Set one with scripts/install.sh --reset-password or in Settings.");
     }
   } catch (error) {
     console.error("[PgStorage] Error ensuring admin user exists:", error);
