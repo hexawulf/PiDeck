@@ -1,12 +1,36 @@
+import fs from "fs";
+import os from "os";
+import path from "path";
 import { Router } from "express";
 import pm2, { type ProcessDescription } from "pm2";
 import type { PM2Process } from "@shared/schema";
+import { unavailable } from "../services/unavailable";
 
 export const pm2Router = Router();
 
-
+/**
+ * Is a pm2 daemon running for this user? pm2.connect() *starts* one when
+ * there isn't, which would leave a stray daemon behind on a systemd host
+ * that doesn't use pm2. So check $PM2_HOME/pm2.pid first.
+ */
+export function pm2DaemonRunning(
+  env: NodeJS.ProcessEnv = process.env,
+  read: (p: string) => string = (p) => fs.readFileSync(p, "utf8"),
+  exists: (p: string) => boolean = fs.existsSync,
+): boolean {
+  const home = env.PM2_HOME || path.join(env.HOME || os.homedir(), ".pm2");
+  try {
+    const pid = read(path.join(home, "pm2.pid")).trim();
+    return /^\d+$/.test(pid) && exists(`/proc/${pid}`);
+  } catch {
+    return false;
+  }
+}
 
 pm2Router.get("/pm2/processes", async (_req, res) => {
+  if (!pm2DaemonRunning()) {
+    return res.json(unavailable("not-installed", "pm2 isn't running on this host."));
+  }
   const processes: PM2Process[] = await new Promise((resolve) => {
     pm2.connect((connectError: Error | null) => {
       if (connectError) {

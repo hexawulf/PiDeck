@@ -76,8 +76,9 @@ EOF
 #!/usr/bin/env bash
 [ "\${1:-}" = describe ] || echo "pm2 \$*" >> "$S/calls"   # describe is read-only
 case "\${1:-}" in
-  describe) grep -qx pideck "$S/pm2" ;;
-  start) grep -qx pideck "$S/pm2" || echo pideck >> "$S/pm2" ;;
+  # Like real pm2: any command without a running daemon starts one.
+  describe) [ -f "\$HOME/.pm2/pm2.pid" ] || echo "pm2 describe SPAWNED-DAEMON" >> "$S/calls"; grep -qx pideck "$S/pm2" ;;
+  start) mkdir -p "\$HOME/.pm2"; echo 1 > "\$HOME/.pm2/pm2.pid"; grep -qx pideck "$S/pm2" || echo pideck >> "$S/pm2" ;;
   delete) sed -i '/^pideck\$/d' "$S/pm2" ;;
   restart|save|startup) : ;;
 esac
@@ -283,11 +284,13 @@ check "unit installed 0644" test "$(mode "$unit")" = 644
 check "unit rendered (no placeholders)" bash -c "! grep -q '@[A-Z_]*@' '$unit' && grep -q '^User=tester$' '$unit' && grep -q \"^WorkingDirectory=$APP\$\" '$unit'"
 check "verified before install" grep -q '^systemd-analyze verify' "$W/state/calls"
 check "enabled and started" grep -q '^systemctl enable --now pideck' "$W/state/calls"
+check "systemd install never starts a pm2 daemon" bash -c "! grep -q SPAWNED-DAEMON '$W/state/calls' && test ! -e '$W/home/.pm2'"
 : > "$W/state/calls"
 inst --yes --port 5098 || bad "re-run exit $?"
 check "re-run detects systemd and restarts (no second instance)" bash -c "grep -q '^systemctl restart pideck' '$W/state/calls' && ! grep -q '^pm2 start' '$W/state/calls'"
 uninst --yes || bad "uninstall exit $?"
 check "uninstall: unit removed, copy kept in ~/backups" bash -c "test ! -e '$unit' && ls '$W'/home/backups/pideck-uninstall-*/pideck.service >/dev/null"
+check "re-run + uninstall never start a pm2 daemon either" bash -c "! grep -q SPAWNED-DAEMON '$W/state/calls' && test ! -e '$W/home/.pm2'"
 cleanup
 
 new_sandbox "--update"

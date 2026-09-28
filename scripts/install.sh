@@ -226,6 +226,16 @@ detect_nvme() {
 }
 
 pm2_bin() { have pm2 && command -v pm2 || { [ -x "$APP_DIR/node_modules/.bin/pm2" ] && echo "$APP_DIR/node_modules/.bin/pm2"; } || true; }
+# Asking pm2 anything (even `describe`) starts a pm2 daemon when none is
+# running, which a systemd host doesn't want. Probe the pid file first: no
+# live daemon means no pm2 app 'pideck' is running either.
+pm2_daemon_running() {
+  local f="${PM2_HOME:-$HOME/.pm2}/pm2.pid" pid
+  [ -f "$f" ] || return 1
+  pid="$(cat "$f" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] && [ -e "/proc/$pid" ]
+}
+pm2_has_pideck() { [ -n "${1:-}" ] && pm2_daemon_running && "$1" describe pideck >/dev/null 2>&1; }
 
 # ── 1. preflight (read-only) ───────────────────────────────────────────
 MISSING_REQ=(); APT_PKGS=()
@@ -506,7 +516,7 @@ service() {
   step "Service ($SERVICE)"
   # One instance only: refuse to add a second service manager next to an existing one.
   local p; p="$(pm2_bin)"
-  if [ "$SERVICE" != pm2 ] && [ -n "$p" ] && "$p" describe pideck >/dev/null 2>&1; then
+  if [ "$SERVICE" != pm2 ] && pm2_has_pideck "$p"; then
     die "a pm2 app 'pideck' already runs this; remove it first ($p delete pideck && $p save) or use --service pm2"
   fi
   if [ "$SERVICE" != systemd ] && [ -f "$ETC/systemd/system/pideck.service" ]; then
@@ -519,7 +529,7 @@ service() {
       # pm2 is a dependency, so after npm ci the repo's copy is there.
       [ -n "$pm2" ] || [ "$DRY_RUN" != 1 ] || pm2="$APP_DIR/node_modules/.bin/pm2"
       [ -n "$pm2" ] || die "pm2 not found (npm i -g pm2, or --service systemd)"
-      if "$pm2" describe pideck >/dev/null 2>&1; then
+      if pm2_has_pideck "$pm2"; then
         run "restart the existing pm2 app 'pideck'" "$pm2" restart pideck --update-env
       else
         run "start pideck under pm2" "$pm2" start "$APP_DIR/ecosystem.config.cjs"
@@ -628,7 +638,7 @@ summary() {
 detect_service() {
   [ -n "$SERVICE" ] && return
   local pm2; pm2="$(pm2_bin)"
-  if [ -n "$pm2" ] && "$pm2" describe pideck >/dev/null 2>&1; then SERVICE=pm2
+  if pm2_has_pideck "$pm2"; then SERVICE=pm2
   elif [ -f "$ETC/systemd/system/pideck.service" ]; then SERVICE=systemd
   elif have pm2; then SERVICE=pm2   # default: pm2 when installed globally
   else SERVICE=systemd; fi

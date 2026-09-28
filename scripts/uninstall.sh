@@ -83,6 +83,16 @@ run() {
 }
 have() { command -v "$1" >/dev/null 2>&1; }
 pm2_bin() { have pm2 && command -v pm2 || { [ -x "$APP_DIR/node_modules/.bin/pm2" ] && echo "$APP_DIR/node_modules/.bin/pm2"; } || true; }
+# Asking pm2 anything (even `describe`) starts a pm2 daemon when none is
+# running, which a systemd host doesn't want. Probe the pid file first: no
+# live daemon means no pm2 app 'pideck' is running either.
+pm2_daemon_running() {
+  local f="${PM2_HOME:-$HOME/.pm2}/pm2.pid" pid
+  [ -f "$f" ] || return 1
+  pid="$(cat "$f" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] && [ -e "/proc/$pid" ]
+}
+pm2_has_pideck() { [ -n "${1:-}" ] && pm2_daemon_running && "$1" describe pideck >/dev/null 2>&1; }
 
 
 ENV_FILE="$APP_DIR/.env"
@@ -97,7 +107,7 @@ info "log: $LOG"
 
 # ── plan ───────────────────────────────────────────────────────────────
 PM2="$(pm2_bin)"
-HAS_PM2=0; [ -n "$PM2" ] && "$PM2" describe pideck >/dev/null 2>&1 && HAS_PM2=1
+HAS_PM2=0; pm2_has_pideck "$PM2" && HAS_PM2=1
 HAS_UNIT=0; [ -f "$UNIT" ] && HAS_UNIT=1
 HAS_SUDOERS=0; [ -e "$SUDOERS" ] && HAS_SUDOERS=1
 
