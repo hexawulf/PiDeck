@@ -1,4 +1,9 @@
-import { Info } from "lucide-react";
+import { Copy, Info } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { diagnosticsLine } from "@/lib/diagnostics";
+import { PREFS_VERSION } from "@/prefs/prefs";
+import { useUiPrefs } from "@/prefs/UiPrefsProvider";
+import { WIDGETS } from "@/widgets/registry";
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -7,6 +12,42 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ === "undefined" ? "dev" : __APP_VERSION__;
 const RELEASE_DATE = "September 2026";
+
+function Diagnostics() {
+  const prefs = useUiPrefs();
+  const hidden = new Set(prefs.hidden);
+  const line = diagnosticsLine({
+    version: APP_VERSION,
+    prefsVersion: PREFS_VERSION,
+    visible: WIDGETS.filter((w) => !hidden.has(w.id)).length,
+    total: WIDGETS.length,
+    speed: prefs.speed,
+    paused: prefs.paused,
+    density: prefs.density,
+    lastReset: prefs.lastReset,
+  });
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(line);
+      toast({ title: "Diagnostics copied" });
+    } catch {
+      toast({ title: "Couldn't copy", description: "Select the line and copy it by hand.", variant: "destructive" });
+    }
+  };
+  return (
+    <div>
+      <h2 className="font-bold mb-1">Diagnostics</h2>
+      <div className="flex items-start gap-2">
+        <code data-testid="diagnostics-line" className="flex-1 select-all break-words rounded bg-pi-darker px-2 py-1 font-mono text-xs text-pi-text">
+          {line}
+        </code>
+        <Button variant="outline" size="sm" className="h-8 w-8 shrink-0 p-0 border-pi-border bg-transparent hover:bg-pi-card-hover" aria-label="Copy diagnostics" onClick={() => void copy()}>
+          <Copy className="h-4 w-4" aria-hidden />
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default function AboutModal() {
   return (
@@ -69,6 +110,7 @@ export default function AboutModal() {
             <p>Version: v{APP_VERSION}</p>
             <p>Release Date: {RELEASE_DATE}</p>
           </div>
+          <Diagnostics />
         </div>
       </DialogContent>
     </Dialog>
