@@ -183,7 +183,7 @@ the client's `QueryState` renders it as "Not available on this host".
 ## Touch Points / Key Files
 
 ### Core Files
-- **Entry**: `server/index.ts` - Express app + middleware + server start
+- **Entry**: `server/index.ts` - dispatch: agent (`server/agent.ts`) or hub (`server/hub.ts`: Express app + middleware + server start)
 - **Route Registration**: `server/routes.ts` - Centralized route mounting
 - **Database**: `server/db.ts` - Drizzle connection setup
 - **Environment**: `server/env.ts` - dotenv loading
@@ -218,6 +218,25 @@ rg -n "db\.(select|insert|update)" server
 rg -n "'/api/" server/routes
 ```
 
+### Multi-host: agent mode and the hub proxy
+**Plan**: `docs/plans/multi-host.md` · **Files**: `server/index.ts` (dispatch), `server/agent.ts`,
+`server/agent-api.ts` (allowlist + path checks), `server/middleware/agentAuth.ts`, `server/hosts.ts`,
+`parseHosts`/`agentConfig` in `server/config.ts`
+
+- `server/index.ts` only dispatches: `PIDECK_MODE=agent` → `agent.ts`, else `hub.ts` (the full app). Both are
+  dynamic imports and the bundle is built with `--splitting`, so an agent never loads the hub's packages.
+- The agent is JSON-only: bearer token → SHA-256 → `timingSafeEqual` against `PIDECK_AGENT_TOKEN_SHA256`
+  (401 without detail; 429 after 10 failures per address), then **exact** GET allowlist (`AGENT_PATHS`),
+  then the *same* route handlers the hub uses. No sessions, login, static files, sampler, POST.
+- **Never** import `./storage` or call `getDb()` in code the agent loads; DB access is lazy (`getDb()`,
+  `historyDb()` in `services/system.ts`). `tests/unit/agent.test.ts` fails if agent mode touches it.
+- Adding a metric for remote hosts: reuse/add its handler, add the path to `AGENT_PATHS` (both sides use it),
+  keep it read-only and query-string-free.
+- Hub: `GET /api/hosts` (status per host, cached 15 s) and `GET /api/hosts/:id/*` → `createHostHub().proxy()`:
+  host from the registry only, raw-URL allowlist match (no `%`, `..`, `//`, `\`, `?`), bearer token only,
+  5 s timeout incl. body, 1 MB cap, JSON only; failures are 502 `{offline,lastSeen}` / `{auth}` /
+  `{badResponse}` — never the agent's own error text.
+
 ### Background sampler
 **Location**: `server/services/sampler.ts`, started from `server/index.ts` after `initializeStorage()`.
 
@@ -246,7 +265,7 @@ User `?grep=` values go through `server/services/log-filter.ts`: literal by defa
 - **Shell commands**: Use `exec()` not `execSync()` to avoid blocking
 - **Sessions**: Require `express-session` setup in `server/index.ts` (already configured)
 - **Database**: Schema changes require `npm run db:push` to apply
-- **CORS**: Configured for `https://pideck.piapps.dev` in production (see `server/index.ts`)
+- **CORS**: off by default (same-origin UI); `PIDECK_CORS_ORIGIN` lists extra origins (`corsOrigins()` in `server/config.ts`)
 
 ## Pre-PR Checks
 ```bash

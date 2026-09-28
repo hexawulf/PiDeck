@@ -13,6 +13,7 @@ only fills in what is missing, and `--update` pulls, rebuilds and restarts.
 - [Sudoers: NVMe, firewall, system update](#sudoers-nvme-firewall-system-update)
 - [Configuration (.env)](#configuration-env)
 - [Update, rollback, uninstall](#update-rollback-uninstall)
+- [Add another machine (agent)](#add-another-machine-agent)
 - [Troubleshooting](#troubleshooting)
 - [Installing by hand](#installing-by-hand)
 
@@ -118,6 +119,13 @@ backed up to `<file>.bak.<timestamp>`.
 | `--skip-health` | | Skip the health check. |
 | | `PIDECK_DB_NAME`, `PIDECK_DB_USER` | Local database and role names (default `pideck`). |
 | | `NO_COLOR=1` | No colours (also automatic when output isn't a terminal). |
+| `--agent` | | Install this machine as a read-only agent ([below](#add-another-machine-agent)). |
+| `--agent-bind IP` / `--agent-port N` | `PIDECK_AGENT_BIND` / `PIDECK_AGENT_PORT` | Agent address (default: the LAN address) and port (default 5016). |
+| `--hub-ip IP` | `PIDECK_HUB_IP` | The hub's address, for the printed firewall rule. |
+| `--ufw-allow-from IP` | | With `--agent`: add `ufw allow from IP to any port <port> proto tcp` (removed again by uninstall). |
+| `--rotate-token` | | With `--agent`: new token; the old one stops working. |
+| `--add-host ID --url URL` | `PIDECK_ADD_HOST_TOKEN` | On the hub: add an agent (token from a hidden prompt, `--token-file`, or the env). |
+| `--label TEXT` / `--replace` / `--token-file F` | | With `--add-host`: switcher name / replace an existing host / read the token from a 0600 file. |
 
 ## HTTPS (recommended) or plain LAN HTTP
 
@@ -304,6 +312,118 @@ the database and role that `install.sh` itself created, as recorded in
 `DATABASE_URL` you configured yourself, or a remote database is left alone.
 Backups are kept unless you add `--purge-backups`. The checkout itself is
 never deleted.
+
+## Add another machine (agent)
+
+One PiDeck (the **hub**, with the UI, login and database) can show other
+machines too. Each extra machine runs a small **agent**: the same checkout
+started in agent mode. The agent has no UI, no login and no database. It
+answers a fixed list of read-only metric requests, and only when the request
+carries its token. Your browser only ever talks to the hub; the hub asks the
+agent. In the header, the host switcher (or `g h`, or the palette's
+"Switch to …") moves between machines. A remote host's pages live under
+`/h/<id>/dashboard` and `/h/<id>/apps`.
+
+What a remote host shows (2.4): the live dashboard cards and a read-only
+Apps tab (Docker and pm2 lists, no buttons). History charts, Quick Actions,
+Logs and Cron stay the hub's own for now.
+
+### Walkthrough: hub `piapps` (192.168.50.102) + agent `piapps2` (192.168.50.120)
+
+**1. On the agent machine (piapps2)**, clone PiDeck and install it as an agent:
+
+```bash
+git clone https://github.com/hexawulf/PiDeck.git && cd PiDeck
+./scripts/install.sh --agent --hub-ip 192.168.50.102 --dry-run   # read it first
+./scripts/install.sh --agent --hub-ip 192.168.50.102 --sudoers
+```
+
+This builds PiDeck and writes `.env` (`PIDECK_MODE=agent`, bind address,
+port 5016, and the token's SHA-256). It installs and starts the systemd unit
+`pideck-agent` and checks it answers. At the end it prints the **token, once**,
+together with the exact command for the hub. Copy the token now: the agent
+keeps only its hash, so it can't show it again. `--sudoers` is optional (NVMe
+Health and Firewall; an agent's rule has no apt-get lines).
+
+**2. Firewall on the agent**: allow only the hub to reach port 5016:
+
+```bash
+sudo ufw allow from 192.168.50.102 to any port 5016 proto tcp
+```
+
+or let the installer add exactly that rule with
+`--ufw-allow-from 192.168.50.102` (it records it, so `uninstall.sh` removes
+it again). The agent speaks plain HTTP on the LAN: the token plus this
+single-source rule are what protect it. Don't expose port 5016 anywhere else.
+
+**3. On the hub (piapps)**, add the host and paste the token when asked
+(the input is hidden):
+
+```bash
+cd ~/PiDeck
+./scripts/install.sh --add-host piapps2 --url http://192.168.50.120:5016 --label "piapps2 (LAN)"
+pm2 restart pideck --update-env          # or: sudo systemctl restart pideck
+```
+
+`--add-host` first calls the agent's `/api/agent/info` with the token. It
+stops if the token is rejected or the agent can't be reached (add
+`--skip-health` to add it anyway). Then it appends `PIDECK_HOSTS`,
+`PIDECK_HOST_TOKEN_PIAPPS2` and `PIDECK_HOST_LABELS` to `.env`, keeping a
+`.bak`. For scripts, the token can come from `--token-file F` (mode 0600) or
+`PIDECK_ADD_HOST_TOKEN` instead of the prompt.
+
+**4. Check it:** open the dashboard, pick piapps2 in the header switcher,
+and watch its cards fill in. Stop the agent for a moment
+(`sudo systemctl stop pideck-agent`): its cards say "piapps2 is offline (last
+seen …)", and they recover once it is started again. On piapps2,
+`ss -ltnp | grep 5016` should show it listening on 192.168.50.120 only.
+
+### Status dots
+
+| Dot | Meaning |
+|---|---|
+| green | online |
+| grey | offline: the hub can't reach it (cards say when it was last seen) |
+| red | the hub's token is wrong or was rotated ("Can't authenticate to …") |
+| amber | the agent runs a different major version: update it (`./scripts/install.sh --update` on the agent) |
+
+### Rotate a token
+
+On the agent: `./scripts/install.sh --agent --rotate-token`. This prints a
+new token once and replaces the hash (keeping a `.bak`); the old token stops
+working at once. Then on the hub:
+`./scripts/install.sh --add-host piapps2 --url http://192.168.50.120:5016 --replace`,
+paste the new token, and restart the hub.
+
+### Remove a host
+
+On the hub, delete the host from `PIDECK_HOSTS` and remove its
+`PIDECK_HOST_TOKEN_<ID>` (and label) line in `.env`, then restart the hub.
+On the agent machine, `./scripts/uninstall.sh --dry-run`, then
+`./scripts/uninstall.sh`. This removes the `pideck-agent` unit and the
+sudoers file, and deletes the ufw rule only if the installer added it.
+`--purge` also deletes the agent's `.env`.
+
+### Updating an agent
+
+`./scripts/install.sh --update` on the agent works as on the hub: pull,
+`npm ci`, build and restart `pideck-agent`. It then checks the agent answers,
+and prints the rollback command. Keep the hub and its agents on the same
+release; a different major version shows the amber dot.
+
+### Agent settings (`.env` on the agent)
+
+| Key | Default | Purpose |
+|---|---|---|
+| `PIDECK_MODE` | – | `agent` starts the agent instead of the hub. |
+| `PIDECK_AGENT_BIND` | 127.0.0.1 | Address to listen on (the installer uses the LAN address). |
+| `PIDECK_AGENT_PORT` | 5016 | Port. |
+| `PIDECK_AGENT_TOKEN_SHA256` | – | SHA-256 of the token; the agent refuses to start without it. |
+
+On the hub: `PIDECK_HOSTS=id=http://ip:port,…`,
+`PIDECK_HOST_TOKEN_<ID>` (id upper-cased, `-` → `_`), and optionally
+`PIDECK_HOST_LABELS=id=Label,…`. Ids are `[a-z0-9-]{1,32}`; `local` is the
+hub itself.
 
 ## Troubleshooting
 

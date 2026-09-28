@@ -184,3 +184,63 @@ PIDECK_AGENT_TOKEN_SHA256=<sha256 hex>
 - Show piapps's own name ("piapps") or "local" in the switcher? (Plan: hostname.)
 - Keep one shared layout for all hosts instead of per host? (Plan: per host,
   falling back to local.)
+
+## H1 landed (branch feat/multi-host-h1, for 2.4.0)
+
+Built as planned: `PIDECK_MODE=agent` (token auth, exact GET allowlist, no
+DB), the hub's host registry, `/api/hosts` and the `/api/hosts/:id/*` proxy,
+the `/h/:hostId/<tab>` UI with switcher, registry scope, per-host layout and
+offline states, `install.sh --agent` / `--add-host`, and agent uninstall.
+
+**Numbers** (amd64 cloud container; measure again on piapps2):
+- Agent RSS: 84 MB idle, 93 MB after 170 requests (Node 22). Without the
+  changes below it was 141 MB.
+- Main JS chunk (gzip): 250,492 → 253,634 B (+3,142; budget 302,680).
+  Palette chunk: 3,543 → 3,770 B.
+- Tests:
+  - unit 250 → 334;
+  - installer harness 69 → 123 checks (1 pre-existing check fails when the
+    harness runs as root);
+  - E2E 100 → 112, including 12 multi-host specs against two real local
+    agents; full suite 3.7 min;
+  - `npm audit --omit=dev` still 0; no new dependencies.
+
+**Deviations** (each with its reason):
+- **Entry split.** `server/index.ts` only dispatches: the agent is
+  `server/agent.ts` and the hub is `server/hub.ts` (the old `index.ts`). The
+  server bundle is built with esbuild `--splitting`, because ESM bundles hoist
+  every external import, so an agent would otherwise load the hub's packages.
+  `dist/` now holds `index.js` plus chunks. Also lazy: the pm2 library,
+  drizzle and the schema. Together these cut agent RSS from 141 to 84 MB.
+- **401 before 404 on the agent.** Unauthenticated requests get 401 for every
+  path, so a caller without the token can't map which paths exist. With the
+  token, anything off the allowlist (every POST included) is 404.
+- **Proxy error mapping.** Beyond timeouts and refusals:
+  - an agent 429 (failure limit) maps to `{auth}`;
+  - any other non-2xx from the agent, 404 and 5xx included, maps to
+    `{badResponse}`;
+  - query strings are rejected outright (400), since no allowlisted endpoint
+    needs one.
+- **Remote hosts get Dashboard and Apps only.** Settings is hidden along with
+  Logs and Cron, because it is the hub's (password, prefs). The palette's
+  "Update system…" only appears on the hub.
+- **Switcher.** Rendered only when the hub has remote hosts. Below 640 px the
+  header is already full, so it becomes a full-width bar above the tabs.
+  `g h` opens the host list.
+- **Prefs.** The localStorage key keeps its name (`pideck:prefs:v1`); the
+  value is `version: 2`, and v1 values and exports still load.
+- **Installer additions.** `--rotate-token` (the documented rotation path).
+  `--update` also handles agents. An agent's sudoers file has no apt-get
+  rules. `--add-host` stops on a rejected or unreachable agent unless
+  `--skip-health` is given.
+- **E2E.** "Stop the agent → recovery" uses route stubs. A second real agent
+  with a wrong token and an unused port cover the auth-error and offline
+  states for real.
+
+**Open questions for H2+**
+- The agent's failure limit is per address. A hub with a wrong token for an
+  agent locks itself out of that agent for 10 minutes, even after the token is
+  fixed. Should successful auth reset it, or should the limit count only
+  unknown addresses?
+- Should the hub's `/api/hosts` poll keep running while auto-refresh is paused?
+  Today it pauses with everything else.

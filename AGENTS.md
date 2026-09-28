@@ -56,6 +56,7 @@ npm run db:push
 - **Update guard**: `PIDECK_DISABLE_SYSTEM_UPDATE=1` makes `POST /api/system/update` a 409 no-op (set for E2E)
 - **Transport**: `PIDECK_INSECURE_HTTP=1` drops the cookie's `Secure` flag (LAN HTTP, `install.sh --lan-http`); `TRUST_PROXY` (default 1, `false` = no proxy); `PIDECK_CORS_ORIGIN` (default: no CORS); `COOKIE_DOMAIN` (default host-only)
 - **Host logs**: `PIDECK_HOST_LOGS=[id:]Label=/abs/path,…` adds Logs-tab files (parsed in `server/config.ts`); no host paths are hard-coded
+- **Multi-host**: `PIDECK_MODE=agent` runs the read-only agent (no DB, token auth, GET allowlist in `server/agent-api.ts`); the hub reads `PIDECK_HOSTS` / `PIDECK_HOST_TOKEN_<ID>` / `PIDECK_HOST_LABELS` and proxies `/api/hosts/:id/*`. Plan: `docs/plans/multi-host.md`
 - **Every key** is documented in `.env.example`
 - **Sampler**: `PIDECK_SAMPLER=off` disables the 60s history/alert sampler (see [server/AGENTS.md](server/AGENTS.md)); it is also off when `NODE_ENV=test`
 
@@ -131,3 +132,5 @@ Before creating a PR, verify:
 - **Theme**: Use `--pi-*` tokens (`bg-pi-card`, `text-pi-text`); raw colors fail `npm run check:theme`. `--pi-accent` is for fills (`bg-pi-accent`); accent text and icons use `--pi-accent-text` (`text-pi-accent-text`)
 - **Refetch intervals**: Set appropriately (5s for critical, 15s for metrics, 60s for historical)
 - **Shell commands**: Use `child_process.exec()` for system commands, always handle stderr
+- **Hosts**: per-host client queries go through `apiPath(host.id, "/api/…")` with the host id in the query key (`useWidgetQuery` does both); a new widget must declare `hosts: "local" | "any"` in the registry
+- **Agent mode must stay DB-free**: never import `server/storage` or call `getDb()` from code the agent loads (`tests/unit/agent.test.ts` fails if it does); keep heavy packages lazy (agent RSS ~88 MB)

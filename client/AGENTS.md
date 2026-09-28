@@ -75,6 +75,20 @@ is the default layout; saved layouts get new widgets appended at the bottom auto
 - ✅ Colors from `--pi-*` tokens only (`text-pi-text-muted`, `bg-pi-chart-1`, …)
 - ✅ Accent: `bg-pi-accent` for fills (with `text-pi-on-accent`), `text-pi-accent-text` for accent text and icons — `text-pi-accent` fails AA on dark cards and `check:theme`
 
+### Hosts (multi-host)
+**Reference**: `client/src/hosts/host-path.ts` (pure), `client/src/hosts/HostProvider.tsx`
+- The URL picks the host: `/dashboard` … = the hub (`"local"`), `/h/:hostId/<tab>` = a remote agent (only
+  `REMOTE_TABS`: dashboard, apps). `useHost()` gives `{ id, isLocal }`; `useHosts()` the hub's host list.
+- Every per-host request path comes from `apiPath(host.id, "/api/…")` (remote → `/api/hosts/<id>/…`) and its
+  query key is `widgetQueryKey(host.id, url)` = `[path, hostId]`, so hosts never share a cache entry.
+  `useWidgetQuery` does both; `useDocker`/`usePm2`/the reboot check use `widgetQueryKey`. Hub-only data
+  (history) passes `{ scope: "hub" }`.
+- Registry: every widget declares `hosts: "local" | "any"`; `widgetsFor(isLocal)` is what a host's dashboard
+  and visibility list offer. Local-only = history charts, Quick Actions (agents are read-only).
+- Remote failures arrive as 502 `{offline|auth|badResponse}`; `QueryState` renders `HostProblemNotice`
+  ("<host> is offline (last seen …)") instead of an error card. Mutations (Docker/pm2 actions) are local only.
+- Links to a tab on the current host: `hostHref(host.id, tab)`; Logs, Cron and Settings are always the hub's.
+
 ### TanStack Query Hooks Pattern
 **Reference**: `client/src/hooks/use-docker.ts` — one hook per resource plus colocated mutation hooks.
 A query polls only while a component using it is mounted, so keep hooks per resource
@@ -90,7 +104,12 @@ it applies the header speed (Live ×1, Relaxed ×2, Slow ×5) and returns `false
 **Reference**: `client/src/prefs/prefs.ts`, `client/src/prefs/UiPrefsProvider.tsx`
 - `useUiPrefs()` reads; `useUiPrefsDispatch()` changes (`setLayout`, `hide`, `show`, `resetLayout`,
   `setDensity`, `setSpeed`, `setPaused`, `setEditing`, `setPins`, `replace`). Persisted to
-  `localStorage["pideck:prefs:v1"]`; `paused`, `editing` and `lastReset` are session-only and never saved.
+  `localStorage["pideck:prefs:v1"]` (the key keeps its name; the value is `version: 2`, and v1 values/exports
+  still load). `paused`, `editing` and `lastReset` are session-only and never saved.
+- Per-host layouts: `layout`/`hidden` are the hub's; `layoutByHost[id]` a remote host's (falls back to the
+  local layout minus local-only widgets). `useUiPrefs()` hands out the *current host's* layout and
+  `useUiPrefsDispatch()` tags `setLayout`/`hide`/`show`/`resetLayout` with the current host — components
+  don't pass a host themselves.
   Pass `reason` with `replace` when it is a reset, so About › Diagnostics can show it.
 - Adding a section: add a zod schema to `SECTIONS` in `prefs.ts` (a bad section falls back alone).
 - Layout geometry (compact, reading order, keyboard moves) lives in `prefs.ts`, not in the grid, so
