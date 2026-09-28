@@ -5,6 +5,39 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-09-28
+
+One-command install. Guide: [docs/INSTALL.md](./docs/INSTALL.md).
+
+### Added
+- `scripts/install.sh`: preflight table, `--dry-run` (changes nothing), PostgreSQL role/database, `.env` (only ever appended to, with a `.bak`), schema, admin password (prompted or generated; never left on `admin`), build, pm2 or systemd service, optional sudoers rule (`visudo`-checked), and a health check with a real login round-trip. Secrets never reach the terminal log. Idempotent re-runs
+- `scripts/install.sh --update` (pull, rebuild, restart, health check, `dist` backup and a printed rollback command) and `scripts/uninstall.sh` (dry-run first)
+- `deploy/`: systemd unit, sudoers and nginx templates; `ecosystem.config.cjs` works from any checkout path
+- Configurable host: `PIDECK_HOST_LOGS` (extra log files, stable `id:` prefixes), `PIDECK_CORS_ORIGIN`, `PIDECK_NVME_DEVICE`, `PIDECK_INSECURE_HTTP` (plain-HTTP LAN mode with a visible warning), `PIDECK_CLOUDFLARE`
+- Widgets for missing tools (vcgencmd, sensors, NVMe, ufw, pm2, docker) show "Not available on this host" instead of an error
+- Installer test harness (70 checks, no root needed) and `npm run check:shell`; unit tests 214 → 250
+- Tested for real on piapps2 (Ubuntu 26.04 arm64, systemd): install, update, uninstall, refused and confirmed purge
+
+### Changed
+- `docs/INSTALL.md` rewritten (Node 22, PostgreSQL required, no `curl | bash`); `DEPLOYMENT.md` is a pointer; README install section
+- CORS is same-origin by default (no hard-coded origin)
+- Privileged commands run as `sudo -n` with exact command lines
+- `npm start` no longer forces `PORT=5006`; `.env` is the single source of settings
+
+### Security
+- NVMe metrics endpoint now requires login (was public)
+- Login rate limit no longer trusts a client-supplied `CF-Connecting-IP` header (only with `PIDECK_CLOUDFLARE=1`)
+- `TRUST_PROXY=false` now really disables proxy trust
+- `uninstall --purge` only drops the database/role the installer created, always needs a typed confirmation, and keeps backups unless `--purge-backups`
+
+### Fixed
+- PiDeck no longer starts a pm2 daemon on hosts that don't use pm2 (Apps tab and installer)
+- Installer/uninstaller now see the root-only `/etc/sudoers.d/pideck`
+
+### Upgrading an existing install
+- Settings formerly passed by pm2 (`PORT`, `CSP_ENFORCE`) must be in `.env`; re-create the pm2 app with `pm2 delete pideck && pm2 start ecosystem.config.cjs && pm2 save`
+- Host-specific log files (e.g. PiTasker) move to `PIDECK_HOST_LOGS`; use `id:Label=/path` to keep existing pins
+
 ## [2.2.0] - 2026-09-28
 
 Third and final phase of the 2.0 GUI refresh (plan: `docs/plans/2.0-gui.md`, tag `2.0-p3`).

@@ -2,7 +2,7 @@
 
 A sleek, full-stack web application for monitoring and managing Raspberry Pi servers. Built with modern technologies, PiDeck provides a centralized control hub for system monitoring, service management, and log analysis.
 
-**Current version: 2.2.0** — the 2.0 GUI refresh is complete: command palette, keyboard shortcuts, log pins and confirm dialogs on top of the customisable dashboard. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
+**Current version: 2.3.0** — one-command install (`scripts/install.sh`, dry-run first) on any Ubuntu/Debian host, arm64 or amd64, on top of the completed 2.0 GUI refresh. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
 
 ![PiDeck 2.2 dashboard (light theme)](./docs/screenshots/dashboard.png)
 
