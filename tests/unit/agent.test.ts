@@ -106,12 +106,15 @@ describe("agent HTTP", () => {
   it("never touched the database or imported storage", () => {
     expect(touched).toEqual({ pgPool: 0, postgres: 0, getDb: 0 });
   });
-  // Last: it locks 127.0.0.1 out.
-  it("rate-limits failed attempts per address (then even a good token gets 429)", async () => {
+  it("rate-limits failed attempts per address; a correct token still gets through and clears it", async () => {
     for (let i = 0; i < 6; i++) await get("/api/agent/info", "wrong-token-but-long-enough");
-    const res = await get("/api/agent/info");
-    expect(res.status).toBe(429);
-    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+    const blocked = await get("/api/agent/info", "wrong-token-but-long-enough");
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0);
+    // hub fixed its token: not locked out
+    expect((await get("/api/agent/info")).status).toBe(200);
+    // …and the count was cleared: a new wrong attempt is a plain 401 again
+    expect((await get("/api/agent/info", "wrong-token-but-long-enough")).status).toBe(401);
   });
 });
 
@@ -125,6 +128,13 @@ describe("failure limiter", () => {
     expect(l.blocked("a")).toBe(true);
     expect(l.blocked("b")).toBe(false);
     t = 1001;
+    expect(l.blocked("a")).toBe(false);
+  });
+  it("reset() clears an address", () => {
+    const l = createFailureLimiter({ max: 1 });
+    l.fail("a");
+    expect(l.blocked("a")).toBe(true);
+    l.reset("a");
     expect(l.blocked("a")).toBe(false);
   });
 });

@@ -24,10 +24,12 @@ export function bearerToken(header: string | undefined): string | null {
 }
 
 /**
- * Failed attempts per address: after `max` failures within `windowMs` every
- * request from that address gets 429 until the window ends, token or not.
- * A success does not reset the counter (a guesser that finally succeeds
- * has already been noticed).
+ * Failed attempts per address: after `max` failures within `windowMs`, every
+ * request from that address *without the right token* gets 429 until the
+ * window ends. A correct token always gets through and clears the count, so a
+ * hub that was briefly configured with a wrong token recovers as soon as the
+ * token is fixed. (The token is 256 bits: the limit exists to cut noise and
+ * log spam, not to make guessing feasible or not.)
  */
 export function createFailureLimiter({ max = 10, windowMs = 10 * 60 * 1000, now = Date.now } = {}) {
   const failures = new Map<string, { count: number; reset: number }>();
@@ -49,6 +51,9 @@ export function createFailureLimiter({ max = 10, windowMs = 10 * 60 * 1000, now 
       entry(key).count += 1;
       if (failures.size > 10_000) failures.clear(); // bounded memory under a spray
     },
+    reset: (key: string) => {
+      failures.delete(key);
+    },
     retryAfterSec: (key: string) => Math.max(1, Math.ceil(((failures.get(key)?.reset ?? now()) - now()) / 1000)),
   };
 }
@@ -57,11 +62,14 @@ export function createFailureLimiter({ max = 10, windowMs = 10 * 60 * 1000, now 
 export function agentAuth(expectedHex: string, limiter = createFailureLimiter()) {
   return (req: Request, res: Response, next: NextFunction) => {
     const key = req.ip || req.socket.remoteAddress || "unknown";
+    if (tokenMatches(expectedHex, bearerToken(req.headers.authorization))) {
+      limiter.reset(key);
+      return next();
+    }
     if (limiter.blocked(key)) {
       res.setHeader("Retry-After", String(limiter.retryAfterSec(key)));
       return res.status(429).json({ message: "Too many attempts" });
     }
-    if (tokenMatches(expectedHex, bearerToken(req.headers.authorization))) return next();
     limiter.fail(key);
     return res.status(401).json({ message: "Unauthorized" });
   };

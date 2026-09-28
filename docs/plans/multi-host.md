@@ -238,9 +238,8 @@ offline states, `install.sh --agent` / `--add-host`, and agent uninstall.
   states for real.
 
 **Open questions for H2+**
-- The agent's failure limit is per address. A hub with a wrong token for an
-  agent locks itself out of that agent for 10 minutes, even after the token is
-  fixed. Should successful auth reset it, or should the limit count only
-  unknown addresses?
+- ~~The agent's failure limit locked a hub with a wrong token out for 10
+  minutes even after the fix.~~ Resolved in review: a correct token always
+  passes and clears the count; only wrong tokens get 429.
 - Should the hub's `/api/hosts` poll keep running while auto-refresh is paused?
   Today it pauses with everything else.
