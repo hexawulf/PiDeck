@@ -1,8 +1,12 @@
+// pm2 config — `pm2 start ecosystem.config.cjs` from the checkout.
+// Portable: the app directory is wherever this file is; PORT, CSP_ENFORCE and
+// everything else come from .env (read by the app via dotenv). Only
+// NODE_ENV is pinned here.
 module.exports = {
   apps: [{
     name: 'pideck',
     script: './dist/index.js',
-    cwd: '/home/zk/projects/PiDeck',
+    cwd: __dirname,
     interpreter: 'node',
     exec_mode: 'fork',
     watch: false,
@@ -10,11 +14,8 @@ module.exports = {
     restart_delay: 5000,
     max_restarts: 10,
     merge_logs: true,
-    env_file: '.env',
     env: {
-      NODE_ENV: 'production',
-      PORT: 5006,
-      CSP_ENFORCE: 'true'   // server/security.ts: enforce CSP (Report-Only when unset)
+      NODE_ENV: 'production'
     }
   }]
 }

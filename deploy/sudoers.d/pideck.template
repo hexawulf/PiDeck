@@ -1,0 +1,11 @@
+# PiDeck: passwordless sudo for exactly these commands, nothing else.
+# Installed by scripts/install.sh --sudoers (validated with visudo -c, mode 0440).
+# The server runs them as `sudo -n …`; without this file those widgets show
+# "Not available on this host — needs a sudoers rule".
+#   smartctl line    NVMe Health widget (only when an NVMe device and smartctl exist)
+#   ufw line         Firewall widget (only when ufw is installed)
+#   apt-get lines    Quick Actions › Update System (always asks first in the UI)
+@SMARTCTL_LINE@
+@UFW_LINE@
+@USER@ ALL=(root) NOPASSWD: @APT_GET@ update
+@USER@ ALL=(root) NOPASSWD: @APT_GET@ upgrade -y
