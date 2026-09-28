@@ -376,7 +376,7 @@ check "…and records it (0600) for uninstall" bash -c "test \"\$(stat -c %a '$W
 old_hash="$(agent_hash)"
 inst "${AGENT[@]}" --rotate-token || bad "rotate exit $?"
 NEW="$(agent_token)"
-check "--rotate-token: new hash, old one gone, .bak kept, shown once" bash -c "test '$(agent_hash)' != '$old_hash' && test \"\$(printf %s '$NEW' | sha256sum | cut -d' ' -f1)\" = '$(agent_hash)' && ls '$APP'/.env.bak.* >/dev/null && test \"\$(grep -c PIDECK_AGENT_TOKEN_SHA256 '$APP/.env')\" = 1"
+check "--rotate-token: new hash, old one gone, .bak kept, shown once" bash -c "test '$(agent_hash)' != '$old_hash' && test \"\$(printf %s '$NEW' | sha256sum | cut -d' ' -f1)\" = '$(agent_hash)' && ls '$APP'/.env.bak.* >/dev/null && test \"\$(grep -c '^PIDECK_AGENT_TOKEN_SHA256=' '$APP/.env')\" = 1"
 check "--rotate-token: other .env values untouched" bash -c "grep -qx PIDECK_AGENT_BIND=192.0.2.10 '$APP/.env' && grep -qx PIDECK_MODE=agent '$APP/.env'"
 ( cd "$W/src" && echo "// v2" >> ecosystem.config.cjs && git -c user.name=t -c user.email=t@t commit -qam v2 )
 : > "$W/state/calls"
