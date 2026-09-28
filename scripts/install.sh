@@ -251,7 +251,9 @@ preflight() {
     missing|"client only") row postgresql "$pg_state" "required (or --database-url)"; APT_PKGS+=(postgresql) ;;
     *) row postgresql "$pg_state" required ;;
   esac
-  if [ -n "$(pm2_bin)" ]; then row pm2 found "service (optional; systemd otherwise)"; else row pm2 "optional-missing" "service: systemd will be used"; fi
+  if have pm2; then row pm2 found "service (default when installed)"
+  elif [ "$SERVICE" = pm2 ]; then row pm2 "from npm ci" "service: the repo's own pm2 (node_modules/.bin)"
+  else row pm2 "optional-missing" "service: systemd unless --service pm2"; fi
   if have docker; then row docker found "Apps › Docker"; else row docker "optional-missing" "Apps › Docker shows 'not available'"; fi
   if have sensors; then row lm-sensors found "CPU temperature fallback"; else row lm-sensors "optional-missing" "CPU temperature on non-Pi hosts"; APT_PKGS+=(lm-sensors); fi
   if sbin_have smartctl; then row smartmontools found "NVMe Health"; else row smartmontools "optional-missing" "NVMe Health"; APT_PKGS+=(smartmontools); fi
@@ -474,6 +476,8 @@ service() {
     none) info "not managing a service; start it with: cd $APP_DIR && node dist/index.js" ;;
     pm2)
       local pm2; pm2="$(pm2_bin)"
+      # pm2 is a dependency, so after npm ci the repo's copy is there.
+      [ -n "$pm2" ] || [ "$DRY_RUN" != 1 ] || pm2="$APP_DIR/node_modules/.bin/pm2"
       [ -n "$pm2" ] || die "pm2 not found (npm i -g pm2, or --service systemd)"
       if "$pm2" describe pideck >/dev/null 2>&1; then
         run "restart the existing pm2 app 'pideck'" "$pm2" restart pideck --update-env
