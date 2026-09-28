@@ -4,7 +4,7 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 
 **Current version: 2.2.0** — the 2.0 GUI refresh is complete: command palette, keyboard shortcuts, log pins and confirm dialogs on top of the customisable dashboard. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
 
-![PiDeck 2.0 dashboard (dark theme)](./docs/screenshots/dashboard.png)
+![PiDeck 2.2 dashboard (light theme)](./docs/screenshots/dashboard.png)
 
 ## ✨ What's new in 2.0
 
@@ -37,6 +37,7 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 
 ### Log Management
 - **Log Viewer**: Browse and view log files from `/home/zk/logs/`
+- **Log Pins & Saved Filters**: Pin logs with their filters; deep links like `/logs?log=…&grep=…`
 - **Real-time Updates**: Auto-refresh log content every 5 seconds
 - **Log Download**: Export log files for offline analysis
 
@@ -48,7 +49,9 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 ### User Interface
 - **Light / Dark / System Theme**: Follows your OS by default, no flash on load
 - **Responsive Design**: Works on desktop and mobile devices (down to 390px)
-- **Real-time Updates**: Live data refresh without page reload
+- **Real-time Updates**: Live data refresh without page reload (Live / Relaxed / Slow, or paused)
+- **Customisable Layout**: Drag, resize, hide and reorder widgets; Comfortable / Compact density
+- **Command Palette & Shortcuts**: Ctrl/⌘+K and single-key shortcuts (see below)
 - **Routed Tabs**: Bookmark or share any tab; the header stays put when switching
 
 ## 🛠️ Tech Stack
@@ -68,6 +71,7 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 - **TanStack Query** for server state management
 - **zod** schemas validating every widget response
 - **Recharts** for history charts
+- **react-grid-layout** for the customisable dashboard (lazy-loaded)
 - **Wouter** for client-side routing
 
 ### Database & Storage
@@ -166,7 +170,7 @@ Single-key shortcuts are ignored while typing or when a dialog is open.
 - **Network Access**: By default, the application server binds to `0.0.0.0`, making it accessible on your local network. Configure firewall rules (e.g., `ufw`) to restrict access as needed, especially if the device is connected to a public network.
 - **HTTPS**: For production deployments, always use a reverse proxy like NGINX or Caddy to enable HTTPS with valid SSL certificates. This encrypts traffic between clients and the server. See `docs/nginx/pideck.piapps.dev.conf` for an example NGINX configuration.
 - **Session Security**: Sessions are configured to be HTTP-only (reducing XSS risk) and use `SameSite=Lax` cookies. Ensure your `SESSION_SECRET` is strong and unique. Sessions expire after 24 hours of inactivity.
-- **Dependencies**: Regularly update dependencies (`npm update`) and audit them (`npm audit`) to patch known vulnerabilities. While this cleanup addressed some issues, ongoing vigilance is required.
+- **Dependencies**: Regularly update dependencies (`npm update`) and audit them (`npm audit`) to patch known vulnerabilities. As of 2.1.1, `npm audit --omit=dev` reports no known vulnerabilities; ongoing vigilance is still required.
 
 ## 🚀 Production Deployment
 
