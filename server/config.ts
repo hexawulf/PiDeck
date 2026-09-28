@@ -122,3 +122,13 @@ export function trustProxy(env: NodeJS.ProcessEnv = process.env): boolean | numb
   if (/^\d+$/.test(v)) return Number(v);
   return v;
 }
+
+/**
+ * PIDECK_CLOUDFLARE=1: PiDeck sits behind Cloudflare's proxy, so the client
+ * address is in the CF-Connecting-IP header. Off by default: without
+ * Cloudflare in front, any client could set that header to a new value on
+ * every request and never hit the login rate limit.
+ */
+export function trustCloudflare(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.PIDECK_CLOUDFLARE === "1";
+}
