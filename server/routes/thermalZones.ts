@@ -1,13 +1,21 @@
 import { Router } from 'express'
 import { readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
+import { unavailable } from '../services/unavailable'
 
 const router = Router()
 
 router.get('/api/metrics/thermal-zones', (_req, res) => {
   try {
-    const zones = readdirSync('/sys/class/thermal')
-      .filter(name => name.startsWith('thermal_zone'))
+    let zones: string[] = []
+    try {
+      zones = readdirSync('/sys/class/thermal').filter(name => name.startsWith('thermal_zone'))
+    } catch {
+      zones = []
+    }
+    if (zones.length === 0) {
+      return res.json(unavailable('no-device', 'No thermal sensors exposed (/sys/class/thermal).'))
+    }
 
     const data = zones.map(zone => {
       const typePath = join('/sys/class/thermal', zone, 'type')

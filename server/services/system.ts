@@ -3,6 +3,7 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import { PIDECK_LOGS_DIR } from "../config";
+import { classifyCommandFailure } from "./unavailable";
 import type {
   SystemInfo,
   LogFile,
@@ -42,6 +43,7 @@ interface ActiveAlert {
 }
 let activeAlerts: ActiveAlert[] = [];
 const TEMPERATURE_THRESHOLD = 70; // Celsius
+let temperatureWarned = false;
 
 export class SystemService {
   /**
@@ -95,9 +97,9 @@ export class SystemService {
     return systemData;
   }
 
-  static checkTemperatureAlert(currentTemperature: number): void {
+  static checkTemperatureAlert(currentTemperature: number | null): void {
     const existingAlert = activeAlerts.find(alert => alert.type === 'temperature');
-    if (currentTemperature > TEMPERATURE_THRESHOLD) {
+    if (currentTemperature !== null && currentTemperature > TEMPERATURE_THRESHOLD) {
       if (!existingAlert) {
         const newAlert: ActiveAlert = {
           id: `temp-${Date.now()}`,
@@ -253,7 +255,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       timestamp: new Date().toISOString(),
       cpuUsage: Math.round(data.cpu ?? 0),
       memoryUsage: Math.round(data.memory?.percentage ?? 0),
-      temperature: Math.round(data.temperature ?? 0),
+      temperature: data.temperature === null ? null : Math.round(data.temperature),
       diskReadSpeed: Math.round(data.diskIO?.readSpeed ?? 0),
       diskWriteSpeed: Math.round(data.diskIO?.writeSpeed ?? 0),
       networkRx: Math.round(data.networkBandwidth?.rx ?? 0),
@@ -349,7 +351,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
     }
   }
 
-  private static async getTemperature(): Promise<number> {
+  private static async getTemperature(): Promise<number | null> {
     try {
       // Method 1: Linux thermal zone (most reliable on all Linux distros)
       // fs is already imported at the top of the file
@@ -404,8 +406,12 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       // console.log('sensors method failed:', error instanceof Error ? error.message : String(error));
     }
 
-    console.warn('All temperature reading methods failed or returned invalid data, returning 0');
-    return 0;
+    // No thermal zone, vcgencmd or lm-sensors reading on this host: report "unavailable" (null), warn once.
+    if (!temperatureWarned) {
+      temperatureWarned = true;
+      console.warn('[system] No CPU temperature source (thermal_zone0, vcgencmd, sensors); reporting it as unavailable');
+    }
+    return null;
   }
 
   private static async getIPAddress(): Promise<string> {
@@ -473,7 +479,8 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
     }
   }
 
-  static async getPM2Processes(): Promise<PM2Process[]> {
+  /** null = pm2 isn't installed on this host (e.g. a systemd install). */
+  static async getPM2Processes(): Promise<PM2Process[] | null> {
     try {
       const { stdout } = await execAsync("pm2 jlist");
       const processes = JSON.parse(stdout || "[]");
@@ -487,6 +494,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
         uptime: this.formatUptime(proc.pm2_env?.pm_uptime)
       }));
     } catch (error) {
+      if (classifyCommandFailure(error as { code?: unknown; message?: string }) === "not-installed") return null;
       console.error("Error getting PM2 processes:", error);
       return [];
     }
@@ -763,7 +771,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
   static async updateSystem(): Promise<string> {
     try {
       const { stdout, stderr } = await execAsync(
-        "sudo apt-get update && sudo apt-get upgrade -y"
+        "sudo -n apt-get update && sudo -n apt-get upgrade -y" // -n: fail fast without a sudoers rule
       );
       return stdout || stderr;
     } catch (error) {

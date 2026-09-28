@@ -8,6 +8,23 @@ const num = z.number();
 const numOrNull = z.number().nullable();
 const strOrNull = z.string().nullable();
 
+/**
+ * "This host can't provide it" (server/services/unavailable.ts): a 200 answer
+ * that QueryState renders calmly instead of an error card. Strict: nothing
+ * else may ride along.
+ */
+export const unavailableSchema = z
+  .object({
+    available: z.literal(false),
+    reason: z.enum(["not-installed", "no-device", "needs-sudoers", "not-supported"]),
+    message: z.string(),
+  })
+  .strict();
+export type Unavailable = z.infer<typeof unavailableSchema>;
+export const isUnavailable = (d: unknown): d is Unavailable =>
+  typeof d === "object" && d !== null && (d as { available?: unknown }).available === false;
+const orUnavailable = <S extends z.ZodTypeAny>(s: S) => z.union([s, unavailableSchema]);
+
 export const processSchema = z.object({
   pid: num,
   name: z.string(),
@@ -23,7 +40,7 @@ export const systemInfoSchema = z.object({
   uptime: z.string(),
   cpu: num,
   memory: z.object({ used: num, total: num, percentage: num }),
-  temperature: num,
+  temperature: numOrNull, // null = no sensor on this host
   network: z.object({ ip: z.string(), status: z.string() }),
   diskIO: z.object({ readSpeed: num, writeSpeed: num, utilization: num }),
   networkBandwidth: z.object({ rx: num, tx: num }),
@@ -65,22 +82,28 @@ export const ramSchema = z.object({ total: num, used: num, free: num, usage: num
 
 export const swapSchema = z.object({ total: num, used: num, free: num });
 
-export const nvmeSchema = z.object({
-  temperature: strOrNull,
-  power_on_hours: strOrNull,
-  wear_leveling_count: strOrNull,
-  media_errors: strOrNull,
-});
-
-export const thermalZonesSchema = z.array(
-  z.object({ zone: z.string(), label: z.string(), temp: z.string() }),
+export const nvmeSchema = orUnavailable(
+  z.object({
+    temperature: strOrNull,
+    power_on_hours: strOrNull,
+    wear_leveling_count: strOrNull,
+    media_errors: strOrNull,
+  }),
 );
 
-export const powerStatusSchema = z.object({
-  voltage: numOrNull,
-  current: numOrNull,
-  status: z.string(),
-});
+export const thermalZonesSchema = orUnavailable(
+  z.array(
+    z.object({ zone: z.string(), label: z.string(), temp: z.string() }),
+  ),
+);
+
+export const powerStatusSchema = orUnavailable(
+  z.object({
+    voltage: numOrNull,
+    current: numOrNull,
+    status: z.string(),
+  }),
+);
 
 export const ipConfigSchema = z.object({
   interfaces: z.array(
@@ -99,21 +122,23 @@ export const listeningPortsSchema = z.object({
   ),
 });
 
-export const firewallStatusSchema = z.object({
-  engine: z.string(),
-  enabled: z.boolean(),
-  note: z.string().optional(),
-  rules: z.array(
-    z.object({
-      to: z.string().optional(),
-      port: z.string().optional(),
-      proto: z.string().optional(),
-      action: z.string(),
-      from: z.string().optional(),
-      comment: z.string().optional(),
-    }),
-  ),
-});
+export const firewallStatusSchema = orUnavailable(
+  z.object({
+    engine: z.string(),
+    enabled: z.boolean(),
+    note: z.string().optional(),
+    rules: z.array(
+      z.object({
+        to: z.string().optional(),
+        port: z.string().optional(),
+        proto: z.string().optional(),
+        action: z.string(),
+        from: z.string().optional(),
+        comment: z.string().optional(),
+      }),
+    ),
+  }),
+);
 
 /** url → schema, for the contract spec. */
 export const ENDPOINT_SCHEMAS = {

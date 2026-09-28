@@ -1,9 +1,13 @@
 import { Router } from 'express'
 import { exec } from 'child_process'
+import { hasTool, unavailable } from '../services/unavailable'
 
 const router = Router()
 
 router.get('/api/metrics/power-status', (_req, res) => {
+  if (!hasTool('vcgencmd')) {
+    return res.json(unavailable('not-supported', 'Raspberry Pi only (vcgencmd not found).'))
+  }
   exec('/usr/bin/vcgencmd get_throttled', {
     env: {
       ...process.env,

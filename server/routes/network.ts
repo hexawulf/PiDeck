@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { exec } from 'child_process'
+import { classifyCommandFailure, SUDO, SUDOERS_HINT, unavailable } from '../services/unavailable'
 import { promisify } from 'util'
 
 const router = Router()
@@ -189,10 +190,14 @@ router.get('/metrics/firewall-status', async (_req, res) => {
     if (ufwCheck.trim()) {
       let stdout = ''
       try {
-        const result = await execAsync('sudo ufw status verbose', { timeout: 15000 })
+        const result = await execAsync(`${SUDO} ufw status verbose`, { timeout: 15000 })
         stdout = result.stdout || ''
       } catch (e: any) {
         stdout = e.stdout || ''
+        // Without a NOPASSWD rule `sudo -n` fails at once; say so instead of reporting "disabled".
+        if (!stdout && classifyCommandFailure(e, e.stderr) === 'needs-sudoers') {
+          return res.json(unavailable('needs-sudoers', SUDOERS_HINT))
+        }
       }
       const enabled = stdout.includes('Status: active')
       
@@ -272,12 +277,7 @@ router.get('/metrics/firewall-status', async (_req, res) => {
     }
     
     // No firewall detected
-    res.json({
-      engine: 'unknown',
-      enabled: false,
-      note: 'no firewall tool detected',
-      rules: []
-    })
+    res.json(unavailable('not-installed', 'No firewall tool found (ufw, firewalld or nftables).'))
   } catch (err: any) {
     console.error('[network] Firewall status error:', err)
     res.json({

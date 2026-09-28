@@ -4,6 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { isUnavailable } from "@/widgets/schemas";
+import { UnavailableNotice } from "@/widgets/WidgetFrame";
 import { 
   Box, 
   Zap, 
@@ -131,16 +133,21 @@ export default function AppMonitor() {
                </p>
              </div>
             ) : !dockerContainers.data?.containers?.length ? (
-              <div className="text-center py-4">
-                <p className="pi-text-muted">No Docker containers found</p>
-                {dockerContainers.data?.warning && (
-                  <p className="text-xs pi-text-muted mt-2">
-                    {dockerContainers.data.warning === "socket unavailable or permission denied" 
-                      ? "Docker unavailable: permission denied" 
-                      : "Docker service may be unavailable"}
-                  </p>
-                )}
-              </div>
+              dockerContainers.data?.warning ? (
+                <div className="py-4">
+                  <UnavailableNotice
+                    info={{
+                      reason: "not-installed",
+                      message:
+                        dockerContainers.data.warning === "socket unavailable or permission denied"
+                          ? "Docker isn't running here, or this user can't read /var/run/docker.sock (add it to the docker group)."
+                          : "Docker isn't installed or isn't responding.",
+                    }}
+                  />
+                </div>
+              ) : (
+                <p className="pi-text-muted text-center py-4">No Docker containers found</p>
+              )
             ) : (
               <div className="space-y-4">
                 {dockerContainers.data.containers.map((container) => (
@@ -248,6 +255,8 @@ export default function AppMonitor() {
             </div>
           ) : pm2Processes.error ? (
             <p className="pi-error text-center py-4">Failed to load PM2 processes</p>
+          ) : isUnavailable(pm2Processes.data) ? (
+            <div className="py-4"><UnavailableNotice info={pm2Processes.data} /></div>
           ) : !pm2Processes.data?.length ? (
             <p className="pi-text-muted text-center py-4">No PM2 processes found</p>
           ) : (

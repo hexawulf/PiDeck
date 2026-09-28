@@ -167,7 +167,7 @@ export type SystemInfoExtended = {
     total: number;
     percentage: number;
   };
-  temperature: number;
+  temperature: number | null; // null = no sensor on this host
   network: {
     ip: string;
     status: string;

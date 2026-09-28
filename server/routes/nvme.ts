@@ -1,12 +1,24 @@
 import { Router } from 'express'
 import { exec } from 'child_process'
+import { classifyCommandFailure, hasTool, nvmeDevice, SUDO, SUDOERS_HINT, unavailable } from '../services/unavailable'
 
 const router = Router()
 
 router.get('/api/metrics/nvme', (_req, res) => {
-  exec('sudo smartctl -a /dev/nvme0', (err, stdout) => {
-    if (err) {
-      return res.status(500).json({ error: 'SMART data unavailable', details: err.message });
+  if (!hasTool('smartctl')) {
+    return res.json(unavailable('not-installed', 'smartctl not found (apt install smartmontools).'))
+  }
+  const device = nvmeDevice()
+  if (!device) {
+    return res.json(unavailable('no-device', 'No NVMe drive found (set PIDECK_NVME_DEVICE if it has another name).'))
+  }
+  exec(`${SUDO} smartctl -a ${device}`, (err, stdout, stderr) => {
+    // smartctl uses non-zero exit bits for drive warnings; only give up when there's no output.
+    if (err && !stdout.trim()) {
+      const reason = classifyCommandFailure(err, stderr)
+      if (reason === 'needs-sudoers') return res.json(unavailable(reason, SUDOERS_HINT))
+      if (reason) return res.json(unavailable(reason, 'smartctl could not run.'))
+      return res.status(500).json({ error: 'SMART data unavailable', details: (stderr || err.message).slice(0, 200) });
     }
 
     const lines = stdout.split('\n')

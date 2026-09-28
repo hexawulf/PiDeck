@@ -1,5 +1,5 @@
 import { useSystemInfo } from "@/hooks/use-system-info";
-import { QueryState } from "@/widgets/WidgetFrame";
+import { QueryState, UnavailableNotice } from "@/widgets/WidgetFrame";
 import { Meter } from "./Meter";
 
 // 70 °C matches the server's alert threshold (server/services/system.ts).
@@ -14,6 +14,9 @@ export function TemperatureBox() {
   return (
     <QueryState query={query}>
       {({ temperature }) => {
+        if (temperature === null) {
+          return <UnavailableNotice info={{ reason: "no-device", message: "No CPU temperature sensor found (thermal zone, vcgencmd or lm-sensors)." }} />;
+        }
         const level = temperatureLevel(temperature);
         return (
           <Meter

@@ -18,6 +18,7 @@ import hostLogsRouter from "./routes/hostLogs";
 import thermalZonesRouter from "./routes/thermalZones";
 import powerStatusRouter from "./routes/powerStatus";
 import { createSystemUpdateHandler } from "./routes/system-update";
+import { unavailable } from "./services/unavailable";
 
 import { loginSchema } from "@shared/schema";
 import { rateLimitLogin } from "./middleware/rateLimitLogin";
@@ -88,8 +89,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // NVMe metrics (public or behind your network/firewall middlewares)
-  app.use(nvmeRouter);
 
   // --- Auth bypass marker (belt & suspenders) ---
   // Mark ONLY the login POST to bypass any stray guards mounted elsewhere.
@@ -224,6 +223,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // These two routers declare full /api/metrics/* paths; app.get keeps req.url intact.
   app.get("/api/metrics/thermal-zones", requireAuth, thermalZonesRouter);
   app.get("/api/metrics/power-status", requireAuth, powerStatusRouter);
+  app.get("/api/metrics/nvme", requireAuth, nvmeRouter); // was mounted before auth (public)
 
   // These ad-hoc endpoints are also protected by the wrapper above
   app.get("/api/system/history", async (_req, res) => {
@@ -284,7 +284,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/pm2/processes", async (_req, res) => {
     try {
       const processes = await SystemService.getPM2Processes();
-      res.json(processes);
+      res.json(processes ?? unavailable("not-installed", "pm2 isn't installed on this host."));
     } catch (error) {
       console.error("Get PM2 processes error:", error);
       res.status(500).json({ message: "Failed to get PM2 processes" });

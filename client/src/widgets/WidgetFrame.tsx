@@ -1,10 +1,11 @@
 import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, RotateCw } from "lucide-react";
+import { AlertTriangle, PlugZap, RotateCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { describeError } from "./useWidgetQuery";
+import { isUnavailable, type Unavailable } from "./schemas";
 
 /*
  * Every dashboard card is
@@ -166,9 +167,9 @@ export function QueryState<T>({
   children,
 }: {
   query: Pick<UseQueryResult<T, Error>, "data" | "error" | "isPending" | "refetch">;
-  isEmpty?: (data: T) => boolean;
+  isEmpty?: (data: Exclude<T, Unavailable>) => boolean;
   emptyText?: string;
-  children: (data: T) => ReactNode;
+  children: (data: Exclude<T, Unavailable>) => ReactNode;
 }) {
   if (query.isPending) {
     return (
@@ -182,6 +183,21 @@ export function QueryState<T>({
     const { summary, details } = describeError(query.error);
     return <ErrorNotice summary={summary} details={details} onRetry={() => void query.refetch()} />;
   }
-  if (isEmpty?.(query.data)) return <p className="text-pi-text-muted">{emptyText}</p>;
-  return <>{children(query.data)}</>;
+  if (isUnavailable(query.data)) return <UnavailableNotice info={query.data} />;
+  const data = query.data as Exclude<T, Unavailable>;
+  if (isEmpty?.(data)) return <p className="text-pi-text-muted">{emptyText}</p>;
+  return <>{children(data)}</>;
+}
+
+/** Calm "this host can't provide it" state — not an error, nothing to retry. */
+export function UnavailableNotice({ info }: { info: Pick<Unavailable, "reason" | "message"> }) {
+  return (
+    <div className="flex items-start gap-2 text-pi-text-muted" data-unavailable={info.reason}>
+      <PlugZap className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      <div>
+        <p className="text-pi-text">Not available on this host</p>
+        <p className="text-xs">{info.message}</p>
+      </div>
+    </div>
+  );
 }

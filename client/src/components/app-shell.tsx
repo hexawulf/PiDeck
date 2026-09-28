@@ -145,7 +145,7 @@ export default function AppShell({ tab }: { tab: TabId }) {
       </header>
 
       {user?.defaultPassword && (
-        <div role="alert" className="mx-4 mt-4 rounded-xl border border-pi-warning px-4 py-2 text-center text-sm text-pi-text" data-testid="default-password-banner">
+        <div role="status" className="mx-4 mt-4 rounded-xl border border-pi-warning px-4 py-2 text-center text-sm text-pi-text" data-testid="default-password-banner">
           The admin password is still the default (<code>admin</code>).{" "}
           <Link href="/settings" className="font-semibold underline">Change it in Settings</Link>.
         </div>

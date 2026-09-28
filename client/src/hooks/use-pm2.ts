@@ -2,13 +2,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useRefetch } from "./useRefetch";
 import type { PM2Process } from "@shared/schema";
+import type { Unavailable } from "@/widgets/schemas";
 
 const KEY = ["/api/pm2/processes"];
 
 export type ProcessAction = "restart" | "stop";
 
 export function usePm2() {
-  return useQuery<PM2Process[]>({ queryKey: KEY, refetchInterval: useRefetch(10000) });
+  // An Unavailable object instead of the list when pm2 isn't installed (e.g. a systemd install).
+  return useQuery<PM2Process[] | Unavailable>({ queryKey: KEY, refetchInterval: useRefetch(10000) });
 }
 
 export function useProcessAction() {
