@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Author:      0xWulf (zk@hexawulf.dev)
 # Description: Remove what scripts/install.sh set up: the pm2 app or systemd
-#              unit and /etc/sudoers.d/pideck. Keeps the database, .env, the
+#              unit (hub) or the pideck-agent unit and the ufw rule the
+#              installer added (agent), and /etc/sudoers.d/pideck. Keeps the database, .env, the
 #              admin password file and ~/backups unless --purge, which always
 #              asks you to type "purge" and drops only the database/role that
 #              install.sh recorded as created by it. Backups are deleted only
@@ -108,6 +109,8 @@ ENV_FILE="$APP_DIR/.env"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pideck"
 DB_MARKER="$CONFIG_DIR/install-db"
 UNIT="$ETC/systemd/system/pideck.service"
+AGENT_UNIT="$ETC/systemd/system/pideck-agent.service"
+AGENT_MARKER="$CONFIG_DIR/install-agent"
 SUDOERS="$ETC/sudoers.d/pideck"
 BACKUP="$HOME/backups/pideck-uninstall-$TS"
 
@@ -119,10 +122,20 @@ PM2="$(pm2_bin)"
 HAS_PM2=0; pm2_has_pideck "$PM2" && HAS_PM2=1
 HAS_UNIT=0; [ -f "$UNIT" ] && HAS_UNIT=1
 HAS_SUDOERS=0; path_exists "$SUDOERS" && HAS_SUDOERS=1
+HAS_AGENT=0; [ -f "$AGENT_UNIT" ] && HAS_AGENT=1
+# The ufw rule is removed only when install.sh --agent recorded adding it.
+UFW_FROM=""; UFW_PORT=""
+if [ -f "$AGENT_MARKER" ]; then
+  UFW_FROM="$(sed -n 's/^UFW_FROM=//p' "$AGENT_MARKER")"; UFW_PORT="$(sed -n 's/^UFW_PORT=//p' "$AGENT_MARKER")"
+  [[ "$UFW_FROM" =~ ^[0-9a-fA-F.:]+$ && "$UFW_PORT" =~ ^[0-9]+$ ]] || { UFW_FROM=""; UFW_PORT=""; }
+fi
+HAS_UFW=0; [ -n "$UFW_FROM" ] && HAS_UFW=1
 
 step "Plan"
 [ "$HAS_PM2" = 1 ] && info "- pm2: delete app 'pideck', pm2 save"
 [ "$HAS_UNIT" = 1 ] && info "- systemd: stop + disable pideck, copy the unit to $BACKUP, remove $UNIT (sudo)"
+[ "$HAS_AGENT" = 1 ] && info "- agent: stop + disable pideck-agent, copy the unit to $BACKUP, remove $AGENT_UNIT (sudo)"
+[ "$HAS_UFW" = 1 ] && info "- ufw: delete the rule install.sh added (allow from $UFW_FROM to any port $UFW_PORT proto tcp)"
 [ "$HAS_SUDOERS" = 1 ] && info "- remove $SUDOERS (sudo)"
 if [ "$PURGE" = 1 ]; then
   info "- PURGE: drop only the database/role install.sh created (per $DB_MARKER; sudo -u postgres)"
@@ -133,7 +146,7 @@ else
   info "- keep: database, $ENV_FILE, $CONFIG_DIR, $HOME/backups (use --purge to remove)"
 fi
 info "- keep: the checkout $APP_DIR (delete it yourself when done)"
-if [ "$HAS_PM2$HAS_UNIT$HAS_SUDOERS$PURGE" = 0000 ]; then ok "nothing installed; nothing to do"; exit 0; fi
+if [ "$HAS_PM2$HAS_UNIT$HAS_AGENT$HAS_UFW$HAS_SUDOERS$PURGE" = 000000 ]; then ok "nothing installed; nothing to do"; exit 0; fi
 
 if [ "$DRY_RUN" != 1 ] && [ "$YES" != 1 ]; then
   [ -t 0 ] || die "not a terminal: pass --yes to proceed without prompts"
@@ -154,7 +167,26 @@ if [ "$HAS_UNIT" = 1 ]; then
   run "remove $UNIT" sudo rm -f "$UNIT"
   run "systemctl daemon-reload" sudo systemctl daemon-reload
 fi
-[ "$HAS_PM2$HAS_UNIT" = 00 ] && ok "no pm2 app or systemd unit"
+if [ "$HAS_AGENT" = 1 ]; then
+  run "stop and disable pideck-agent" sudo systemctl disable --now pideck-agent
+  run "create $BACKUP" mkdir -p "$BACKUP"
+  run "keep a copy of the agent unit" cp -p "$AGENT_UNIT" "$BACKUP/"
+  run "remove $AGENT_UNIT" sudo rm -f "$AGENT_UNIT"
+  run "systemctl daemon-reload" sudo systemctl daemon-reload
+fi
+[ "$HAS_PM2$HAS_UNIT$HAS_AGENT" = 000 ] && ok "no pm2 app or systemd unit"
+
+# ── firewall (agent) ───────────────────────────────────────────────────
+if [ "$HAS_UFW" = 1 ]; then
+  step "Firewall"
+  UFW="$(command -v ufw 2>/dev/null || { [ -x /usr/sbin/ufw ] && echo /usr/sbin/ufw; } || true)"
+  if [ -z "$UFW" ]; then
+    warn "ufw is no longer installed; nothing to remove"
+  else
+    run "delete ufw rule: allow from $UFW_FROM to any port $UFW_PORT proto tcp" sudo "$UFW" delete allow from "$UFW_FROM" to any port "$UFW_PORT" proto tcp
+  fi
+  if [ "$PURGE" != 1 ]; then run "forget the recorded rule" rm -f "$AGENT_MARKER"; fi
+fi
 
 # ── sudoers ────────────────────────────────────────────────────────────
 step "Sudoers"
@@ -218,7 +250,7 @@ fi
 
 step "Done"
 if [ "$DRY_RUN" = 1 ]; then info "dry run: nothing was changed"; exit 0; fi
-info "PiDeck's service and sudoers rule are gone$([ "$PURGE" = 1 ] && echo "; data purged")."
+info "PiDeck's service$([ "$HAS_UFW" = 1 ] && echo ", firewall rule") and sudoers rule are gone$([ "$PURGE" = 1 ] && echo "; data purged")."
 info "The checkout is still at $APP_DIR."
 if [ -d "$BACKUP" ]; then info "Unit copy: $BACKUP"; fi
 info "Log: $LOG"

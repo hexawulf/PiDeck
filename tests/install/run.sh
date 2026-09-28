@@ -4,8 +4,10 @@
 #              checkout (a git clone of the real scripts/templates), a fake
 #              $HOME, a fake /etc (PIDECK_ETC_DIR) and PATH stubs for sudo,
 #              apt-get, psql, pg_lsclusters, pm2, systemctl, systemd-analyze,
-#              visudo, npm, npx, curl and id. The database is faked by
-#              tests/install/fake-helper.mjs.
+#              visudo, npm, npx, curl, hostname, ufw and id. The database is
+#              faked by tests/install/fake-helper.mjs; an agent's
+#              /api/agent/info by the curl stub (token checked against the
+#              agent's PIDECK_AGENT_TOKEN_SHA256 or $W/state/agent-hash).
 # Modified:    2026-09-28
 # Usage:       tests/install/run.sh            (or: npm run test:install)
 set -uo pipefail   # no -e: a failed check is counted, not fatal
@@ -87,9 +89,9 @@ EOF
 #!/usr/bin/env bash
 echo "systemctl \$*" >> "$S/calls"
 case "\$*" in
-  "is-active --quiet pideck") [ -f "$S/unit-active" ] ;;
-  "enable --now pideck") touch "$S/unit-active" ;;
-  "disable --now pideck") rm -f "$S/unit-active" ;;
+  "is-active --quiet "*) [ -f "$S/unit-active-\$3" ] ;;
+  "enable --now "*) touch "$S/unit-active-\$3" ;;
+  "disable --now "*) rm -f "$S/unit-active-\$3" ;;
 esac
 EOF
   stub systemd-analyze <<EOF
@@ -117,20 +119,32 @@ EOF
 echo "npx \$*" >> "$S/calls"
 [ "\$1" = drizzle-kit ] && touch "$S/tables" && echo default > "$S/admin"
 EOF
-  # curl: /healthz 204; login checks the password against the fake DB.
+  # curl: /healthz 204; login checks the password against the fake DB;
+  # /api/agent/info checks the bearer token (from -H @file) against the
+  # agent's hash. \$S/agent-down makes the agent unreachable (000).
   stub curl <<EOF
 #!/usr/bin/env bash
-hdr="" body="" url=""
+hdr="" body="" url="" out="" hfile=""
 while [ \$# -gt 0 ]; do
   case "\$1" in
     -D) hdr="\$2"; shift ;;
     --data-binary) body="\${2#@}"; shift ;;
-    -o|-w|-H|-X) shift ;;
+    -o) out="\$2"; shift ;;
+    -H) case "\$2" in @*) hfile="\${2#@}" ;; esac; shift ;;
+    -w|-X|--max-time) shift ;;
     http*) url="\$1" ;;
   esac
   shift
 done
 case "\$url" in
+  */api/agent/info)
+    [ -e "$S/agent-down" ] && { printf 000; exit 7; }
+    want="\$(cat "$S/agent-hash" 2>/dev/null || sed -n 's/^PIDECK_AGENT_TOKEN_SHA256=//p' "$W/app/.env" 2>/dev/null)"
+    got=""
+    [ -n "\$hfile" ] && got="\$(sed -n 's/^Authorization: Bearer //p' "\$hfile" | tr -d '\n' | sha256sum | cut -d' ' -f1)"
+    if [ -n "\$got" ] && [ "\$got" = "\$want" ]; then
+      printf '{"version":"2.4.0","hostname":"agent-box","capabilities":{"read":true}}' > "\${out:-/dev/stdout}"; printf 200
+    else printf '{"message":"Unauthorized"}' > "\${out:-/dev/stdout}"; printf 401; fi ;;
   */healthz) printf 204 ;;
   */api/auth/login)
     if [ "\$(node -e 'const c=require("crypto");const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).password;process.stdout.write(c.createHash("sha256").update(p).digest("hex"))' "\$body")" = "\$(cat "$S/admin")" ]; then
@@ -143,15 +157,20 @@ EOF
 #!/usr/bin/env bash
 exit 0
 EOF
-  stub ufw <<'EOF'
+  stub ufw <<EOF
 #!/usr/bin/env bash
-exit 0
+echo "ufw \$*" >> "$S/calls"
+EOF
+  stub hostname <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in -I) echo "192.0.2.10 fd00::10" ;; -s) echo "Agent-Box" ;; *) echo agent-box ;; esac
 EOF
 }
 
 # Run the installer/uninstaller in the sandbox (stdin closed = non-interactive).
 inst() { (cd "$APP" && env -i PATH="$W/bin:$PATH" HOME="$W/home" TMPDIR="$W/tmp" TERM=dumb \
   PIDECK_ETC_DIR="$W/etc" PIDECK_TEST_STATE="$W/state" FAKE_UID="${FAKE_UID:-1000}" \
+  PIDECK_ADD_HOST_TOKEN="${PIDECK_ADD_HOST_TOKEN:-}" \
   "$APP/scripts/install.sh" "$@" </dev/null > "$W/out" 2>&1); }
 uninst() { (cd "$APP" && env -i PATH="$W/bin:$PATH" HOME="$W/home" TMPDIR="$W/tmp" TERM=dumb \
   PIDECK_ETC_DIR="$W/etc" PIDECK_TEST_STATE="$W/state" FAKE_UID="${FAKE_UID:-1000}" \
@@ -309,6 +328,123 @@ check "npm ci + build + pm2 restart" bash -c "grep -q '^npm ci' '$W/state/calls'
 check "prints the rollback command" grep -q 'git reset --keep' "$W/out"
 echo "local edit" >> "$APP/package.json"
 if inst --update; then bad "dirty tree accepted"; else ok "refuses a checkout with local changes"; fi
+cleanup
+
+# ── multi-host: agent ──────────────────────────────────────────────────
+AGENT=(--agent --yes --hub-ip 192.0.2.1)
+agent_token() { sed -n '/Agent token (shown once/{n;p}' "$W/out" | tr -d ' '; }
+agent_hash() { sed -n 's/^PIDECK_AGENT_TOKEN_SHA256=//p' "$APP/.env"; }
+
+new_sandbox "--agent --dry-run changes nothing"
+before="$(tree_sum)"
+inst "${AGENT[@]}" --dry-run --sudoers --ufw-allow-from 192.0.2.1 || bad "dry run exit $?"
+# systemd-analyze verify (read-only) is the one call a dry run makes: it checks the rendered unit.
+check "no sudo/apt/psql/ufw/systemctl calls (only systemd-analyze verify)" bash -c "! grep -v '^systemd-analyze verify ' '$W/state/calls' | grep -q ."
+rm -f "$W/state/calls"
+check "tree + \$HOME + /etc unchanged" test "$before" = "$(tree_sum)"
+check "says it would add the ufw rule" grep -q 'would ufw allow from 192.0.2.1 to any port 5016 proto tcp' "$W/out"
+cleanup
+
+new_sandbox "--agent install, re-run, rotate, update, uninstall"
+inst "${AGENT[@]}" --sudoers --nvme-device /dev/nvme0 || { bad "install exit $?"; tail -n 25 "$W/out"; }
+check "no Postgres at all (no psql, no schema push, no admin password)" bash -c "! grep -qE '^(psql|npx|sudo -u postgres)' '$W/state/calls' && test ! -e '$W/home/.config/pideck/admin-password'"
+check ".env is 0600 and says agent mode" bash -c "test \"\$(stat -c %a '$APP/.env')\" = 600 && grep -qx PIDECK_MODE=agent '$APP/.env'"
+check ".env binds the LAN address, port 5016" bash -c "grep -qx PIDECK_AGENT_BIND=192.0.2.10 '$APP/.env' && grep -qx PIDECK_AGENT_PORT=5016 '$APP/.env'"
+check ".env has no hub secrets" bash -c "! grep -qE '^(SESSION_SECRET|DATABASE_URL)=' '$APP/.env'"
+TOKEN="$(agent_token)"
+check "token: 32 random bytes (64 hex), shown once on the terminal" bash -c "[[ '$TOKEN' =~ ^[0-9a-f]{64}\$ ]] && test \"\$(grep -cF '$TOKEN' '$W/out')\" = 1"
+check "only its SHA-256 is stored" bash -c "test \"\$(printf %s '$TOKEN' | sha256sum | cut -d' ' -f1)\" = '$(agent_hash)' && ! grep -qF '$TOKEN' '$APP/.env'"
+log="$(latest_log)"
+check "token never in the log" bash -c "test -s '$log' && ! grep -qF '$TOKEN' '$log'"
+check "prints the exact hub command" grep -q -- '--add-host agent-box --url http://192.0.2.10:5016' "$W/out"
+unit="$W/etc/systemd/system/pideck-agent.service"
+check "pideck-agent unit rendered, verified, installed 0644, started" bash -c "test \"\$(stat -c %a '$unit')\" = 644 && ! grep -q '@[A-Z_]*@' '$unit' && grep -qx 'Environment=PIDECK_MODE=agent' '$unit' && grep -q '^systemd-analyze verify' '$W/state/calls' && grep -q '^systemctl enable --now pideck-agent' '$W/state/calls'"
+check "no hub service, no pm2" bash -c "test ! -e '$W/etc/systemd/system/pideck.service' && ! grep -q '^pm2 ' '$W/state/calls'"
+check "agent sudoers: smartctl + ufw only (no apt-get), visudo-valid" bash -c "test \"\$(grep -c NOPASSWD '$W/etc/sudoers.d/pideck')\" = 2 && ! grep -q 'NOPASSWD: .*apt-get' '$W/etc/sudoers.d/pideck' && '$W/bin/visudo' -cf '$W/etc/sudoers.d/pideck' >/dev/null"
+check "ufw rule printed, not applied (no --ufw-allow-from)" bash -c "grep -q 'sudo ufw allow from 192.0.2.1 to any port 5016 proto tcp' '$W/out' && ! grep -q 'ufw allow' '$W/state/calls'"
+check "health check with the new token" grep -q 'agent answers with the new token' "$W/out"
+sums="$(sha256sum "$APP/.env" "$unit" "$W/etc/sudoers.d/pideck")"
+: > "$W/state/calls"
+inst "${AGENT[@]}" --sudoers --nvme-device /dev/nvme0 || bad "re-run exit $?"
+check "re-run: .env, unit, sudoers unchanged; no .bak" bash -c "test \"$sums\" = \"\$(sha256sum '$APP/.env' '$unit' '$W/etc/sudoers.d/pideck')\" && ! ls '$APP'/.env.bak.* 2>/dev/null | grep -q ."
+check "re-run: no token shown, restart (not a second start)" bash -c "! grep -q 'shown once' '$W/out' && grep -q '^systemctl restart pideck-agent' '$W/state/calls' && ! grep -q 'enable --now' '$W/state/calls'"
+check "re-run: health = refuses requests without the token" grep -q 'refuses requests without the token' "$W/out"
+: > "$W/state/calls"
+inst "${AGENT[@]}" --ufw-allow-from 192.0.2.1 || bad "ufw run exit $?"
+check "--ufw-allow-from applies exactly that rule via sudo" grep -qE '^sudo .*/ufw allow from 192.0.2.1 to any port 5016 proto tcp comment pideck-agent$' "$W/state/calls"
+check "…and records it (0600) for uninstall" bash -c "test \"\$(stat -c %a '$W/home/.config/pideck/install-agent')\" = 600 && grep -qx UFW_FROM=192.0.2.1 '$W/home/.config/pideck/install-agent'"
+old_hash="$(agent_hash)"
+inst "${AGENT[@]}" --rotate-token || bad "rotate exit $?"
+NEW="$(agent_token)"
+check "--rotate-token: new hash, old one gone, .bak kept, shown once" bash -c "test '$(agent_hash)' != '$old_hash' && test \"\$(printf %s '$NEW' | sha256sum | cut -d' ' -f1)\" = '$(agent_hash)' && ls '$APP'/.env.bak.* >/dev/null && test \"\$(grep -c PIDECK_AGENT_TOKEN_SHA256 '$APP/.env')\" = 1"
+check "--rotate-token: other .env values untouched" bash -c "grep -qx PIDECK_AGENT_BIND=192.0.2.10 '$APP/.env' && grep -qx PIDECK_MODE=agent '$APP/.env'"
+( cd "$W/src" && echo "// v2" >> ecosystem.config.cjs && git -c user.name=t -c user.email=t@t commit -qam v2 )
+: > "$W/state/calls"
+inst --update || { bad "update exit $?"; tail -n 20 "$W/out"; }
+check "--update on an agent: pull, npm ci, build, restart pideck-agent" bash -c "grep -q '// v2' '$APP/ecosystem.config.cjs' && grep -q '^npm ci' '$W/state/calls' && grep -q '^npm run build' '$W/state/calls' && grep -q '^systemctl restart pideck-agent' '$W/state/calls'"
+check "--update on an agent never asks for a database" bash -c "! grep -q 'DATABASE_URL' '$W/out' && grep -q 'systemctl restart pideck-agent' '$W/out'"
+: > "$W/state/calls"
+uninst --yes || bad "uninstall exit $?"
+check "uninstall: agent unit gone (copy kept), sudoers gone" bash -c "test ! -e '$unit' && ls '$W'/home/backups/pideck-uninstall-*/pideck-agent.service >/dev/null && test ! -e '$W/etc/sudoers.d/pideck'"
+check "uninstall: deletes exactly the recorded ufw rule" grep -qE '^sudo .*/ufw delete allow from 192.0.2.1 to any port 5016 proto tcp$' "$W/state/calls"
+check "uninstall: keeps .env, forgets the rule" bash -c "test -f '$APP/.env' && test ! -e '$W/home/.config/pideck/install-agent'"
+cleanup
+
+new_sandbox "agent uninstall leaves ufw alone when the installer didn't add the rule"
+inst "${AGENT[@]}" || bad "install exit $?"
+: > "$W/state/calls"
+uninst --yes || bad "uninstall exit $?"
+check "no ufw call" bash -c "! grep -q ufw '$W/state/calls'"
+cleanup
+
+new_sandbox "--agent refuses a hub checkout"
+inst "${STD[@]}" || bad "hub install exit $?"
+cp "$APP/.env" "$W/hub.env"
+if inst "${AGENT[@]}"; then bad "agent install on a hub accepted"; else ok "refused"; fi
+check "…with a reason, .env untouched" bash -c "grep -q 'set up as a hub' '$W/out' && cmp -s '$APP/.env' '$W/hub.env'"
+cleanup
+
+# ── multi-host: --add-host (hub) ───────────────────────────────────────
+new_sandbox "--add-host"
+inst "${STD[@]}" || bad "hub install exit $?"
+T="$(openssl rand -hex 32)"
+printf '%s' "$T" | sha256sum | cut -d' ' -f1 > "$W/state/agent-hash"
+( umask 077; printf '%s\n' "$T" > "$W/token" )
+cp "$APP/.env" "$W/before.env"
+before="$(tree_sum)"
+inst --add-host piapps2 --url http://192.0.2.10:5016 --token-file "$W/token" --dry-run || bad "dry run exit $?"
+check "--dry-run changes nothing" test "$before" = "$(tree_sum)"
+inst --add-host piapps2 --url http://192.0.2.10:5016/ --token-file "$W/token" --label "piapps2 (LAN)" || { bad "add exit $?"; tail -n 20 "$W/out"; }
+check "tests the agent first" grep -q 'agent answers: PiDeck 2.4.0 on agent-box' "$W/out"
+check "append-only: the old .env is an untouched prefix" cmp -s "$W/before.env" <(head -n "$(wc -l < "$W/before.env")" "$APP/.env")
+check "adds PIDECK_HOSTS, the token, the label" bash -c "grep -qx 'PIDECK_HOSTS=piapps2=http://192.0.2.10:5016' '$APP/.env' && grep -qx 'PIDECK_HOST_TOKEN_PIAPPS2=$T' '$APP/.env' && grep -qx 'PIDECK_HOST_LABELS=piapps2=piapps2 (LAN)' '$APP/.env'"
+check "keeps a .bak and prints a one-line summary" bash -c "cmp -s '$W/before.env' $APP/.env.bak.* && grep -qE '\.env: \+[0-9]+ / -0 lines' '$W/out'"
+check ".env stays 0600" test "$(mode "$APP/.env")" = 600
+check "token never on the terminal or in the log" bash -c "! grep -qF '$T' '$W/out' && ! grep -qF '$T' \"\$(ls -t '$W'/home/logs/pideck-install-*.log | head -n 1)\""
+check "prints the restart step" grep -q 'restart pideck' "$W/out"
+cp "$APP/.env" "$W/after1.env"
+if inst --add-host piapps2 --url http://192.0.2.11:5016 --token-file "$W/token"; then bad "duplicate accepted"; else ok "refuses a duplicate id"; fi
+check "…and changes nothing" bash -c "grep -q 'already exists' '$W/out' && cmp -s '$W/after1.env' '$APP/.env'"
+rm -f "$APP"/.env.bak.*
+inst --add-host piapps2 --url http://192.0.2.11:5016 --token-file "$W/token" --replace || bad "replace exit $?"
+check "--replace: one entry, new URL, .bak kept" bash -c "grep -qx 'PIDECK_HOSTS=piapps2=http://192.0.2.11:5016' '$APP/.env' && test \"\$(grep -c '^PIDECK_HOST_TOKEN_PIAPPS2=' '$APP/.env')\" = 1 && cmp -s '$W/after1.env' $APP/.env.bak.*"
+PIDECK_ADD_HOST_TOKEN="$T" inst --add-host piapps-3 --url https://10.8.0.3:5016 || bad "second host exit $?"
+check "a second host (token from env): both listed, id → PIDECK_HOST_TOKEN_PIAPPS_3" bash -c "grep -qx 'PIDECK_HOSTS=piapps2=http://192.0.2.11:5016,piapps-3=https://10.8.0.3:5016' '$APP/.env' && grep -q '^PIDECK_HOST_TOKEN_PIAPPS_3=' '$APP/.env'"
+cp "$APP/.env" "$W/after3.env"
+( umask 077; printf 'wrong-token-%s\n' "$(openssl rand -hex 8)" > "$W/wrong" )
+if inst --add-host piapps4 --url http://192.0.2.12:5016 --token-file "$W/wrong"; then bad "wrong token accepted"; else ok "wrong token: refused"; fi
+check "…says the token was rejected, .env unchanged" bash -c "grep -q 'rejected the token' '$W/out' && cmp -s '$W/after3.env' '$APP/.env'"
+touch "$W/state/agent-down"
+if inst --add-host piapps4 --url http://192.0.2.12:5016 --token-file "$W/token"; then bad "unreachable accepted"; else ok "unreachable agent: refused"; fi
+check "…with the --skip-health hint" grep -q -- '--skip-health' "$W/out"
+inst --add-host piapps4 --url http://192.0.2.12:5016 --token-file "$W/token" --skip-health || bad "skip-health exit $?"
+check "--skip-health adds it anyway" grep -q ',piapps4=http://192.0.2.12:5016$' "$APP/.env"
+chmod 644 "$W/token"
+if inst --add-host piapps5 --url http://192.0.2.13:5016 --token-file "$W/token" --skip-health; then bad "0644 token file accepted"; else ok "refuses a group/world-readable token file"; fi
+for bad_args in "--add-host Bad --url http://h:1" "--add-host local --url http://h:1" "--add-host ok --url http://h:1/api" "--add-host ok --url ftp://h" "--add-host ok --url http://u:p@h:1"; do
+  # shellcheck disable=SC2086  # word splitting of the case is intended
+  if inst $bad_args --dry-run; then bad "accepted: $bad_args"; else ok "rejects: $bad_args"; fi
+done
 cleanup
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"

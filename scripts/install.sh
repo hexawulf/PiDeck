@@ -11,6 +11,8 @@
 #              scripts/install.sh                      # interactive install
 #              scripts/install.sh --yes --lan-http     # unattended, plain-HTTP LAN
 #              scripts/install.sh --update             # pull, build, restart, check
+#              scripts/install.sh --agent --dry-run    # read-only agent (multi-host)
+#              scripts/install.sh --add-host piapps2 --url http://192.168.50.120:5016
 #              scripts/install.sh --help               # all flags
 set -euo pipefail
 
@@ -36,6 +38,17 @@ RESET_PW=0
 NVME_DEVICE="${PIDECK_NVME_DEVICE:-}"
 SKIP_HEALTH=0
 PUBLIC_URL="${PIDECK_PUBLIC_URL:-}"
+# multi-host: --agent (this host becomes a read-only agent) and --add-host (on the hub)
+AGENT_BIND="${PIDECK_AGENT_BIND:-}"
+AGENT_PORT="${PIDECK_AGENT_PORT:-}"
+HUB_IP="${PIDECK_HUB_IP:-}"
+UFW_FROM=""
+ROTATE_TOKEN=0
+ADD_HOST=""
+ADD_URL=""
+TOKEN_FILE=""
+ADD_LABEL=""
+REPLACE=0
 
 usage() {
   cat <<'EOF'
@@ -60,10 +73,26 @@ PiDeck installer — scripts/install.sh [options]
   --skip-health             don't run the health check
   -h, --help                this help
 
+Multi-host (docs/INSTALL.md › Add another machine):
+  --agent                   install this host as a read-only agent: no database,
+                            no login; systemd unit pideck-agent; prints a token
+                            once for the hub
+  --agent-bind IP           address the agent listens on (default: this host's
+                            LAN address)
+  --agent-port N            agent port (default 5016)
+  --hub-ip IP               the hub's address (for the printed firewall rule)
+  --ufw-allow-from IP       also run: ufw allow from IP to any port <port> proto tcp
+  --rotate-token            with --agent: make a new token (the old one stops working)
+  --add-host ID --url URL   on the hub: add an agent (id [a-z0-9-]{1,32}); the
+                            token is read from a hidden prompt, --token-file F
+                            (0600) or env PIDECK_ADD_HOST_TOKEN; tests the agent
+  --label TEXT              with --add-host: name shown in the switcher
+  --replace                 with --add-host: replace an existing host (keeps a .bak)
+
 Env equivalents: PIDECK_YES=1 PIDECK_PORT PIDECK_DATABASE_URL PIDECK_NO_APT=1
 PIDECK_SERVICE PIDECK_SUDOERS=1 PIDECK_LAN_HTTP=1 PIDECK_ADMIN_PASSWORD_FILE
 PIDECK_NVME_DEVICE PIDECK_PUBLIC_URL PIDECK_DB_NAME PIDECK_DB_USER (default pideck)
-NO_COLOR=1
+PIDECK_AGENT_BIND PIDECK_AGENT_PORT PIDECK_HUB_IP PIDECK_ADD_HOST_TOKEN NO_COLOR=1
 EOF
 }
 
@@ -87,6 +116,17 @@ while [ $# -gt 0 ]; do
     --reset-password) RESET_PW=1 ;;
     --public-url) PUBLIC_URL="${2:?}"; shift ;;
     --skip-health) SKIP_HEALTH=1 ;;
+    --agent) MODE=agent ;;
+    --agent-bind) AGENT_BIND="${2:?--agent-bind needs an IP}"; shift ;;
+    --agent-port) AGENT_PORT="${2:?--agent-port needs a port}"; shift ;;
+    --hub-ip) HUB_IP="${2:?--hub-ip needs an IP}"; shift ;;
+    --ufw-allow-from) UFW_FROM="${2:?--ufw-allow-from needs an IP}"; shift ;;
+    --rotate-token) ROTATE_TOKEN=1 ;;
+    --add-host) MODE=add-host; ADD_HOST="${2:?--add-host needs an id}"; shift ;;
+    --url) ADD_URL="${2:?--url needs a URL}"; shift ;;
+    --token-file) TOKEN_FILE="${2:?--token-file needs a file}"; shift ;;
+    --label) ADD_LABEL="${2:?--label needs text}"; shift ;;
+    --replace) REPLACE=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)" >&2; exit 64 ;;
   esac
@@ -99,6 +139,29 @@ if [ -n "$PORT" ] && ! [[ "$PORT" =~ ^[0-9]+$ && "$PORT" -ge 1 && "$PORT" -le 65
 fi
 if [ -n "$NVME_DEVICE" ] && ! [[ "$NVME_DEVICE" =~ ^/dev/nvme[0-9]+(n[0-9]+)?$ ]]; then
   echo "--nvme-device must look like /dev/nvme0 or /dev/nvme0n1" >&2; exit 64
+fi
+is_ip() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ || "$1" =~ ^[0-9a-fA-F:]*:[0-9a-fA-F:]*$ ]]; }
+for pair in "--agent-bind:$AGENT_BIND" "--hub-ip:$HUB_IP" "--ufw-allow-from:$UFW_FROM"; do
+  v="${pair#*:}"
+  if [ -n "$v" ] && ! is_ip "$v"; then echo "${pair%%:*} must be an IP address" >&2; exit 64; fi
+done
+if [ -n "$AGENT_PORT" ] && ! [[ "$AGENT_PORT" =~ ^[0-9]+$ && "$AGENT_PORT" -ge 1 && "$AGENT_PORT" -le 65535 ]]; then
+  echo "--agent-port must be 1-65535" >&2; exit 64
+fi
+if [ "$MODE" = add-host ]; then
+  if ! [[ "$ADD_HOST" =~ ^[a-z0-9-]{1,32}$ ]] || [ "$ADD_HOST" = local ]; then
+    echo "--add-host: the id must be [a-z0-9-]{1,32} and not \"local\"" >&2; exit 64
+  fi
+  ADD_URL="${ADD_URL%/}"
+  if ! [[ "$ADD_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$ ]]; then
+    echo "--add-host needs --url http(s)://host[:port] (no path, query or credentials)" >&2; exit 64
+  fi
+  if [ -n "$ADD_LABEL" ] && ! [[ "$ADD_LABEL" =~ ^[[:print:]]{1,64}$ && "$ADD_LABEL" != *,* && "$ADD_LABEL" != *=* ]]; then
+    echo "--label: up to 64 printable characters, no , or =" >&2; exit 64
+  fi
+fi
+if [ "$MODE" != agent ] && { [ -n "$UFW_FROM" ] || [ "$ROTATE_TOKEN" = 1 ]; }; then
+  echo "--ufw-allow-from and --rotate-token go with --agent" >&2; exit 64
 fi
 
 # Refuse root before touching anything (not even the log directory).
@@ -276,11 +339,16 @@ preflight() {
   if have git; then row git found required; else row git missing required; MISSING_REQ+=(git); fi
   if have curl; then row curl found "required (health check)"; else row curl missing required; APT_PKGS+=(curl); fi
   if have openssl; then row openssl found "required (secrets)"; else row openssl missing required; APT_PKGS+=(openssl); fi
-  case "$pg_state" in
-    missing|"client only") row postgresql "$pg_state" "required (or --database-url)"; APT_PKGS+=(postgresql) ;;
-    *) row postgresql "$pg_state" required ;;
-  esac
-  if have pm2; then row pm2 found "service (default when installed)"
+  if [ "$MODE" = agent ]; then
+    row postgresql "not needed" "agent mode keeps no database"
+  else
+    case "$pg_state" in
+      missing|"client only") row postgresql "$pg_state" "required (or --database-url)"; APT_PKGS+=(postgresql) ;;
+      *) row postgresql "$pg_state" required ;;
+    esac
+  fi
+  if [ "$MODE" = agent ]; then row systemd "$(have systemctl && echo found || echo missing)" "service pideck-agent"
+  elif have pm2; then row pm2 found "service (default when installed)"
   elif [ "$SERVICE" = pm2 ]; then row pm2 "from npm ci" "service: the repo's own pm2 (node_modules/.bin)"
   else row pm2 "optional-missing" "service: systemd unless --service pm2"; fi
   if have docker; then row docker found "Apps › Docker"; else row docker "optional-missing" "Apps › Docker shows 'not available'"; fi
@@ -578,7 +646,13 @@ sudoers() {
   local smart_line="# (no NVMe device or smartctl: no smartctl rule)" ufw_line="# (ufw not installed: no ufw rule)"
   [ -n "$smart" ] && [ -n "$nvme" ] && smart_line="$RUN_USER ALL=(root) NOPASSWD: $smart -a $nvme"
   [ -n "$ufw" ] && ufw_line="$RUN_USER ALL=(root) NOPASSWD: $ufw status verbose"
-  render "$APP_DIR/deploy/sudoers.d/pideck.template" "$tmp" "@SMARTCTL_LINE@=$smart_line" "@UFW_LINE@=$ufw_line" \
+  local template="$APP_DIR/deploy/sudoers.d/pideck.template"
+  if [ "$MODE" = agent ]; then
+    # An agent is read-only: no Update System, so no apt-get rules.
+    grep -v -e '@APT_GET@' -e 'apt-get lines' "$template" > "$TMP_DIR/sudoers.agent.template"
+    template="$TMP_DIR/sudoers.agent.template"
+  fi
+  render "$template" "$tmp" "@SMARTCTL_LINE@=$smart_line" "@UFW_LINE@=$ufw_line" \
     "@USER@=$RUN_USER" "@APT_GET@=$apt"
   info "grants $RUN_USER passwordless sudo for exactly:"
   grep -E '^[^#].*NOPASSWD' "$tmp" | sed 's/^.*NOPASSWD: /    /'
@@ -645,6 +719,302 @@ summary() {
   fi
 }
 
+# ── multi-host: agent install (--agent) ────────────────────────────────
+# A read-only agent (docs/plans/multi-host.md): no database, no login, one
+# systemd unit (pideck-agent). The token is generated here, shown once on
+# the terminal (never logged), and only its SHA-256 is kept in .env.
+AGENT_UNIT_NAME=pideck-agent
+AGENT_MARKER="$CONFIG_DIR/install-agent"
+AGENT_TOKEN=""          # set only when this run made a (new) token
+AGENT_TOKEN_FILE=""
+
+lan_ip() { hostname -I 2>/dev/null | awk '{print $1}'; }
+# A host id for the hub: this host's short name, lower-case, [a-z0-9-]{1,32}.
+suggest_host_id() {
+  local h; h="$(hostname -s 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-\n' '-' | cut -c1-32)"
+  [[ "$h" =~ ^[a-z0-9-]{1,32}$ ]] && [ "$h" != local ] && echo "$h" || echo "agent"
+}
+
+# Write the token to a 0600 header file for curl (-H @file): never in argv.
+bearer_header_file() {
+  local token="$1" out="$2"
+  ( umask 077; printf 'Authorization: Bearer %s\n' "$token" > "$out" )
+}
+
+agent_plan() {
+  local steps=()
+  [ "$NO_APT" != 1 ] && [ ${#APT_PKGS[@]} -gt 0 ] && steps+=("apt-get install ${APT_PKGS[*]}")
+  steps+=("install $ETC/systemd/system/$AGENT_UNIT_NAME.service, systemctl enable --now")
+  [ "$SUDOERS" = 1 ] && steps+=("install /etc/sudoers.d/pideck (visudo-checked, 0440; no apt-get rules on an agent)")
+  [ -n "$UFW_FROM" ] && steps+=("ufw allow from $UFW_FROM to any port $AGENT_PORT proto tcp")
+  step "Plan (agent)"
+  info "read-only agent on $AGENT_BIND:$AGENT_PORT · no database, no login, no UI"
+  info "These steps use sudo:"; local s; for s in "${steps[@]}"; do info "  • $s"; done
+  if [ "$DRY_RUN" != 1 ] && ! confirm "Continue?" y; then die "stopped by user"; fi
+}
+
+agent_env() {
+  step ".env (agent)"
+  if env_has SESSION_SECRET || env_has DATABASE_URL; then
+    [ "$(env_get PIDECK_MODE)" = agent ] \
+      || die "this checkout is set up as a hub (.env has SESSION_SECRET/DATABASE_URL); install the agent from a separate checkout"
+  fi
+  local tmp="$TMP_DIR/env" added=() k
+  if [ -f "$ENV_FILE" ]; then cp "$ENV_FILE" "$tmp"
+  elif [ -f "$APP_DIR/.env.example" ]; then sed -E 's/^([A-Z][A-Z0-9_]*=)/# \1/' "$APP_DIR/.env.example" > "$tmp"
+  else : > "$tmp"; fi
+  local -A want=([NODE_ENV]=production [PIDECK_MODE]=agent [PIDECK_AGENT_PORT]="$AGENT_PORT" [PIDECK_AGENT_BIND]="$AGENT_BIND")
+  [ -n "$NVME_DEVICE" ] && want[PIDECK_NVME_DEVICE]="$NVME_DEVICE"
+
+  local rotate=0
+  if env_has PIDECK_AGENT_TOKEN_SHA256 && [ "$ROTATE_TOKEN" = 1 ]; then rotate=1; fi
+  if ! env_has PIDECK_AGENT_TOKEN_SHA256 || [ "$rotate" = 1 ]; then
+    if [ "$DRY_RUN" = 1 ]; then
+      want[PIDECK_AGENT_TOKEN_SHA256]="(sha256 of a generated token)"
+    else
+      AGENT_TOKEN="$(openssl rand -hex 32)"   # 32 random bytes
+      AGENT_TOKEN_FILE="$TMP_DIR/agent-token.hdr"
+      bearer_header_file "$AGENT_TOKEN" "$AGENT_TOKEN_FILE"
+      want[PIDECK_AGENT_TOKEN_SHA256]="$(printf '%s' "$AGENT_TOKEN" | sha256sum | cut -d' ' -f1)"
+    fi
+  fi
+  if [ "$rotate" = 1 ]; then
+    # The one value this installer ever changes, and only when asked to.
+    local line out="$TMP_DIR/env.rotated"
+    : > "$out"
+    while IFS= read -r line || [ -n "$line" ]; do
+      if [[ "$line" == PIDECK_AGENT_TOKEN_SHA256=* ]]; then line="PIDECK_AGENT_TOKEN_SHA256=${want[PIDECK_AGENT_TOKEN_SHA256]}"; fi
+      printf '%s\n' "$line" >> "$out"
+    done < "$tmp"
+    mv "$out" "$tmp"
+    unset 'want[PIDECK_AGENT_TOKEN_SHA256]'
+    info "--rotate-token: replacing the token hash (the old token stops working after the restart)"
+  fi
+
+  local header=0
+  for k in NODE_ENV PIDECK_MODE PIDECK_AGENT_PORT PIDECK_AGENT_BIND PIDECK_AGENT_TOKEN_SHA256 PIDECK_NVME_DEVICE; do
+    [ -n "${want[$k]+x}" ] || continue
+    if env_has "$k"; then
+      case "$k" in
+        PIDECK_AGENT_PORT|PIDECK_AGENT_BIND)
+          [ "$(env_get "$k")" = "${want[$k]}" ] || warn ".env has $k=$(env_get "$k") (kept; edit .env to change it)" ;;
+      esac
+      continue
+    fi
+    if [ "$header" = 0 ]; then printf '\n# added by scripts/install.sh --agent %s\n' "$TS" >> "$tmp"; header=1; fi
+    printf '%s=%s\n' "$k" "${want[$k]}" >> "$tmp"
+    added+=("$k")
+  done
+  if [ ${#added[@]} -eq 0 ] && [ "$rotate" != 1 ]; then ok ".env has every agent key (values untouched)"; return; fi
+  [ ${#added[@]} -gt 0 ] && info "adding: ${added[*]} (existing values are never changed; the token itself is never stored here)"
+  if [ "$DRY_RUN" = 1 ]; then dry "write $ENV_FILE (mode 0600) with the keys above"; return; fi
+  install_file "$tmp" "$ENV_FILE" 600
+}
+
+agent_service() {
+  step "Service ($AGENT_UNIT_NAME)"
+  local p; p="$(pm2_bin)"
+  if pm2_has_pideck "$p" || [ -f "$ETC/systemd/system/pideck.service" ]; then
+    die "this host runs the PiDeck hub; an agent goes on another machine (or run scripts/uninstall.sh first)"
+  fi
+  have systemctl || [ "$DRY_RUN" = 1 ] || die "the agent runs under systemd, and systemctl isn't available here"
+  local unit="$ETC/systemd/system/$AGENT_UNIT_NAME.service" tmp="$TMP_DIR/$AGENT_UNIT_NAME.service" nodebin
+  nodebin="$(command -v node)"
+  render "$APP_DIR/deploy/systemd/pideck-agent.service.template" "$tmp" "@USER@=$RUN_USER" "@APP_DIR@=$APP_DIR" "@NODE@=$nodebin"
+  if have systemd-analyze; then
+    local verr; verr="$(systemd-analyze verify "$tmp" 2>&1)" || die "systemd-analyze verify rejected the unit; nothing installed: $(printf '%s' "$verr" | head -n 3 | tr '\n' ' ')"
+    ok "systemd-analyze verify: unit OK"
+  else warn "systemd-analyze not found: unit not verified"; fi
+  if [ "$DRY_RUN" = 1 ]; then dry "install $unit (0644), systemctl daemon-reload, enable --now (restart if running)"; return; fi
+  install_file "$tmp" "$unit" 644 sudo
+  srun "systemctl daemon-reload" systemctl daemon-reload
+  if systemctl is-active --quiet "$AGENT_UNIT_NAME"; then srun "restart $AGENT_UNIT_NAME" systemctl restart "$AGENT_UNIT_NAME"
+  else srun "enable and start $AGENT_UNIT_NAME" systemctl enable --now "$AGENT_UNIT_NAME"; fi
+}
+
+ufw_rule_args() { printf '%s\n' allow from "$1" to any port "$2" proto tcp; }
+
+agent_firewall() {
+  step "Firewall"
+  local hub="${UFW_FROM:-${HUB_IP:-<hub-ip>}}"
+  if [ -z "$UFW_FROM" ]; then
+    info "Allow only the hub to reach the agent (run on this host):"
+    info "  sudo ufw allow from $hub to any port $AGENT_PORT proto tcp"
+    info "(or re-run with --ufw-allow-from <hub-ip> to have the installer add it)"
+    return
+  fi
+  local ufw; ufw="$(tool_path ufw)"
+  if [ -z "$ufw" ]; then warn "ufw isn't installed: rule not added. Allow only $UFW_FROM → port $AGENT_PORT in your firewall."; return; fi
+  local args; mapfile -t args < <(ufw_rule_args "$UFW_FROM" "$AGENT_PORT")
+  srun "ufw ${args[*]}" "$ufw" "${args[@]}" comment pideck-agent
+  if [ "$DRY_RUN" = 1 ]; then dry "record the rule in $AGENT_MARKER (uninstall removes only that rule)"; return; fi
+  # Recorded so uninstall.sh removes exactly this rule, and only if we added it.
+  install -d -m 700 "$CONFIG_DIR"
+  local tmp="$TMP_DIR/agent-marker"
+  printf 'UFW_FROM=%s\nUFW_PORT=%s\n' "$UFW_FROM" "$AGENT_PORT" > "$tmp"
+  install -m 600 "$tmp" "$AGENT_MARKER"
+  ok "recorded in $AGENT_MARKER"
+}
+
+agent_health() {
+  step "Health check"
+  if [ "$SKIP_HEALTH" = 1 ]; then info "skipped"; return; fi
+  local url="http://$AGENT_BIND:$AGENT_PORT/api/agent/info"
+  if [ "$DRY_RUN" = 1 ]; then dry "GET $url with the token (expect 200), or without it on a re-run (expect 401)"; return; fi
+  local code="" body="$TMP_DIR/agent-info.json" hdr=()
+  [ -n "$AGENT_TOKEN_FILE" ] && hdr=(-H "@$AGENT_TOKEN_FILE")
+  for _ in $(seq 1 30); do
+    code="$(curl -s -o "$body" -w '%{http_code}' "${hdr[@]}" "$url" || true)"
+    [ "$code" = 200 ] || [ "$code" = 401 ] && break
+    sleep 1
+  done
+  if [ -n "$AGENT_TOKEN_FILE" ]; then
+    [ "$code" = 200 ] || die "$url answered $code with the new token (journalctl -u $AGENT_UNIT_NAME)"
+    grep -q '"version"' "$body" || die "$url did not return agent info"
+    ok "agent answers with the new token: $(sed -n 's/.*"version":"\([^"]*\)".*/PiDeck \1/p' "$body")"
+  else
+    [ "$code" = 401 ] || die "$url answered $code (expected 401 without a token; journalctl -u $AGENT_UNIT_NAME)"
+    ok "agent answers and refuses requests without the token (token unchanged, not shown again)"
+  fi
+}
+
+agent_summary() {
+  step "Done (agent)"
+  info "Agent:     http://$AGENT_BIND:$AGENT_PORT (read-only; token required)"
+  info "Service:   systemctl status $AGENT_UNIT_NAME · journalctl -u $AGENT_UNIT_NAME"
+  info "Config:    $ENV_FILE (0600; holds only the token's SHA-256)"
+  info "Install log: $LOG"
+  if [ -n "$AGENT_TOKEN" ] && [ "$DRY_RUN" != 1 ]; then
+    # Straight to the terminal (fd 3), never into the log.
+    {
+      printf '\n  %sAgent token (shown once — copy it now; only its hash is stored here):%s\n    %s\n' "$B" "$RST" "$AGENT_TOKEN"
+      printf '\n  %sOn the hub, run:%s\n' "$B" "$RST"
+      printf '    cd ~/PiDeck && ./scripts/install.sh --add-host %s --url http://%s:%s\n' "$(suggest_host_id)" "$AGENT_BIND" "$AGENT_PORT"
+      printf '  and paste the token when it asks. Then restart the hub (the command prints how).\n'
+    } >&3
+    info "(token printed to the terminal only; it is not in the log)"
+  elif [ "$DRY_RUN" != 1 ]; then
+    info "The token was not changed (use --rotate-token for a new one; the hub then needs --add-host … --replace)."
+  fi
+}
+
+agent_install() {
+  AGENT_PORT="${AGENT_PORT:-$(env_get PIDECK_AGENT_PORT)}"; AGENT_PORT="${AGENT_PORT:-5016}"
+  AGENT_BIND="${AGENT_BIND:-$(env_get PIDECK_AGENT_BIND)}"
+  if [ -z "$AGENT_BIND" ]; then
+    AGENT_BIND="$(lan_ip)"
+    [ -n "$AGENT_BIND" ] || { AGENT_BIND=127.0.0.1; warn "no LAN address found; binding to 127.0.0.1 (pass --agent-bind)"; }
+  fi
+  preflight
+  agent_plan
+  packages
+  agent_env
+  deps
+  build
+  agent_service
+  sudoers
+  agent_firewall
+  agent_health
+  agent_summary
+}
+
+# ── multi-host: add an agent to this hub (--add-host) ──────────────────
+add_host() {
+  step "Add host $ADD_HOST → $ADD_URL"
+  [ -f "$ENV_FILE" ] || die "no .env — install the hub first (scripts/install.sh)"
+  [ "$(env_get PIDECK_MODE)" != agent ] || die "this checkout is an agent; run --add-host on the hub"
+  local key
+  key="PIDECK_HOST_TOKEN_$(printf '%s' "$ADD_HOST" | tr 'a-z-' 'A-Z_')"
+  local hosts; hosts="$(env_get PIDECK_HOSTS)"
+  local exists=0
+  if [[ ",${hosts// /}," == *",$ADD_HOST="* ]] || env_has "$key"; then exists=1; fi
+  if [ "$exists" = 1 ] && [ "$REPLACE" != 1 ]; then
+    die "host \"$ADD_HOST\" already exists in .env; use --replace to change its URL/token (a .bak is kept)"
+  fi
+
+  # The token: file (0600), env, or a hidden prompt. Never argv, never logged.
+  local token=""
+  if [ -n "$TOKEN_FILE" ]; then
+    [ -f "$TOKEN_FILE" ] || die "token file $TOKEN_FILE not found"
+    [[ "$(stat -c %a "$TOKEN_FILE")" =~ 00$ ]] || die "$TOKEN_FILE must not be readable by group/others (chmod 600)"
+    token="$(head -n 1 "$TOKEN_FILE" | tr -d '\r\n')"
+  elif [ -n "${PIDECK_ADD_HOST_TOKEN:-}" ]; then
+    token="$PIDECK_ADD_HOST_TOKEN"
+  elif [ "$DRY_RUN" = 1 ]; then
+    token=""
+  elif [ -t 0 ] || [ -r /dev/tty ]; then
+    { read -r -s -p "  Agent token for $ADD_HOST (input hidden): " token </dev/tty; } 2>/dev/null || token=""
+    echo >&3
+  else
+    die "no token: use --token-file F (0600) or PIDECK_ADD_HOST_TOKEN"
+  fi
+  if [ "$DRY_RUN" != 1 ] || [ -n "$token" ]; then
+    [[ "$token" =~ ^[[:graph:]]{16,512}$ ]] || die "that doesn't look like an agent token (16-512 printable characters, no spaces)"
+  fi
+
+  # Connection test: GET /api/agent/info with the token (header from a 0600 file).
+  if [ "$SKIP_HEALTH" = 1 ]; then warn "--skip-health: not testing $ADD_URL"
+  elif [ -z "$token" ]; then dry "GET $ADD_URL/api/agent/info with the token (expect 200)"
+  else
+    local hfile="$TMP_DIR/add-host.hdr" body="$TMP_DIR/add-host.json" code
+    bearer_header_file "$token" "$hfile"
+    code="$(curl -s --max-time 5 -o "$body" -w '%{http_code}' -H "@$hfile" "$ADD_URL/api/agent/info" || true)"
+    case "$code" in
+      200) grep -q '"version"' "$body" || die "$ADD_URL answered, but not like a PiDeck agent"
+           ok "agent answers: $(sed -n 's/.*"version":"\([^"]*\)".*/PiDeck \1/p' "$body")$(sed -n 's/.*"hostname":"\([^"]*\)".*/ on \1/p' "$body")" ;;
+      401|429) die "$ADD_URL rejected the token (401/429). Copy it again from the agent's install output, or rotate it there with --agent --rotate-token." ;;
+      000) die "can't reach $ADD_URL (agent running? firewall allows this hub?). Add it anyway with --skip-health." ;;
+      *) die "$ADD_URL answered $code to /api/agent/info — is that a PiDeck agent?" ;;
+    esac
+  fi
+
+  # New .env: PIDECK_HOSTS gets the entry (replaced with --replace), the token
+  # line is added (or replaced), an optional label likewise. Everything else
+  # is copied as is; install_file keeps a .bak and prints a one-line summary.
+  local tmp="$TMP_DIR/env" line new_hosts="" item seen_hosts=0 seen_token=0 seen_labels=0
+  for item in ${hosts//,/ }; do
+    [[ "$item" == "$ADD_HOST="* ]] && continue
+    new_hosts+="${new_hosts:+,}$item"
+  done
+  new_hosts+="${new_hosts:+,}$ADD_HOST=$ADD_URL"
+  local labels new_labels=""
+  labels="$(env_get PIDECK_HOST_LABELS)"
+  if [ -n "$ADD_LABEL" ]; then
+    local IFS_SAVE="$IFS"; IFS=','
+    for item in $labels; do [[ "$item" == "$ADD_HOST="* ]] || new_labels+="${new_labels:+,}$item"; done
+    IFS="$IFS_SAVE"
+    new_labels+="${new_labels:+,}$ADD_HOST=$ADD_LABEL"
+  fi
+  : > "$tmp"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      PIDECK_HOSTS=*) line="PIDECK_HOSTS=$new_hosts"; seen_hosts=1 ;;
+      "$key"=*) [ -n "$token" ] && line="$key=$token"; seen_token=1 ;;
+      PIDECK_HOST_LABELS=*) [ -n "$ADD_LABEL" ] && line="PIDECK_HOST_LABELS=$new_labels"; seen_labels=1 ;;
+    esac
+    printf '%s\n' "$line" >> "$tmp"
+  done < "$ENV_FILE"
+  if [ "$seen_hosts$seen_token$([ -n "$ADD_LABEL" ] && echo "$seen_labels" || echo 1)" != 111 ]; then
+    printf '\n# added by scripts/install.sh --add-host %s %s\n' "$ADD_HOST" "$TS" >> "$tmp"
+    [ "$seen_hosts" = 1 ] || printf 'PIDECK_HOSTS=%s\n' "$new_hosts" >> "$tmp"
+    [ "$seen_token" = 1 ] || printf '%s=%s\n' "$key" "${token:-(the token)}" >> "$tmp"
+    if [ -n "$ADD_LABEL" ] && [ "$seen_labels" != 1 ]; then printf 'PIDECK_HOST_LABELS=%s\n' "$new_labels" >> "$tmp"; fi
+  fi
+  info "PIDECK_HOSTS=$new_hosts · $key=(not shown)$([ -n "$ADD_LABEL" ] && echo " · label \"$ADD_LABEL\"")"
+  if [ "$DRY_RUN" = 1 ]; then dry "write $ENV_FILE (0600, with a .bak of the old one)"; return; fi
+  install_file "$tmp" "$ENV_FILE" 600
+
+  detect_service
+  step "Next"
+  info "Restart the hub to load the new host:"
+  case "$SERVICE" in
+    pm2) info "  $(pm2_bin || echo pm2) restart pideck --update-env" ;;
+    systemd) info "  sudo systemctl restart pideck" ;;
+    *) info "  restart PiDeck" ;;
+  esac
+  info "Then pick \"$ADD_HOST\" in the host switcher (header) or open /h/$ADD_HOST/dashboard."
+}
+
 # ── update mode ────────────────────────────────────────────────────────
 detect_service() {
   [ -n "$SERVICE" ] && return
@@ -657,9 +1027,16 @@ detect_service() {
 
 update() {
   [ -f "$ENV_FILE" ] || die "no .env — run the installer first (without --update)"
+  local agent=0
+  if [ "$(env_get PIDECK_MODE)" = agent ]; then
+    agent=1; MODE=agent
+    AGENT_PORT="$(env_get PIDECK_AGENT_PORT)"; AGENT_PORT="${AGENT_PORT:-5016}"
+    AGENT_BIND="$(env_get PIDECK_AGENT_BIND)"; AGENT_BIND="${AGENT_BIND:-127.0.0.1}"
+    SERVICE=systemd
+  fi
   PORT="${PORT:-$(env_get PORT)}"; PORT="${PORT:-5006}"
   detect_service
-  step "Update ($SERVICE, port $PORT)"
+  step "Update ($([ "$agent" = 1 ] && echo "agent, $AGENT_UNIT_NAME, port $AGENT_PORT" || echo "$SERVICE, port $PORT"))"
   local prev backup="$HOME/backups/pideck-dist-$TS"
   prev="$(git -C "$APP_DIR" rev-parse --short HEAD)"
   if [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=no)" ]; then
@@ -668,12 +1045,15 @@ update() {
   if [ -d "$APP_DIR/dist" ]; then run "back up dist/ to $backup" bash -c "mkdir -p \"\$1\" && cp -a \"\$2/dist\" \"\$1/\"" _ "$backup" "$APP_DIR"; fi
   run "git pull --ff-only" git -C "$APP_DIR" pull --ff-only
   deps
-  if [ "$DRY_RUN" != 1 ] && [ -n "$(helper tables)" ]; then warn "PiDeck tables are missing; run scripts/install.sh (not --update)"; fi
+  if [ "$agent" != 1 ] && [ "$DRY_RUN" != 1 ] && [ -n "$(helper tables)" ]; then warn "PiDeck tables are missing; run scripts/install.sh (not --update)"; fi
   build
-  service
-  health
+  if [ "$agent" = 1 ]; then agent_service; agent_health; else service; health; fi
+  local restart
+  if [ "$agent" = 1 ]; then restart="sudo systemctl restart $AGENT_UNIT_NAME"
+  elif [ "$SERVICE" = pm2 ]; then restart="$(pm2_bin) restart pideck"
+  else restart="sudo systemctl restart pideck"; fi
   step "Rollback, if needed"
-  info "cd $APP_DIR && git reset --keep $prev && npm ci && rm -rf dist && cp -a $backup/dist dist && $([ "$SERVICE" = pm2 ] && echo "$(pm2_bin) restart pideck" || echo "sudo systemctl restart pideck")"
+  info "cd $APP_DIR && git reset --keep $prev && npm ci && rm -rf dist && cp -a $backup/dist dist && $restart"
 }
 
 # ── main ───────────────────────────────────────────────────────────────
@@ -681,6 +1061,14 @@ cd "$APP_DIR"
 if [ "$MODE" = update ]; then
   preflight
   update
+  exit 0
+fi
+if [ "$MODE" = agent ]; then
+  agent_install
+  exit 0
+fi
+if [ "$MODE" = add-host ]; then
+  add_host
   exit 0
 fi
 

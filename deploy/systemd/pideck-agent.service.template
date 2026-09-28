@@ -1,0 +1,26 @@
+# PiDeck agent (read-only, multi-host) — rendered by scripts/install.sh --agent.
+# The @-placeholders (user, app dir, node binary) are filled in and the result
+# is checked with `systemd-analyze verify` before it goes to /etc/systemd/system/.
+# Settings (bind address, port, token hash) come from @APP_DIR@/.env (dotenv).
+[Unit]
+Description=PiDeck agent (read-only metrics for the PiDeck hub)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@APP_DIR@
+Environment=NODE_ENV=production
+Environment=PIDECK_MODE=agent
+ExecStart=@NODE@ @APP_DIR@/dist/index.js
+Restart=on-failure
+RestartSec=5
+# The agent only reads: keep /usr, /boot and /etc read-only for it and give
+# it a private /tmp. No NoNewPrivileges=: the optional sudoers rule
+# (smartctl, ufw) needs setuid sudo.
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
