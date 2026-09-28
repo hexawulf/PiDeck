@@ -153,6 +153,12 @@ pideck.example.com {
 PiDeck trusts one proxy hop by default (`TRUST_PROXY` unset = 1), which is
 right for both examples.
 
+**Behind Cloudflare's proxy** (orange cloud), set `PIDECK_CLOUDFLARE=1` so
+the login rate limit counts the real client address from
+`CF-Connecting-IP`. Leave it unset otherwise: without Cloudflare in front,
+that header is whatever the client sends, and trusting it would let anyone
+dodge the rate limit.
+
 ### Plain LAN HTTP (`--lan-http`)
 
 For a Pi on a home network without a domain, `--lan-http` sets
@@ -241,6 +247,7 @@ to touch:
 | `CSP_ENFORCE` | (unset = Report-Only) | `true` enforces the Content-Security-Policy. The installer sets it. |
 | `PIDECK_INSECURE_HTTP` | unset | `1` = LAN HTTP mode (see above). |
 | `TRUST_PROXY` | 1 | `false` when there is no reverse proxy. |
+| `PIDECK_CLOUDFLARE` | unset | `1` only when PiDeck is behind Cloudflare's proxy (rate limit uses `CF-Connecting-IP`). |
 | `PIDECK_CORS_ORIGIN` | unset | Extra allowed origins. |
 | `COOKIE_DOMAIN` | unset (host-only) | Session cookie domain. |
 | `PIDECK_LOGS_DIR` | `~/logs` | Project logs shown in the Logs tab. |
@@ -285,12 +292,17 @@ cd ~/PiDeck && git reset --keep <previous> && npm ci && rm -rf dist \
 ```bash
 ./scripts/uninstall.sh --dry-run
 ./scripts/uninstall.sh            # remove the pm2 app / systemd unit and the sudoers file
-./scripts/uninstall.sh --purge    # also drop the local DB + role, delete .env, the password file, dist backups
+./scripts/uninstall.sh --purge    # also drop the DB + role the installer created, delete .env and the password file
+./scripts/uninstall.sh --purge --purge-backups   # …and delete ~/backups/pideck-dist-*
 ```
 
 A plain uninstall keeps your data (database, `.env`, password file and
-backups). `--purge` asks you to type `purge`. It only drops a database on
-`localhost`; a remote `DATABASE_URL` is left alone. The checkout itself is
+backups). `--purge` always asks you to type `purge`, even with `--yes`
+(for scripts, set `PIDECK_PURGE_CONFIRM=purge` deliberately). It only drops
+the database and role that `install.sh` itself created, as recorded in
+`~/.config/pideck/install-db`. A database or role that already existed, a
+`DATABASE_URL` you configured yourself, or a remote database is left alone.
+Backups are kept unless you add `--purge-backups`. The checkout itself is
 never deleted.
 
 ## Troubleshooting

@@ -2,13 +2,16 @@
 # Author:      0xWulf (zk@hexawulf.dev)
 # Description: Remove what scripts/install.sh set up: the pm2 app or systemd
 #              unit and /etc/sudoers.d/pideck. Keeps the database, .env, the
-#              admin password file and ~/backups unless --purge (which asks
-#              for confirmation). Never deletes the checkout itself. Run as
+#              admin password file and ~/backups unless --purge, which always
+#              asks you to type "purge" and drops only the database/role that
+#              install.sh recorded as created by it. Backups are deleted only
+#              with --purge-backups. Never deletes the checkout itself. Run as
 #              the owning user (not root); start with --dry-run.
 # Modified:    2026-09-28
 # Usage:       scripts/uninstall.sh --dry-run          # see what would be removed
 #              scripts/uninstall.sh                    # remove service + sudoers
-#              scripts/uninstall.sh --purge            # also DB, .env, password, backups
+#              scripts/uninstall.sh --purge            # also installer-created DB, .env, password
+#              scripts/uninstall.sh --purge --purge-backups   # and ~/backups/pideck-dist-*
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,14 +22,19 @@ ETC="${PIDECK_ETC_DIR:-/etc}"   # test hook only
 DRY_RUN=0
 YES="${PIDECK_YES:-0}"
 PURGE=0
+PURGE_BACKUPS=0
 usage() {
   cat <<'EOF'
 PiDeck uninstaller — scripts/uninstall.sh [options]
 
   --dry-run   print every action, change nothing (do this first)
-  --yes       no prompts (with --purge: purge without typing "purge")
-  --purge     also drop the local database and role, delete .env, the admin
-              password file and ~/backups/pideck-dist-*
+  --yes       no prompts (does NOT skip the --purge confirmation)
+  --purge     also drop the database and role *that install.sh created*
+              (recorded in ~/.config/pideck/install-db; anything that already
+              existed is left alone), delete .env and the admin password file.
+              Always asks you to type "purge"; for scripts, set
+              PIDECK_PURGE_CONFIRM=purge instead.
+  --purge-backups  with --purge: also delete ~/backups/pideck-dist-*
   -h, --help  this help
 EOF
 }
@@ -35,11 +43,17 @@ while [ $# -gt 0 ]; do
     --dry-run) DRY_RUN=1 ;;
     --yes|-y) YES=1 ;;
     --purge|-p) PURGE=1 ;;
+    --purge-backups) PURGE_BACKUPS=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1 (see --help)" >&2; exit 64 ;;
   esac
   shift
 done
+
+if [ "$PURGE_BACKUPS" = 1 ] && [ "$PURGE" != 1 ]; then
+  echo "Error: --purge-backups only works together with --purge." >&2
+  exit 64
+fi
 
 if [ "$(id -u)" -eq 0 ]; then
   echo "Error: run this as the user who owns PiDeck, not as root (sudo is used where needed)." >&2
@@ -73,6 +87,7 @@ pm2_bin() { have pm2 && command -v pm2 || { [ -x "$APP_DIR/node_modules/.bin/pm2
 
 ENV_FILE="$APP_DIR/.env"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pideck"
+DB_MARKER="$CONFIG_DIR/install-db"
 UNIT="$ETC/systemd/system/pideck.service"
 SUDOERS="$ETC/sudoers.d/pideck"
 BACKUP="$HOME/backups/pideck-uninstall-$TS"
@@ -91,8 +106,10 @@ step "Plan"
 [ "$HAS_UNIT" = 1 ] && info "- systemd: stop + disable pideck, copy the unit to $BACKUP, remove $UNIT (sudo)"
 [ "$HAS_SUDOERS" = 1 ] && info "- remove $SUDOERS (sudo)"
 if [ "$PURGE" = 1 ]; then
-  info "- PURGE: drop the local database and role from .env's DATABASE_URL (sudo -u postgres)"
-  info "- PURGE: delete $ENV_FILE, $CONFIG_DIR, $HOME/backups/pideck-dist-*"
+  info "- PURGE: drop only the database/role install.sh created (per $DB_MARKER; sudo -u postgres)"
+  info "- PURGE: delete $ENV_FILE, $CONFIG_DIR"
+  if [ "$PURGE_BACKUPS" = 1 ]; then info "- PURGE: delete $HOME/backups/pideck-dist-*"
+  else info "- keep: $HOME/backups (add --purge-backups to delete pideck-dist-*)"; fi
 else
   info "- keep: database, $ENV_FILE, $CONFIG_DIR, $HOME/backups (use --purge to remove)"
 fi
@@ -128,34 +145,56 @@ else ok "no $SUDOERS"; fi
 # ── purge ──────────────────────────────────────────────────────────────
 if [ "$PURGE" = 1 ]; then
   step "Purge"
-  if [ "$DRY_RUN" != 1 ] && [ "$YES" != 1 ]; then
-    warn "This deletes the PiDeck database (metrics history, admin account), .env and the admin password."
-    read -r -p "  Type 'purge' to continue: " ans </dev/tty || ans=""
+  if [ "$DRY_RUN" != 1 ]; then
+    # Always typed, even with --yes: this deletes data. Scripts can set
+    # PIDECK_PURGE_CONFIRM=purge on purpose.
+    ans="${PIDECK_PURGE_CONFIRM:-}"
+    if [ "$ans" != purge ]; then
+      warn "This deletes the PiDeck database this installer created (metrics history, admin account), .env and the admin password."
+      read -r -p "  Type 'purge' to continue: " ans </dev/tty 2>/dev/null || ans=""
+    fi
     [ "$ans" = purge ] || { info "not purged; the database, .env and backups are kept"; exit 0; }
   fi
   url=""; [ -f "$ENV_FILE" ] && url="$(sed -n 's/^DATABASE_URL=//p' "$ENV_FILE" | tail -n 1)"
   re='^postgres(ql)?://([A-Za-z0-9_]+)(:[^@]*)?@(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?/([A-Za-z0-9_]+)([?].*)?$'
-  if [[ "$url" =~ $re ]]; then
-    db_user="${BASH_REMATCH[2]}"; db_name="${BASH_REMATCH[6]}"
-    # Names are [A-Za-z0-9_] only (checked above), so quoting them is safe.
-    sql="DROP DATABASE IF EXISTS \"$db_name\";
-DROP ROLE IF EXISTS \"$db_user\";"
-    if [ "$DRY_RUN" = 1 ]; then
-      run "drop database \"$db_name\" and role \"$db_user\"" sudo -u postgres psql -X -v ON_ERROR_STOP=1
-    else
-      info "dropping database \"$db_name\" and role \"$db_user\""
-      (cd /tmp && printf '%s\n' "$sql" | sudo -u postgres psql -X -q -v ON_ERROR_STOP=1 >/dev/null)
-    fi
-  elif [ -n "$url" ]; then
-    warn "DATABASE_URL is not a local database: left alone (drop it on its server if you want)"
-  else
+  m_name=""; m_user=""; m_role=0; m_db=0
+  if [ -f "$DB_MARKER" ]; then
+    m_name="$(sed -n 's/^DB_NAME=//p' "$DB_MARKER")"; m_user="$(sed -n 's/^DB_USER=//p' "$DB_MARKER")"
+    grep -qx 'CREATED_ROLE=1' "$DB_MARKER" && m_role=1
+    grep -qx 'CREATED_DB=1' "$DB_MARKER" && m_db=1
+  fi
+  if [ -z "$url" ]; then
     ok "no DATABASE_URL in .env"
+  elif ! [[ "$url" =~ $re ]]; then
+    warn "DATABASE_URL is not a local database: left alone (drop it on its server if you want)"
+  elif [ ! -f "$DB_MARKER" ]; then
+    warn "the database in .env was not created by install.sh (no $DB_MARKER): left alone"
+  elif [ "${BASH_REMATCH[6]}" != "$m_name" ] || [ "${BASH_REMATCH[2]}" != "$m_user" ]; then
+    warn ".env points at a different database than install.sh created ($m_name/$m_user): left alone"
+  elif [ "$m_role$m_db" = 00 ]; then
+    warn "role \"$m_user\" and database \"$m_name\" already existed before install.sh: left alone"
+  else
+    # Names are [A-Za-z0-9_] only (checked by the regex above), so quoting them is safe.
+    sql=""
+    [ "$m_db" = 1 ] && sql+="DROP DATABASE IF EXISTS \"$m_name\";"$'\n'
+    [ "$m_role" = 1 ] && sql+="DROP ROLE IF EXISTS \"$m_user\";"$'\n'
+    what="$([ "$m_db" = 1 ] && echo "database \"$m_name\"")$([ "$m_db$m_role" = 11 ] && echo " and ")$([ "$m_role" = 1 ] && echo "role \"$m_user\"")"
+    if [ "$DRY_RUN" = 1 ]; then
+      run "drop $what (created by install.sh)" sudo -u postgres psql -X -v ON_ERROR_STOP=1
+    else
+      info "dropping $what (created by install.sh)"
+      (cd /tmp && printf '%s' "$sql" | sudo -u postgres psql -X -q -v ON_ERROR_STOP=1 >/dev/null)
+    fi
   fi
   [ -e "$ENV_FILE" ] && run "delete $ENV_FILE" rm -f "$ENV_FILE"
   [ -e "$CONFIG_DIR" ] && run "delete $CONFIG_DIR" rm -rf "$CONFIG_DIR"
-  for d in "$HOME"/backups/pideck-dist-*; do
-    if [ -e "$d" ]; then run "delete $d" rm -rf "$d"; fi
-  done
+  if [ "$PURGE_BACKUPS" = 1 ]; then
+    for d in "$HOME"/backups/pideck-dist-*; do
+      if [ -e "$d" ]; then run "delete $d" rm -rf "$d"; fi
+    done
+  else
+    info "kept $HOME/backups/pideck-dist-* (use --purge-backups to delete them)"
+  fi
 fi
 
 step "Done"

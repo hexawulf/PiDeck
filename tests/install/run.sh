@@ -60,10 +60,13 @@ EOF
 #!/usr/bin/env bash
 echo "apt-get \$*" >> "$S/calls"
 EOF
+  # psql: record the SQL; answer the installer's "created_*" marker SELECTs
+  # unless the test says the role/db already exist ($S/pg_exists).
   stub psql <<EOF
 #!/usr/bin/env bash
 echo "psql \$*" >> "$S/calls"
-cat >> "$S/psql.sql"
+sql="\$(cat)"; printf '%s\n' "\$sql" >> "$S/psql.sql"
+if [ ! -e "$S/pg_exists" ] && grep -q "'created_role'" <<<"\$sql"; then echo created_role; echo created_db; fi
 EOF
   stub pg_lsclusters <<'EOF'
 #!/usr/bin/env bash
@@ -151,6 +154,7 @@ inst() { (cd "$APP" && env -i PATH="$W/bin:$PATH" HOME="$W/home" TMPDIR="$W/tmp"
   "$APP/scripts/install.sh" "$@" </dev/null > "$W/out" 2>&1); }
 uninst() { (cd "$APP" && env -i PATH="$W/bin:$PATH" HOME="$W/home" TMPDIR="$W/tmp" TERM=dumb \
   PIDECK_ETC_DIR="$W/etc" PIDECK_TEST_STATE="$W/state" FAKE_UID="${FAKE_UID:-1000}" \
+  PIDECK_PURGE_CONFIRM="${PIDECK_PURGE_CONFIRM:-}" \
   "$APP/scripts/uninstall.sh" "$@" </dev/null > "$W/out" 2>&1); }
 
 # Checksum of everything the installer could touch (checkout, $HOME, fake /etc, fake DB).
@@ -200,6 +204,7 @@ check ".env has the installer keys" grep -qE '^SESSION_SECRET=[0-9a-f]{64}$' "$A
 check ".env keeps the example as comments only" bash -c "! grep -q CHANGE_ME '$APP/.env' || ! grep -qE '^[A-Z_]+=.*CHANGE_ME' '$APP/.env'"
 check "DATABASE_URL points at the created role/db" grep -qE '^DATABASE_URL=postgresql://pideck:[0-9a-f]{48}@localhost:5432/pideck$' "$APP/.env"
 check "role + db created through sudo -u postgres psql" grep -q '^sudo -u postgres psql' "$W/state/calls"
+check "install-db marker records role+db as created (0600)" bash -c "test \"\$(stat -c %a '$W/home/.config/pideck/install-db')\" = 600 && grep -qx CREATED_ROLE=1 '$W/home/.config/pideck/install-db' && grep -qx CREATED_DB=1 '$W/home/.config/pideck/install-db'"
 check "schema pushed once" test "$(grep -c '^npx drizzle-kit push' "$W/state/calls")" = 1
 check "admin no longer on the seeded password" test "$(cat "$W/state/admin")" != default
 check "one pm2 app" test "$(grep -cx pideck "$W/state/pm2")" = 1
@@ -235,8 +240,24 @@ uninst --yes || bad "uninstall exit $?"
 check "uninstall: pm2 app and sudoers gone" bash -c "! grep -qx pideck '$W/state/pm2' && test ! -e '$W/etc/sudoers.d/pideck'"
 check "uninstall: .env and password kept" test -f "$APP/.env" -a -f "$W/home/.config/pideck/admin-password"
 check "uninstall: pm2 save --force (boot won't resurrect it)" grep -q '^pm2 save --force' "$W/state/calls"
-uninst --yes --purge || bad "purge exit $?"
-check "purge: .env, password dir gone; DB dropped" bash -c "test ! -e '$APP/.env' -a ! -e '$W/home/.config/pideck' && grep -q 'DROP DATABASE IF EXISTS \"pideck\"' '$W/state/psql.sql'"
+mkdir -p "$W/home/backups/pideck-dist-20260101-000000"
+uninst --yes --purge || bad "purge without confirmation exit $?"
+check "purge --yes alone does NOT purge (typed confirmation required)" bash -c "test -e '$APP/.env' && ! grep -q 'DROP ' '$W/state/psql.sql'"
+check "uninstall --purge-backups without --purge is refused" bash -c "! (cd '$APP' && env -i PATH='$W/bin:$PATH' HOME='$W/home' '$APP/scripts/uninstall.sh' --purge-backups </dev/null >/dev/null 2>&1)"
+PIDECK_PURGE_CONFIRM=purge uninst --yes --purge || bad "purge exit $?"
+check "purge: .env, password dir gone; created DB and role dropped" bash -c "test ! -e '$APP/.env' -a ! -e '$W/home/.config/pideck' && grep -q 'DROP DATABASE IF EXISTS \"pideck\"' '$W/state/psql.sql' && grep -q 'DROP ROLE IF EXISTS \"pideck\"' '$W/state/psql.sql'"
+check "purge keeps ~/backups/pideck-dist-* without --purge-backups" test -d "$W/home/backups/pideck-dist-20260101-000000"
+cleanup
+
+new_sandbox "purge never drops a database the installer didn't create"
+touch "$W/state/pg_exists"
+inst "${STD[@]}" || bad "install exit $?"
+check "marker says nothing was created" bash -c "grep -qx CREATED_ROLE=0 '$W/home/.config/pideck/install-db' && grep -qx CREATED_DB=0 '$W/home/.config/pideck/install-db'"
+: > "$W/state/psql.sql"
+mkdir -p "$W/home/backups/pideck-dist-20260101-000000"
+PIDECK_PURGE_CONFIRM=purge uninst --yes --purge --purge-backups || bad "purge exit $?"
+check "pre-existing role/db left alone" bash -c "! grep -q 'DROP ' '$W/state/psql.sql' && grep -q 'already existed before install.sh' '$W/out'"
+check "--purge-backups deletes ~/backups/pideck-dist-*" test ! -e "$W/home/backups/pideck-dist-20260101-000000"
 cleanup
 
 new_sandbox "existing .env is only appended to"
@@ -250,6 +271,9 @@ check "no role/db created (DATABASE_URL was set)" bash -c "! grep -q psql '$W/st
 check "timestamped .bak of the old .env" bash -c "cmp -s '$W/orig.env' $APP/.env.bak.*"
 check "one-line diff summary" grep -qE '\.env: \+[0-9]+ / -0 lines \(backup: ' "$W/out"
 check "health check used plain HTTP (LAN mode)" grep -q 'login round-trip' "$W/out"
+check "no install-db marker (installer created no database)" test ! -e "$W/home/.config/pideck/install-db"
+PIDECK_PURGE_CONFIRM=purge uninst --yes --purge || bad "purge exit $?"
+check "purge leaves an operator's own database alone" bash -c "! grep -q 'DROP ' '$W/state/psql.sql' 2>/dev/null && grep -q 'not created by install.sh' '$W/out'"
 cleanup
 
 new_sandbox "systemd service"

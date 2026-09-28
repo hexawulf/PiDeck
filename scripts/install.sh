@@ -200,6 +200,7 @@ RUN_USER="$(id -un)"
 ENV_FILE="$APP_DIR/.env"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pideck"
 PW_FILE="$CONFIG_DIR/admin-password"
+DB_MARKER="$CONFIG_DIR/install-db"
 
 printf '%sPiDeck installer%s — %s in %s as %s%s\n' "$B" "$RST" "$MODE" "$APP_DIR" "$RUN_USER" "$([ "$DRY_RUN" = 1 ] && echo " (dry run: nothing will change)")"
 info "log: $LOG"
@@ -381,8 +382,12 @@ database() {
   if [ "$DRY_RUN" = 1 ]; then pw="(generated)"; else pw="$(openssl rand -hex 24)"; fi
   # Idempotent: create the role/db if missing; (re)set the role password so
   # the new .env can connect. SQL goes in on stdin, never as arguments.
+  # The two marker SELECTs print which objects are about to be created, so
+  # uninstall --purge only ever drops what this installer made.
   local sql
   sql="$(cat <<SQL
+SELECT 'created_role' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$DB_USER');
+SELECT 'created_db' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '$DB_NAME');
 SELECT 'CREATE ROLE "$DB_USER" LOGIN' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$DB_USER')\\gexec
 ALTER ROLE "$DB_USER" WITH LOGIN PASSWORD '$pw';
 SELECT 'CREATE DATABASE "$DB_NAME" OWNER "$DB_USER"' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '$DB_NAME')\\gexec
@@ -390,11 +395,34 @@ SQL
 )"
   if [ "$DRY_RUN" = 1 ]; then
     dry "sudo -u postgres psql: create role \"$DB_USER\" and database \"$DB_NAME\" if missing, set a generated role password"
+    dry "record what was created in $DB_MARKER (uninstall --purge drops only that)"
   else
     info "creating role \"$DB_USER\" and database \"$DB_NAME\" if missing (password generated, not shown)"
-    (cd /tmp && printf '%s\n' "$sql" | sudo -u postgres psql -X -q -v ON_ERROR_STOP=1 >/dev/null)
+    local out
+    out="$(cd /tmp && printf '%s\n' "$sql" | sudo -u postgres psql -X -q -At -v ON_ERROR_STOP=1)"
+    record_db_created "$(grep -qx created_role <<<"$out" && echo 1 || echo 0)" \
+                      "$(grep -qx created_db <<<"$out" && echo 1 || echo 0)"
   fi
   DATABASE_URL_VALUE="postgresql://$DB_USER:$pw@localhost:5432/$DB_NAME"
+}
+
+# What this installer created (0600, outside the repo). Only these objects
+# are ever dropped by uninstall --purge; an existing role/db is never "ours".
+# A re-run never downgrades an earlier "created" to 0.
+record_db_created() {
+  local role="$1" db="$2" prev_role=0 prev_db=0
+  if [ -f "$DB_MARKER" ] && grep -qx "DB_NAME=$DB_NAME" "$DB_MARKER" && grep -qx "DB_USER=$DB_USER" "$DB_MARKER"; then
+    grep -qx 'CREATED_ROLE=1' "$DB_MARKER" && prev_role=1
+    grep -qx 'CREATED_DB=1' "$DB_MARKER" && prev_db=1
+  fi
+  [ "$prev_role" = 1 ] && role=1
+  [ "$prev_db" = 1 ] && db=1
+  install -d -m 700 "$CONFIG_DIR"
+  local tmp="$TMP_DIR/db-marker"
+  printf 'DB_NAME=%s\nDB_USER=%s\nCREATED_ROLE=%s\nCREATED_DB=%s\n' "$DB_NAME" "$DB_USER" "$role" "$db" > "$tmp"
+  install -m 600 "$tmp" "$DB_MARKER"
+  if [ "$role$db" = 00 ]; then warn "role and database already existed: uninstall --purge will leave them alone"
+  else ok "recorded in $DB_MARKER: created role=$role db=$db"; fi
 }
 
 helper() { DATABASE_URL="$(env_get DATABASE_URL)" node "$APP_DIR/scripts/install-helper.mjs" "$@"; }
