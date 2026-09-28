@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import type { ActiveAlert, SystemInfo } from "@shared/schema";
 import { SystemService } from "../services/system";
 
@@ -25,5 +25,16 @@ systemRouter.get("/system/alerts", (_req, res) => {
     res.json([] satisfies ActiveAlert[]);
   }
 });
+
+/** GET /api/reboot-check — shared by the hub (routes.ts) and the agent. */
+export async function rebootCheckHandler(_req: Request, res: Response) {
+  try {
+    const rebootRequired = await SystemService.checkRebootRequired();
+    res.json({ ok: true, rebootRequired, message: rebootRequired ? "System reboot required" : "System up to date" });
+  } catch (error) {
+    console.error("Reboot check error:", error);
+    res.json({ ok: false, rebootRequired: false, error: "Failed to check reboot status" });
+  }
+}
 
 export default systemRouter;

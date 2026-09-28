@@ -2,7 +2,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { Router } from "express";
-import pm2, { type ProcessDescription } from "pm2";
+import type { ProcessDescription } from "pm2";
 import type { PM2Process } from "@shared/schema";
 import { unavailable } from "../services/unavailable";
 
@@ -31,6 +31,9 @@ pm2Router.get("/pm2/processes", async (_req, res) => {
   if (!pm2DaemonRunning()) {
     return res.json(unavailable("not-installed", "pm2 isn't running on this host."));
   }
+  // Loaded on first use: the pm2 library is large (tens of MB resident), and
+  // hosts without a pm2 daemon — most agents — never need it.
+  const pm2 = (await import("pm2")).default;
   const processes: PM2Process[] = await new Promise((resolve) => {
     pm2.connect((connectError: Error | null) => {
       if (connectError) {

@@ -8,7 +8,7 @@ import { AuthService } from "./services/auth";
 import { SystemService } from "./services/system";
 
 import nvmeRouter from "./routes/nvme";
-import systemRouter from "./routes/system";
+import systemRouter, { rebootCheckHandler } from "./routes/system";
 import metricsRouter from "./routes/metrics";
 import networkRouter from "./routes/network";
 import dockerRouter from "./routes/docker";
@@ -239,15 +239,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // 409 without running anything when PIDECK_DISABLE_SYSTEM_UPDATE=1 (E2E builds).
   app.post("/api/system/update", createSystemUpdateHandler({ run: () => SystemService.updateSystem() }));
 
-  app.get("/api/reboot-check", async (_req, res) => {
-    try {
-      const rebootRequired = await SystemService.checkRebootRequired();
-      res.json({ ok: true, rebootRequired, message: rebootRequired ? "System reboot required" : "System up to date" });
-    } catch (error) {
-      console.error("Reboot check error:", error);
-      res.json({ ok: false, rebootRequired: false, error: "Failed to check reboot status" });
-    }
-  });
+  app.get("/api/reboot-check", rebootCheckHandler);
 
   // Docker container actions (listing handled by dockerRouter via Dockerode)
   app.post("/api/docker/containers/:id/restart", async (req, res) => {

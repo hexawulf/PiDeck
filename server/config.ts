@@ -132,3 +132,97 @@ export function trustProxy(env: NodeJS.ProcessEnv = process.env): boolean | numb
 export function trustCloudflare(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.PIDECK_CLOUDFLARE === "1";
 }
+
+// ── multi-host (docs/plans/multi-host.md) ───────────────────────────────
+
+/** PIDECK_MODE=agent: the read-only agent (server/agent.ts); anything else is the hub. */
+export const isAgentMode = (env: NodeJS.ProcessEnv = process.env) => env.PIDECK_MODE === "agent";
+
+export type AgentConfig = { port: number; bind: string; tokenSha256: string };
+
+/**
+ * Agent settings. Returns an error string instead of a config when the agent
+ * must not start (above all: no valid PIDECK_AGENT_TOKEN_SHA256).
+ */
+export function agentConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig | { error: string } {
+  const tokenSha256 = (env.PIDECK_AGENT_TOKEN_SHA256 || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(tokenSha256)) {
+    return { error: "PIDECK_AGENT_TOKEN_SHA256 must be the 64-hex-digit SHA-256 of the agent token (scripts/install.sh --agent sets it)" };
+  }
+  const portRaw = (env.PIDECK_AGENT_PORT || "5016").trim();
+  const port = Number(portRaw);
+  if (!/^\d+$/.test(portRaw) || port < 1 || port > 65535) return { error: `PIDECK_AGENT_PORT must be 1-65535 (got "${portRaw}")` };
+  const bind = (env.PIDECK_AGENT_BIND || "127.0.0.1").trim();
+  if (!/^([0-9.]+|[0-9a-f:]+|localhost)$/i.test(bind)) return { error: `PIDECK_AGENT_BIND must be an IP address (got "${bind}")` };
+  return { port, bind, tokenSha256 };
+}
+
+export type HostEntry = { id: string; label: string; url: string; token: string };
+
+/** PIDECK_HOST_TOKEN_<ID>: the id upper-cased, "-" → "_". */
+export const hostTokenKey = (id: string) => `PIDECK_HOST_TOKEN_${id.toUpperCase().replace(/-/g, "_")}`;
+
+const HOST_ID = /^[a-z0-9-]{1,32}$/;
+
+function pairs(value: string | undefined, name: string, warn: (m: string) => void): [string, string][] {
+  const out: [string, string][] = [];
+  for (const raw of (value || "").split(",")) {
+    const item = raw.trim();
+    if (!item) continue;
+    const eq = item.indexOf("=");
+    if (eq <= 0) {
+      warn(`[config] ${name}: ignoring "${item}" (expected id=value)`);
+      continue;
+    }
+    out.push([item.slice(0, eq).trim(), item.slice(eq + 1).trim()]);
+  }
+  return out;
+}
+
+/**
+ * The hub's remote hosts: PIDECK_HOSTS=id=url,… plus PIDECK_HOST_TOKEN_<ID>
+ * and optional PIDECK_HOST_LABELS=id=Label,…. Strict: ids are
+ * [a-z0-9-]{1,32} ("local" is the hub itself), URLs are plain
+ * http(s)://host[:port] (no credentials, path, query or fragment), a host
+ * without a usable token is skipped. Bad entries are skipped with a warning
+ * that never includes a token.
+ */
+export function parseHosts(
+  env: NodeJS.ProcessEnv = process.env,
+  warn: (msg: string) => void = (m) => console.warn(m),
+): HostEntry[] {
+  const hosts: HostEntry[] = [];
+  for (const [id, rawUrl] of pairs(env.PIDECK_HOSTS, "PIDECK_HOSTS", warn)) {
+    if (!HOST_ID.test(id) || id === "local") {
+      warn(`[config] PIDECK_HOSTS: ignoring host "${id.slice(0, 40)}" (id must be [a-z0-9-]{1,32}, not "local")`);
+      continue;
+    }
+    if (hosts.some((h) => h.id === id)) {
+      warn(`[config] PIDECK_HOSTS: ignoring duplicate host "${id}"`);
+      continue;
+    }
+    let url: URL;
+    try {
+      url = new URL(rawUrl);
+    } catch {
+      warn(`[config] PIDECK_HOSTS: ignoring host "${id}" (not a URL)`);
+      continue;
+    }
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.search || url.hash || !/^\/?$/.test(url.pathname) || rawUrl.includes("#") || rawUrl.includes("?")) {
+      warn(`[config] PIDECK_HOSTS: ignoring host "${id}" (URL must be http(s)://host[:port] with no path, credentials or query)`);
+      continue;
+    }
+    const token = (env[hostTokenKey(id)] || "").trim();
+    if (!/^[\x21-\x7e]{16,512}$/.test(token)) {
+      warn(`[config] PIDECK_HOSTS: ignoring host "${id}" (${hostTokenKey(id)} is missing or not a valid token)`);
+      continue;
+    }
+    hosts.push({ id, label: id, url: url.origin, token });
+  }
+  for (const [id, label] of pairs(env.PIDECK_HOST_LABELS, "PIDECK_HOST_LABELS", warn)) {
+    const host = hosts.find((h) => h.id === id);
+    if (!host) warn(`[config] PIDECK_HOST_LABELS: no host "${id.slice(0, 40)}"`);
+    else if (label) host.label = label.slice(0, 64);
+  }
+  return hosts;
+}

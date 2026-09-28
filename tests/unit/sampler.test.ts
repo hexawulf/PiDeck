@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // sampler.ts imports the DB; never touch a real one here.
-vi.mock("../../server/db", () => ({ db: { transaction: vi.fn(), insert: vi.fn(), delete: vi.fn() } }));
+vi.mock("../../server/db", () => {
+  const db = { transaction: vi.fn(), insert: vi.fn(), delete: vi.fn() };
+  return { getDb: () => db };
+});
 
 import { createSampler, createSampleTick, SAMPLE_INTERVAL_MS, samplerEnabled, startSampler } from "../../server/services/sampler";
 import { SystemService } from "../../server/services/system";

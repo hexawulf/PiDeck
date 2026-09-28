@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({ insert: vi.fn(), delete: vi.fn(), select: vi.fn(), transaction: vi.fn() }));
-vi.mock("../../server/db", () => ({ db }));
+vi.mock("../../server/db", () => ({ getDb: () => db }));
 
 import { createRateBaseline, SystemService } from "../../server/services/system";
 

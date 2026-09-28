@@ -15,9 +15,18 @@ import type {
   InsertHistoricalMetric,
   HistoricalMetric,
 } from "@shared/schema";
-import { historicalMetrics } from "@shared/schema";
-import { db } from '../db'; // Assuming db connection is exported from here
-import { sql } from "drizzle-orm";
+
+// History lives in Postgres, but only the hub touches it. Loading drizzle and
+// the schema on first use keeps them (~55 MB resident) out of agent mode,
+// which imports this service for the live metrics only.
+async function historyDb() {
+  const [{ getDb }, { historicalMetrics }, { sql }] = await Promise.all([
+    import("../db"),
+    import("@shared/schema"),
+    import("drizzle-orm"),
+  ]);
+  return { db: getDb(), historicalMetrics, sql };
+}
 
 
 const execAsync = promisify(exec);
@@ -261,18 +270,21 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       networkRx: Math.round(data.networkBandwidth?.rx ?? 0),
       networkTx: Math.round(data.networkBandwidth?.tx ?? 0),
     };
+    const { db, historicalMetrics } = await historyDb();
     await db.insert(historicalMetrics).values(metricRecord);
   }
 
   /** Drop history older than 24 hours (the window /api/system/history serves). */
   static async pruneHistory(): Promise<void> {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { db, historicalMetrics, sql } = await historyDb();
     await db.delete(historicalMetrics).where(sql`${historicalMetrics.timestamp} < ${twentyFourHoursAgo}`);
   }
 
   static async getHistoricalData(): Promise<HistoricalMetric[]> {
     try {
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { db, historicalMetrics, sql } = await historyDb();
       return await db.select().from(historicalMetrics)
         .where(sql`${historicalMetrics.timestamp} >= ${twentyFourHoursAgo}`)
         .orderBy(historicalMetrics.timestamp);

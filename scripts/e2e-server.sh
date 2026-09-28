@@ -31,7 +31,10 @@ chmod 700 "$ROOT/.e2e"
 
 cd "$ROOT"
 npx vite build --outDir "$OUT/public" --emptyOutDir >>"$LOG" 2>&1
-npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir="$OUT" >>"$LOG" 2>&1
+# --splitting: the hub and the agent (PIDECK_MODE=agent) load separate chunks,
+# so an agent never loads the hub's packages. Stale chunks are removed first.
+rm -f "$OUT"/*.js
+npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --splitting --outdir="$OUT" >>"$LOG" 2>&1
 
 echo "serving dist-dev on :$PORT (log: $LOG)"
 exec env NODE_ENV=production CSP_ENFORCE=true PIDECK_SAMPLER=off PIDECK_DISABLE_SYSTEM_UPDATE=1 PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \

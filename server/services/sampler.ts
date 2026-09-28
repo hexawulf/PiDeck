@@ -14,7 +14,7 @@
  *  logged once per distinct error and never stops the timer.
  */
 import { sql } from "drizzle-orm";
-import { db } from "../db";
+import { getDb } from "../db";
 import { createRateBaseline, SystemService } from "./system";
 
 export const SAMPLE_INTERVAL_MS = 60_000;
@@ -94,7 +94,7 @@ export function samplerEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
  * rollback, so a crashed tick can't leave it held. Only one instance samples.
  */
 export async function withAdvisoryLock(fn: () => Promise<void>): Promise<boolean> {
-  return db.transaction(async (tx) => {
+  return getDb().transaction(async (tx) => {
     const rows = (await tx.execute(
       sql`select pg_try_advisory_xact_lock(${SAMPLER_LOCK_KEY}) as locked`,
     )) as unknown as { locked: boolean }[];
