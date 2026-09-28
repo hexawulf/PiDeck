@@ -22,6 +22,11 @@ npm run build            # Builds client + server bundle
 # Type checking (REQUIRED before PR)
 npm run check
 
+# Installer (production install on a host): see docs/INSTALL.md
+./scripts/install.sh --dry-run
+npm run check:shell      # shellcheck scripts/*.sh tests/install/*.sh
+npm run test:install     # installer tests, no root (PATH stubs)
+
 # Database migrations
 npm run db:push
 ```
@@ -49,6 +54,9 @@ npm run db:push
 - **Admin password**: `PIDECK_PASSWORD` or `ADMIN_PASSWORD` or `APP_PASSWORD` env vars
 - **Database**: `DATABASE_URL` for PostgreSQL connection
 - **Update guard**: `PIDECK_DISABLE_SYSTEM_UPDATE=1` makes `POST /api/system/update` a 409 no-op (set for E2E)
+- **Transport**: `PIDECK_INSECURE_HTTP=1` drops the cookie's `Secure` flag (LAN HTTP, `install.sh --lan-http`); `TRUST_PROXY` (default 1, `false` = no proxy); `PIDECK_CORS_ORIGIN` (default: no CORS); `COOKIE_DOMAIN` (default host-only)
+- **Host logs**: `PIDECK_HOST_LOGS=[id:]Label=/abs/path,…` adds Logs-tab files (parsed in `server/config.ts`); no host paths are hard-coded
+- **Every key** is documented in `.env.example`
 - **Sampler**: `PIDECK_SAMPLER=off` disables the 60s history/alert sampler (see [server/AGENTS.md](server/AGENTS.md)); it is also off when `NODE_ENV=test`
 
 ## JIT Index (what to open, not what to paste)
@@ -93,6 +101,7 @@ Before creating a PR, verify:
 - [ ] No secrets/credentials in code or logs
 - [ ] Tested locally with `npm run dev`
 - [ ] API changes have corresponding type updates in `shared/schema.ts`
+- [ ] Touched `scripts/*.sh` or `deploy/`? `npm run check:shell` and `npm run test:install` pass
 
 ## Architecture Overview
 ```

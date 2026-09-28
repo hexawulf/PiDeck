@@ -84,45 +84,37 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 
 ## 🔧 Quick Start
 
-### Prerequisites
-- Node.js 18+ and npm
-- Git
-- Linux-based system (Ubuntu/Debian recommended)
-- Optional: Docker and PM2 for full functionality
+### Install (Ubuntu / Debian, Raspberry Pi arm64 or amd64)
 
-### Installation
+Needs Node.js 22 and a normal (non-root) user; the script offers PostgreSQL
+and the optional tools via apt.
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/hexawulf/PiDeck.git
-   cd PiDeck
-   ```
+```bash
+git clone https://github.com/hexawulf/PiDeck.git && cd PiDeck
+./scripts/install.sh --dry-run   # shows every step, changes nothing
+./scripts/install.sh             # installs; prints the URL and a one-time admin password
+```
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+HTTPS via nginx/Caddy is the default; `--lan-http` allows plain HTTP on a
+trusted LAN. Flags, sudoers, updates (`--update`), uninstall and
+troubleshooting: **[docs/INSTALL.md](./docs/INSTALL.md)**.
 
-3. **Configure the environment**
-   ```bash
-   cp .env.example .env
-   nano .env   # set SESSION_SECRET and DATABASE_URL
-   ```
+### Development
 
-4. **Start development server**
-   ```bash
-   npm run dev
-   ```
-
-5. **Access the dashboard**
-   - Open http://localhost:5006
-   - Login with password: `admin` (change it right away under **Settings**)
+```bash
+npm ci
+cp .env.example .env && nano .env   # DATABASE_URL, SESSION_SECRET
+npm run db:push
+npm run dev                         # http://localhost:5006, log in as admin / admin
+```
 
 ### Running tests
 ```bash
 npm run check          # TypeScript
 npm test               # unit tests (Vitest)
 npm run check:theme    # theme-token lint
+npm run check:shell    # shellcheck (installer scripts)
+npm run test:install   # installer tests (no root needed)
 npx playwright install chromium
 npm run test:e2e       # E2E on a separate build at :5017, never the prod dist/
 ```
@@ -130,9 +122,9 @@ npm run test:e2e       # E2E on a separate build at :5017, never the prod dist/
 ## 📖 Usage
 
 ### Initial Login
-- Default password: `admin`
+- Installed with `scripts/install.sh`: the admin password it printed once (also in `~/.config/pideck/admin-password`, mode 0600)
+- Installed by hand: `admin` (a banner reminds you to change it in **Settings**)
 - Sessions last 24 hours
-- Secure localhost-only access by default
 
 ### Navigation
 - **Dashboard** (`/dashboard`): System overview, history charts and quick actions
@@ -158,7 +150,7 @@ Single-key shortcuts are ignored while typing or when a dialog is open.
 - bcrypt password hashing
 - Session-based authentication
 - HTTPS-ready configuration
-- Localhost/LAN access restriction
+- Secure (HTTPS-only) session cookie in production; plain LAN HTTP only with `--lan-http`
 
 ## 🔐 Security Notes
 
@@ -168,25 +160,16 @@ Single-key shortcuts are ignored while typing or when a dialog is open.
     - The `.env` file is included in `.gitignore` and should never be committed to the repository.
 - **Command Execution**: The application uses `child_process` to execute certain system commands for monitoring and management. This functionality has been reviewed to prevent command injection vulnerabilities (e.g., by validating inputs for PM2 process names and ensuring only predefined cron jobs can be executed).
 - **Network Access**: By default, the application server binds to `0.0.0.0`, making it accessible on your local network. Configure firewall rules (e.g., `ufw`) to restrict access as needed, especially if the device is connected to a public network.
-- **HTTPS**: For production deployments, always use a reverse proxy like NGINX or Caddy to enable HTTPS with valid SSL certificates. This encrypts traffic between clients and the server. See `docs/nginx/pideck.piapps.dev.conf` for an example NGINX configuration.
+- **HTTPS**: For production deployments, always use a reverse proxy like NGINX or Caddy to enable HTTPS with valid SSL certificates. This encrypts traffic between clients and the server. See `deploy/nginx/pideck.conf.example` and [docs/INSTALL.md](./docs/INSTALL.md#https-recommended-or-plain-lan-http).
 - **Session Security**: Sessions are configured to be HTTP-only (reducing XSS risk) and use `SameSite=Lax` cookies. Ensure your `SESSION_SECRET` is strong and unique. Sessions expire after 24 hours of inactivity.
 - **Dependencies**: Regularly update dependencies (`npm update`) and audit them (`npm audit`) to patch known vulnerabilities. As of 2.1.1, `npm audit --omit=dev` reports no known vulnerabilities; ongoing vigilance is still required.
 
 ## 🚀 Production Deployment
 
-For production deployment instructions, see [docs/INSTALL.md](./docs/INSTALL.md)
-
-### Quick Production Setup
-```bash
-# Build for production
-npm run build
-
-# Start with PM2
-pm2 start dist/index.js --name pideck
-
-# Setup NGINX reverse proxy (optional)
-# See docs/INSTALL.md for full configuration
-```
+`./scripts/install.sh` sets up the database, `.env`, the build and a pm2 or
+systemd service, and health-checks the result. See
+[docs/INSTALL.md](./docs/INSTALL.md) for HTTPS with nginx
+(`deploy/nginx/pideck.conf.example`) or Caddy.
 
 ## 🔄 Live Demo
 
@@ -194,7 +177,7 @@ pm2 start dist/index.js --name pideck
 
 ## 📚 Documentation
 
-- [Installation Guide](./docs/INSTALL.md) - Detailed setup instructions
+- [Installation Guide](./docs/INSTALL.md) - One-command install, HTTPS, sudoers, update/uninstall, troubleshooting
 - [API Documentation](./docs/API.md) - Backend API reference
 - [Contributing Guide](./CONTRIBUTING.md) - How to contribute
 - [Changelog](./CHANGELOG.md) - Version history

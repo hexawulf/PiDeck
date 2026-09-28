@@ -1,478 +1,353 @@
-# PiDeck Installation Guide
+# Installing PiDeck
 
-Complete installation guide for setting up PiDeck on Linux systems, including development and production configurations.
+PiDeck installs with one script on Ubuntu or Debian, on a Raspberry Pi
+(arm64) or a regular amd64 server. The script is idempotent: running it again
+only fills in what is missing, and `--update` pulls, rebuilds and restarts.
 
-## Table of Contents
-
-- [Prerequisites](#prerequisites)
-- [Development Setup](#development-setup)
-- [Production Deployment](#production-deployment)
-- [NGINX Configuration](#nginx-configuration)
-- [Systemd Service](#systemd-service)
+- [Quick start](#quick-start)
+- [Requirements](#requirements)
+- [What the installer does](#what-the-installer-does)
+- [Flags](#flags)
+- [HTTPS (recommended) or plain LAN HTTP](#https-recommended-or-plain-lan-http)
+- [The admin password](#the-admin-password)
+- [Sudoers: NVMe, firewall, system update](#sudoers-nvme-firewall-system-update)
+- [Configuration (.env)](#configuration-env)
+- [Update, rollback, uninstall](#update-rollback-uninstall)
 - [Troubleshooting](#troubleshooting)
+- [Installing by hand](#installing-by-hand)
 
-## Prerequisites
+## Quick start
 
-### System Requirements
-- **Operating System**: Ubuntu 20.04+ / Debian 11+ / Raspberry Pi OS
-- **Memory**: Minimum 1GB RAM (2GB+ recommended)
-- **Storage**: 500MB free disk space
-- **Network**: Internet connection for package installation
+Run it as the normal user who will own PiDeck, not as root. The script uses
+`sudo` only for the steps it lists before it starts.
 
-### Required Software
-
-#### Node.js and npm
 ```bash
-# Update package list
-sudo apt update
-
-# Install Node.js 18+
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Verify installation
-node --version  # Should show v18.x.x or higher
-npm --version   # Should show 8.x.x or higher
-```
-
-#### Git
-```bash
-sudo apt install git -y
-```
-
-#### Optional Dependencies
-
-##### Docker (for container management)
-```bash
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-
-# Add user to docker group
-sudo usermod -aG docker $USER
-
-# Start Docker service
-sudo systemctl enable docker
-sudo systemctl start docker
-```
-
-##### PM2 (for process management)
-```bash
-# Install PM2 globally
-sudo npm install -g pm2
-
-# Setup PM2 startup script
-pm2 startup
-sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u $USER --hp $HOME
-```
-
-## Development Setup
-
-### 1. Clone Repository
-```bash
-# Clone the repository
 git clone https://github.com/hexawulf/PiDeck.git
 cd PiDeck
-
-# Or if you're starting fresh
-mkdir PiDeck && cd PiDeck
-git init
+./scripts/install.sh --dry-run    # 1. read what it would do; changes nothing
+./scripts/install.sh              # 2. install (asks before each choice)
 ```
 
-### 2. Install Dependencies
-```bash
-# Install all dependencies
-npm install
+At the end it prints the URL, the service status command and the log paths.
+If it generated the admin password, it shows that password **once**. The
+password is also stored in `~/.config/pideck/admin-password` (mode 0600).
 
-# Install development dependencies
-npm install --save-dev
+Unattended variants:
+
+```bash
+./scripts/install.sh --yes                      # HTTPS via your reverse proxy (see below)
+./scripts/install.sh --yes --lan-http           # plain http://<ip>:5006 on a trusted LAN
+./scripts/install.sh --yes --sudoers            # also enable NVMe / firewall / update widgets
 ```
 
-### 3. Environment Configuration
+Every run is logged to `~/logs/pideck-install-YYYYmmdd-HHMMSS.log`. A dry run
+logs to `$TMPDIR` instead, so it leaves `$HOME` untouched. Secrets (the
+session secret, database password and admin password) never appear in the
+log or on the terminal. The one exception is the generated admin password,
+shown once on the terminal only.
 
-Create environment file (optional):
+## Requirements
+
+| What | Needed | Notes |
+|---|---|---|
+| Ubuntu 22.04+ / Debian 12+ | yes | arm64 (Pi 4/5) or amd64. Other distros: package names may differ. |
+| Node.js **22.x** + npm | yes | Not installed by the script. The preflight prints the NodeSource keyring steps (nothing piped into a shell). |
+| git, curl, openssl | yes | curl/openssl are offered via apt if missing. |
+| PostgreSQL 14+ | yes | Local `postgresql` is offered via apt; or pass `--database-url`. |
+| pm2 | optional | Used when installed globally; otherwise systemd. The repo also ships pm2 (`--service pm2`). |
+| lm-sensors | optional | CPU temperature on non-Pi hosts. |
+| smartmontools + an NVMe drive | optional | NVMe Health (needs `--sudoers`). |
+| ufw | optional | Firewall widget (needs `--sudoers`). |
+| Docker | optional | Apps › Docker. The user must be in the `docker` group. |
+| vcgencmd | optional | Power Status, Raspberry Pi only. |
+
+Missing optional pieces don't break anything: their widgets show a calm
+**"Not available on this host"** state instead of an error.
+
+## What the installer does
+
+1. **Preflight** (read-only): a table of what is found and missing.
+2. **Plan**: lists every step that will use `sudo`, then asks to continue.
+3. **Packages**: `apt-get install` of missing distro packages (postgresql,
+   lm-sensors, smartmontools, curl, openssl). `--no-apt` skips this step.
+4. **Database**: creates the `pideck` role and database if missing
+   (`sudo -u postgres psql`, SQL on stdin), with a generated password. With
+   `--database-url`, or when `.env` already has `DATABASE_URL`, nothing is
+   created.
+5. **.env**: created from `.env.example` if absent (mode 0600). Later runs
+   only **append missing keys** and never change a value you set. Whenever
+   the file changes, a timestamped `.env.bak.<ts>` is kept and a one-line
+   `+added / -removed` summary is printed.
+6. **Dependencies**: `npm ci`.
+7. **Schema**: only when the PiDeck tables are missing (a fresh database),
+   `drizzle-kit push --force` runs non-interactively. Existing databases are
+   never touched.
+8. **Admin password**: see [below](#the-admin-password).
+9. **Build**: `npm run build`.
+10. **Service**: pm2 (`pm2 start ecosystem.config.cjs`, `pm2 save`) or
+    systemd (unit from `deploy/systemd/pideck.service.template`, checked
+    with `systemd-analyze verify`, installed with `install -m 0644`). Re-runs
+    restart the existing instance. The script refuses to start a second
+    instance under the other service manager.
+11. **Sudoers** (opt-in `--sudoers`): see [below](#sudoers-nvme-firewall-system-update).
+12. **Health check**: polls `/healthz`, then does a real login round-trip
+    (`POST /api/auth/login` → `GET /api/auth/me` returns authenticated).
+
+System files are written with `install -m` from a validated temp file, never
+with `tee` or `>` redirects. An existing file that would change is first
+backed up to `<file>.bak.<timestamp>`.
+
+## Flags
+
+| Flag | Env | Meaning |
+|---|---|---|
+| `--dry-run` | | Print every action, change nothing. Start here. |
+| `--yes` | `PIDECK_YES=1` | Non-interactive: accept defaults, no prompts. |
+| `--update` | | `git pull --ff-only`, `npm ci`, build, restart, health check. |
+| `--port N` | `PIDECK_PORT` | Listen port (default 5006, or `PORT` from `.env`). |
+| `--database-url URL` | `PIDECK_DATABASE_URL` | Use this PostgreSQL. Prefer the env form, which keeps the URL out of the process list. |
+| `--no-apt` | `PIDECK_NO_APT=1` | Don't install distro packages. |
+| `--service pm2\|systemd\|none` | `PIDECK_SERVICE` | Default: the existing instance, else pm2 if installed globally, else systemd. |
+| `--sudoers` | `PIDECK_SUDOERS=1` | Install `/etc/sudoers.d/pideck`. |
+| `--nvme-device /dev/nvmeX` | `PIDECK_NVME_DEVICE` | NVMe device for the smartctl rule and widget (default: first found). |
+| `--lan-http` | `PIDECK_LAN_HTTP=1` | Allow login over plain HTTP. Read the [risks](#plain-lan-http---lan-http) first. |
+| `--admin-password-file F` | `PIDECK_ADMIN_PASSWORD_FILE` | Use the password in file F (mode 0600). |
+| `--generate-password` | | Generate the admin password (the default with `--yes`). |
+| `--reset-password` | | Replace the admin password even if it was changed in Settings. |
+| `--public-url URL` | `PIDECK_PUBLIC_URL` | URL shown in the final message. |
+| `--skip-health` | | Skip the health check. |
+| | `PIDECK_DB_NAME`, `PIDECK_DB_USER` | Local database and role names (default `pideck`). |
+| | `NO_COLOR=1` | No colours (also automatic when output isn't a terminal). |
+
+## HTTPS (recommended) or plain LAN HTTP
+
+In production (`NODE_ENV=production`) the session cookie is `Secure`, so
+browsers only send it over HTTPS. The default and recommended setup puts
+PiDeck behind a TLS reverse proxy on the same host. The installer **never
+edits your web server**. It leaves PiDeck on `127.0.0.1:PORT` and you add the
+proxy yourself.
+
+### nginx
+
+`deploy/nginx/pideck.conf.example` is a complete site (HTTP→HTTPS redirect,
+TLS, `X-Forwarded-Proto`, no buffering for live log tails):
+
 ```bash
-# Create .env file
-cat > .env << EOF
-NODE_ENV=development
-PORT=5006
-SESSION_SECRET=your-secure-session-secret-here
-EOF
-```
-
-### 4. Create Log Directory
-```bash
-# Create logs directory
-sudo mkdir -p /home/zk/logs
-sudo chown $USER:$USER /home/zk/logs
-
-# Create sample log files for testing
-echo "Sample log entry $(date)" > /home/zk/logs/sample.log
-echo "Another log entry $(date)" > /home/zk/logs/app.log
-```
-
-### 5. Start Development Server
-```bash
-# Start the development server
-npm run dev
-
-# The application will be available at:
-# http://localhost:5006
-```
-
-### 6. Access the Dashboard
-1. Open your browser to `http://localhost:5006`
-2. Login with password: `admin`
-3. Navigate through the different sections
-
-## Production Deployment
-
-### 1. Prepare Production Environment
-
-#### Create Dedicated User
-```bash
-# Create pideck user
-sudo useradd -m -s /bin/bash pideck
-sudo mkdir -p /home/pideck/logs
-sudo chown pideck:pideck /home/pideck/logs
-```
-
-#### Setup Application Directory
-```bash
-# Switch to pideck user
-sudo su - pideck
-
-# Clone repository
-git clone https://github.com/hexawulf/PiDeck.git
-cd PiDeck
-```
-
-### 2. Install Dependencies and Build
-```bash
-# Install production dependencies only
-npm ci --only=production
-
-# Build the application
-npm run build
-```
-
-### 3. Environment Configuration
-```bash
-# Create production environment file
-cat > .env << EOF
-NODE_ENV=production
-PORT=5006
-SESSION_SECRET=$(openssl rand -base64 32)
-EOF
-
-# Secure the environment file
-chmod 600 .env
-```
-
-### 4. Start with PM2
-```bash
-# Start the application with PM2
-pm2 start dist/index.js --name pideck --env production
-
-# Save PM2 configuration
-pm2 save
-
-# Check status
-pm2 status
-pm2 logs pideck
-```
-
-### 5. Setup PM2 Auto-restart
-```bash
-# Generate startup script
-pm2 startup
-
-# Follow the instructions shown by the command above
-# It will show you a command to run with sudo
-```
-
-## NGINX Configuration
-
-### 1. Install NGINX
-```bash
-sudo apt update
-sudo apt install nginx -y
-```
-
-### 2. Create Site Configuration
-```bash
-# Create NGINX configuration
-sudo tee /etc/nginx/sites-available/pideck << EOF
-server {
-    listen 80;
-    server_name your-domain.com;  # Replace with your domain
-
-    # Security headers
-    add_header X-Frame-Options DENY;
-    add_header X-Content-Type-Options nosniff;
-    add_header X-XSS-Protection "1; mode=block";
-
-    # Rate limiting
-    location / {
-        proxy_pass http://localhost:5006;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-        
-        # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-
-    # Serve static files directly
-    location /static/ {
-        alias /home/pideck/PiDeck/dist/public/;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-}
-EOF
-```
-
-### 3. Enable Site and SSL
-```bash
-# Enable the site
+sudo cp deploy/nginx/pideck.conf.example /etc/nginx/sites-available/pideck
+sudoedit /etc/nginx/sites-available/pideck        # server_name, certificate paths, port
 sudo ln -s /etc/nginx/sites-available/pideck /etc/nginx/sites-enabled/
-sudo rm /etc/nginx/sites-enabled/default
-
-# Test configuration
-sudo nginx -t
-
-# Restart NGINX
-sudo systemctl restart nginx
-
-# Optional: Setup SSL with Let's Encrypt
-sudo apt install certbot python3-certbot-nginx -y
-sudo certbot --nginx -d your-domain.com
+sudo certbot --nginx -d pideck.example.com         # or your own certificates
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-## Systemd Service
+### Caddy
 
-### 1. Create Systemd Service File
+Caddy gets certificates automatically:
+
+```
+pideck.example.com {
+    reverse_proxy 127.0.0.1:5006
+}
+```
+
+PiDeck trusts one proxy hop by default (`TRUST_PROXY` unset = 1), which is
+right for both examples.
+
+### Plain LAN HTTP (`--lan-http`)
+
+For a Pi on a home network without a domain, `--lan-http` sets
+`PIDECK_INSECURE_HTTP=1` (the session cookie is sent without `Secure`) and
+`TRUST_PROXY=false` (nothing sits in front of PiDeck, so client
+`X-Forwarded-*` headers are ignored). You then open `http://<pi-ip>:5006`.
+
+**The risk:** the password at login and the session cookie afterwards
+travel unencrypted. Anyone who can see the traffic can use them: someone on
+the same Wi-Fi, a compromised device on the LAN, or any hop if the port is
+ever forwarded to the internet. With that session they can read logs and
+run the actions PiDeck offers. Use it only on a network you trust, never
+forward the port, and prefer HTTPS when you can. In this mode the UI shows
+a warning banner, and the login page explains the situation.
+
+### CORS and cookie domain
+
+The UI is served from the same origin as the API, so no CORS headers are
+sent by default. To let another origin call the API with credentials, set
+`PIDECK_CORS_ORIGIN=https://a.example,https://b.example`. The session cookie
+is host-only by default. Set `COOKIE_DOMAIN` only if you really need it
+shared across subdomains.
+
+## The admin password
+
+PiDeck has one account, `admin`, whose bcrypt hash lives in the database.
+A fresh database is seeded with the password `admin`. The installer
+replaces that seed:
+
+- **Interactive:** asks whether to generate a strong password or lets you
+  type one (same rules as Settings: 8+ characters, upper, lower, digit,
+  special).
+- **`--yes`:** generates one. It is shown once, at the end.
+- **`--admin-password-file F`:** uses your file.
+
+The password is kept in `~/.config/pideck/admin-password` (0600, directory
+0700). The file lives outside the repository and is used by the health
+check's login round-trip.
+
+**Changing it later:** use **Settings › Change password** in the UI. That
+updates the database, so the file becomes stale. Re-runs notice this
+("changed in the UI — keeping it"), leave your password alone and skip the
+login round-trip. To make the installer set a new one (for example, if you
+forgot it), run `./scripts/install.sh --reset-password`.
+
+**Database password vs admin password:** these are unrelated. The database
+password is generated for the `pideck` PostgreSQL role, lives only in
+`DATABASE_URL` in `.env`, and you never type it. The admin password is what
+you type on the login page.
+
+`APP_PASSWORD` / `APP_PASSWORD_FILE` in `.env` add a *second* password that
+is always accepted and can't be changed from Settings. It is useful for
+recovery, but the installer doesn't use it.
+
+## Sudoers: NVMe, firewall, system update
+
+Three features need root: **NVMe Health** (`smartctl`), **Firewall**
+(`ufw status`) and **Quick Actions › Update System** (`apt-get`). PiDeck
+runs them as `sudo -n …`, which never prompts. Without a rule, those
+widgets show "Not available on this host — needs a sudoers rule".
+
+`--sudoers` installs `/etc/sudoers.d/pideck` from
+`deploy/sudoers.d/pideck.template`, granting exactly these commands (with
+their full paths), for your user only:
+
+```
+<you> ALL=(root) NOPASSWD: /usr/sbin/smartctl -a /dev/nvme0      # only if an NVMe device and smartctl exist
+<you> ALL=(root) NOPASSWD: /usr/sbin/ufw status verbose           # only if ufw is installed
+<you> ALL=(root) NOPASSWD: /usr/bin/apt-get update
+<you> ALL=(root) NOPASSWD: /usr/bin/apt-get upgrade -y
+```
+
+The file is checked with `visudo -cf` before it is installed (mode 0440,
+owned by root). Re-run with `--sudoers` after adding an NVMe drive or ufw.
+Use `--nvme-device /dev/nvme1` to pick another drive. The Update System
+button always asks for confirmation in the UI.
+
+## Configuration (.env)
+
+`.env.example` lists and explains every key. The ones you are most likely
+to touch:
+
+| Key | Default | Purpose |
+|---|---|---|
+| `PORT` | 5006 | Listen port. |
+| `CSP_ENFORCE` | (unset = Report-Only) | `true` enforces the Content-Security-Policy. The installer sets it. |
+| `PIDECK_INSECURE_HTTP` | unset | `1` = LAN HTTP mode (see above). |
+| `TRUST_PROXY` | 1 | `false` when there is no reverse proxy. |
+| `PIDECK_CORS_ORIGIN` | unset | Extra allowed origins. |
+| `COOKIE_DOMAIN` | unset (host-only) | Session cookie domain. |
+| `PIDECK_LOGS_DIR` | `~/logs` | Project logs shown in the Logs tab. |
+| `PM2_LOGS_DIR` | `~/.pm2/logs` | pm2 logs. |
+| `PIDECK_HOST_LOGS` | unset | Extra log files for the Logs tab, see below. |
+| `PIDECK_NVME_DEVICE` | first `/dev/nvme*` | NVMe Health device. |
+| `PIDECK_SAMPLER` | on | `off` disables the 60 s history/alert sampler. |
+
+`PIDECK_HOST_LOGS` is a comma-separated list of `[id:]Label=/absolute/path`
+entries. The optional `id:` keeps pins and "last opened" stable if you
+rename the label. Files that don't exist are hidden. The nginx access/error
+logs and PiDeck's own pm2 logs are always offered.
+
+```
+PIDECK_HOST_LOGS=myapp_out:My App Output=/var/log/myapp/out.log,myapp_err:My App Error=/var/log/myapp/error.log
+```
+
+After editing `.env`, restart PiDeck (`pm2 restart pideck` or
+`sudo systemctl restart pideck`): the app reads `.env` at start.
+
+## Update, rollback, uninstall
+
+**Update:**
+
 ```bash
-sudo tee /etc/systemd/system/pideck.service << EOF
-[Unit]
-Description=PiDeck Admin Dashboard
-After=network.target
-
-[Service]
-Type=simple
-User=pideck
-WorkingDirectory=/home/pideck/PiDeck
-Environment=NODE_ENV=production
-Environment=PORT=5006
-ExecStart=/usr/bin/node dist/index.js
-Restart=always
-RestartSec=10
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier=pideck
-
-[Install]
-WantedBy=multi-user.target
-EOF
+./scripts/install.sh --update --dry-run
+./scripts/install.sh --update
 ```
 
-### 2. Enable and Start Service
+The update refuses to run on a checkout with local changes. It copies
+`dist/` to `~/backups/pideck-dist-<timestamp>`, then runs
+`git pull --ff-only`, `npm ci` and the build. After that it restarts the
+service, runs the health check and prints the exact rollback command, like:
+
 ```bash
-# Reload systemd
-sudo systemctl daemon-reload
-
-# Enable service
-sudo systemctl enable pideck
-
-# Start service
-sudo systemctl start pideck
-
-# Check status
-sudo systemctl status pideck
-
-# View logs
-sudo journalctl -u pideck -f
+cd ~/PiDeck && git reset --keep <previous> && npm ci && rm -rf dist \
+  && cp -a ~/backups/pideck-dist-<ts>/dist dist && pm2 restart pideck
 ```
 
-## Firewall Configuration
+**Uninstall:**
 
-### UFW (Ubuntu Firewall)
 ```bash
-# Allow SSH (important!)
-sudo ufw allow ssh
-
-# Allow HTTP and HTTPS
-sudo ufw allow 80
-sudo ufw allow 443
-
-# Enable firewall
-sudo ufw enable
-
-# Check status
-sudo ufw status
+./scripts/uninstall.sh --dry-run
+./scripts/uninstall.sh            # remove the pm2 app / systemd unit and the sudoers file
+./scripts/uninstall.sh --purge    # also drop the local DB + role, delete .env, the password file, dist backups
 ```
 
-## Backup and Maintenance
-
-### 1. Database Backup Script
-```bash
-# Create backup script
-sudo tee /usr/local/bin/pideck-backup.sh << EOF
-#!/bin/bash
-BACKUP_DIR="/backup/pideck"
-DATE=$(date +%Y%m%d_%H%M%S)
-
-mkdir -p \$BACKUP_DIR
-
-# Backup configuration
-tar -czf \$BACKUP_DIR/pideck_config_\$DATE.tar.gz /home/pideck/PiDeck/.env
-
-# Backup logs
-tar -czf \$BACKUP_DIR/pideck_logs_\$DATE.tar.gz /home/pideck/logs/
-
-# Keep only last 7 days of backups
-find \$BACKUP_DIR -name "pideck_*" -mtime +7 -delete
-
-echo "Backup completed: \$DATE"
-EOF
-
-# Make executable
-sudo chmod +x /usr/local/bin/pideck-backup.sh
-```
-
-### 2. Setup Cron Job for Backups
-```bash
-# Add to crontab
-(crontab -l 2>/dev/null; echo "0 2 * * * /usr/local/bin/pideck-backup.sh") | crontab -
-```
+A plain uninstall keeps your data (database, `.env`, password file and
+backups). `--purge` asks you to type `purge`. It only drops a database on
+`localhost`; a remote `DATABASE_URL` is left alone. The checkout itself is
+never deleted.
 
 ## Troubleshooting
 
-### Common Issues
+**Login "works" but you land back on the login page.** The session cookie
+is `Secure` and you are on plain `http://`, so the browser drops it. The
+login page warns about this. Fix it with HTTPS via a proxy (see above), or
+on a trusted LAN re-run with `--lan-http`. Behind a proxy, check that it
+sends `X-Forwarded-Proto` and that `TRUST_PROXY` isn't `false`.
 
-#### 1. Port 5006 Already in Use
+**`password authentication failed for user "pideck"`.** `DATABASE_URL`
+doesn't match the role's password, for example after restoring an old
+`.env`. Either fix the URL, or remove the `DATABASE_URL` line from `.env`
+and re-run the installer: it resets the role's password and writes a new
+URL. With `--database-url`, check the URL with
+`psql "$URL" -c 'select 1'`.
+
+**PiDeck doesn't come back after a reboot (pm2).** `pm2 save` stores the
+process list, but pm2 itself must be started at boot. Run `pm2 startup`
+once and run the `sudo …` line it prints. The installer prints this
+reminder.
+
+**`EADDRINUSE` / health check times out.** Another process has the port:
+`sudo ss -ltnp 'sport = :5006'`. Pick another port with
+`./scripts/install.sh --port 5010` (a new install), or change `PORT` in
+`.env` and restart.
+
+**A widget says "Not available on this host".** That is expected when the
+host lacks the tool or device. vcgencmd is Pi-only; also check sensors, an
+NVMe drive, ufw, Docker (your user must be in the `docker` group) and pm2.
+"Needs a sudoers rule" means re-run with `--sudoers`. For a new drive or
+ufw, re-run with `--sudoers` after installing it.
+
+**Node is too old.** The preflight prints the NodeSource steps for Node 22
+with a signed keyring. Run them, then re-run the installer.
+
+**Where are the logs?** Installer: `~/logs/pideck-install-*.log`. App:
+`pm2 logs pideck` or `journalctl -u pideck`.
+
+## Installing by hand
+
+The installer only automates these steps. To do them yourself:
+
 ```bash
-# Find process using port 5006
-sudo lsof -i :5006
-
-# Kill the process if needed
-sudo kill -9 <PID>
+sudo apt-get install -y postgresql lm-sensors smartmontools
+sudo -u postgres createuser -P pideck && sudo -u postgres createdb -O pideck pideck
+cp .env.example .env && chmod 600 .env && nano .env   # SESSION_SECRET, DATABASE_URL, PORT, ...
+npm ci && npm run db:push && npm run build
+pm2 start ecosystem.config.cjs && pm2 save             # or a systemd unit from deploy/systemd/
 ```
 
-#### 2. Permission Denied for Logs
+Then log in with `admin` / `admin` and change the password in Settings (a
+banner reminds you until you do).
+
+## For contributors
+
 ```bash
-# Fix log directory permissions
-sudo chown -R pideck:pideck /home/pideck/logs
-sudo chmod 755 /home/pideck/logs
+npm run check:shell    # shellcheck scripts/*.sh tests/install/*.sh
+npm run test:install   # installer tests: no root; stubs for sudo, apt-get, psql, pm2, systemctl, visudo …
 ```
-
-#### 3. Docker Commands Fail
-```bash
-# Add user to docker group
-sudo usermod -aG docker pideck
-
-# Restart session or reboot
-sudo systemctl restart pideck
-```
-
-#### 4. PM2 Commands Not Found
-```bash
-# Install PM2 globally
-sudo npm install -g pm2
-
-# Or add to PATH
-export PATH=$PATH:/usr/local/bin
-```
-
-### Logs and Debugging
-
-#### Application Logs
-```bash
-# PM2 logs
-pm2 logs pideck
-
-# Systemd logs
-sudo journalctl -u pideck -f
-
-# NGINX logs
-sudo tail -f /var/log/nginx/access.log
-sudo tail -f /var/log/nginx/error.log
-```
-
-#### Health Check
-```bash
-# Check if application is running
-curl http://localhost:5006/api/auth/me
-
-# Check system resources
-htop
-df -h
-free -h
-```
-
-### Performance Optimization
-
-#### 1. Node.js Memory Limits
-```bash
-# Set NODE_OPTIONS in environment
-export NODE_OPTIONS="--max_old_space_size=1024"
-```
-
-#### 2. PM2 Cluster Mode
-```bash
-# Start in cluster mode
-pm2 start dist/index.js --name pideck -i max
-```
-
-#### 3. NGINX Caching
-Add to NGINX configuration:
-```nginx
-location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
-    expires 1y;
-    add_header Cache-Control "public, immutable";
-}
-```
-
-## Security Hardening
-
-### 1. Change Default Password
-After first login, update the admin password in the application or modify the hash in `server/storage.ts`.
-
-### 2. Restrict Network Access
-```bash
-# Allow only local network access
-sudo ufw allow from 192.168.1.0/24 to any port 80
-sudo ufw allow from 192.168.1.0/24 to any port 443
-```
-
-### 3. Regular Updates
-```bash
-# Update system packages
-sudo apt update && sudo apt upgrade -y
-
-# Update Node.js dependencies
-npm audit fix
-```
-
-## Support
-
-If you encounter issues during installation:
-
-1. Check the [GitHub Issues](https://github.com/hexawulf/PiDeck/issues)
-2. Review application logs for error messages
-3. Ensure all prerequisites are properly installed
-4. Verify network connectivity and firewall settings
-
-For additional help, please open an issue on GitHub with:
-- Your operating system and version
-- Node.js and npm versions
-- Complete error messages
-- Steps to reproduce the issue

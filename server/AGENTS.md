@@ -163,13 +163,22 @@ await db.update(users).set({ failed_login_attempts: 0 }).where(eq(users.id, 1))
 - ❌ DON'T use user input directly in shell commands (injection risk)
 - ❌ DON'T use `execSync()` in request handlers (blocks event loop)
 
-**Example**:
+**Example** (a host tool that may be missing or need root — see `server/routes/network.ts`):
 ```typescript
-exec('systemctl status myservice', (err, stdout, stderr) => {
+import { classifyCommandFailure, SUDO, SUDOERS_HINT, unavailable } from '../services/unavailable'
+
+// Fixed command, no user input. Privileged commands go through `sudo -n`
+// (never prompts) and must be listed in deploy/sudoers.d/pideck.template.
+exec(`${SUDO} ufw status verbose`, { timeout: 15000 }, (err, stdout, stderr) => {
+  const reason = err ? classifyCommandFailure(err, stderr) : null
+  if (reason === 'needs-sudoers') return res.json(unavailable('needs-sudoers', SUDOERS_HINT))
+  if (reason) return res.json(unavailable(reason, 'ufw is not available on this host'))
   if (err) return res.status(500).json({ error: 'Command failed' })
   res.json({ output: stdout })
 })
 ```
+Missing tools/devices are a calm `{ available: false, reason, message }` (200), not a 500;
+the client's `QueryState` renders it as "Not available on this host".
 
 ## Touch Points / Key Files
 
