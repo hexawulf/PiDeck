@@ -2,6 +2,16 @@
 
 Deferred work. Source: PiDeck 2.0 CEO review (2026-09-23), see docs/plans/2.0-gui.md.
 
+## Header crowding with the host switcher
+- **What:** at 1440 px with the switcher, "Raspberry Pi Admin", "System Online" and the Ctrl K hint wrap onto two lines. Tighten the header (hide the subtitle or uptime from md–xl, keep the kbd hint on one line).
+- **Why:** seen on the 2.4.0 rollout screenshot.
+- **Effort:** S
+
+## Server rebuild while running
+- **What:** `build:server` deletes `dist/*.js` before esbuild writes new chunks; a running hub loads some chunks lazily (pm2 library, drizzle), so for the few seconds between build and restart such a first load could fail. Keep the previous build's chunks until the restart (for example a manifest of the last two builds).
+- **Why:** code splitting arrived in 2.4.0.
+- **Effort:** S
+
 ## Installer: re-exec after `--update` pulls
 - **What:** after `git pull`, `install.sh --update` finishes with the old, already-loaded functions. Re-exec the pulled script (e.g. `exec scripts/install.sh --update --post-pull`) so fixes to the installer apply in the same run.
 - **Why:** found on piapps2 (2026-09-28): an update pulled the pm2-daemon fix but still ran the old detection once.

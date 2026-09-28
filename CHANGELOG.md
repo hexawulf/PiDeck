@@ -5,6 +5,26 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-09-28
+
+Multi-host, phase H1 (plan: [docs/plans/multi-host.md](./docs/plans/multi-host.md)). One dashboard for several machines; guide: [Add another machine](./docs/INSTALL.md#add-another-machine-agent).
+
+### Added
+- **Agent mode** (`PIDECK_MODE=agent`): the same codebase as a read-only, JSON-only service with a fixed allowlist of metric endpoints. It needs a bearer token (only its SHA-256 is stored, compared in constant time), has no UI, no login, no database connection and no mutating routes, and binds to one address
+- **Hub**: `PIDECK_HOSTS` registry, `GET /api/hosts` (status, version, last seen) and a read-only proxy `GET /api/hosts/:id/*`. The host comes from the registry only, the path must exactly match the allowlist, and forwarding uses the token only (no cookies), with a 5 s timeout, a 1 MB cap and JSON only. Failures show as calm offline/auth/bad-response states
+- **Host switcher** in the header (status dots) and in the command palette, `g h` shortcut, `/h/:hostId/dashboard` and `/h/:hostId/apps` routes, per-host dashboard layout (prefs v2, v1 imports still work)
+- `install.sh --agent` (token shown once, systemd `pideck-agent`, agent sudoers without apt-get, optional `--ufw-allow-from <hub-ip>`, `--rotate-token`), `install.sh --add-host` (tests the agent before writing `.env`), and agent support in `uninstall.sh` (removes only the ufw rule it added)
+- Tests: unit 250 → 336, installer 69 → 124, E2E 100 → 112 (real local agents: online, wrong token, unreachable)
+
+### Changed
+- Server entry split into hub and agent with code splitting; the Postgres client, drizzle and the pm2 library load on first use (agent: about 84–92 MB RSS)
+- Remote hosts show the live dashboard and a read-only Apps tab; history, Quick Actions, Logs, Cron and Settings stay the hub's own until H2
+- `.env.bak.*` (installer backups, which contain secrets) are git-ignored
+
+### Security
+- An agent answers 401 before 404, so a caller without the token can't discover which paths exist. Wrong tokens are rate-limited per address; the correct token always passes and clears the count
+- Tested live: piapps2's agent is reachable only from the hub (ufw), and other LAN hosts time out
+
 ## [2.3.0] - 2026-09-28
 
 One-command install. Guide: [docs/INSTALL.md](./docs/INSTALL.md).

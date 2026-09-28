@@ -2,12 +2,14 @@
 
 A sleek, full-stack web application for monitoring and managing Raspberry Pi servers. Built with modern technologies, PiDeck provides a centralized control hub for system monitoring, service management, and log analysis.
 
-**Current version: 2.3.0** — one-command install (`scripts/install.sh`, dry-run first) on any Ubuntu/Debian host, arm64 or amd64, on top of the completed 2.0 GUI refresh. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
+**Current version: 2.4.0** — multi-host: one dashboard for several machines through small read-only agents, plus the one-command installer. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
 
 ![PiDeck 2.2 dashboard (light theme)](./docs/screenshots/dashboard.png)
 
 ## ✨ What's new in 2.0
 
+- **Multi-host** (2.4): switch between machines in the header; other machines run a small read-only agent (`install.sh --agent`) that only the hub can reach. See [Add another machine](./docs/INSTALL.md#add-another-machine-agent)
+- **One-command install** (2.3): `./scripts/install.sh --dry-run`, then `./scripts/install.sh`
 - **Customisable dashboard** (2.1): drag, resize, hide and reorder widgets in Edit mode (keyboard-accessible); layout is saved per browser
 - **Density and refresh controls** (2.1): Comfortable / Compact, Live / Relaxed / Slow refresh, and Pause/Resume in the header
 - **Portable preferences** (2.1): export, import and reset dashboard settings under Settings

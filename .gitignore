@@ -143,3 +143,5 @@ dist-dev/
 .env.test
 test-results/
 playwright-report/
+# installer backups of .env (contain every secret)
+.env.bak.*
