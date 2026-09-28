@@ -123,6 +123,7 @@ PIDECK_AGENT_TOKEN_SHA256=<sha256 hex>
 - `uninstall.sh` handles agent installs.
 
 ### H2 — 2.5.0: per-host history, alerts, overview
+Detailed plan: [multi-host-h2.md](./multi-host-h2.md).
 - **M0 (prerequisite): schema migrations.** Baseline the existing
   push-created schema as migration 0000, switch to drizzle migrations, and
   apply them from `install.sh` and `install.sh --update` (closes the TODOS
