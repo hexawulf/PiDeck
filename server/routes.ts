@@ -23,7 +23,8 @@ import { unavailable } from "./services/unavailable";
 import { loginSchema } from "@shared/schema";
 import { rateLimitLogin } from "./middleware/rateLimitLogin";
 import { envPasswordMatches } from "./services/env-password";
-import { cookieSecure, insecureHttp } from "./config";
+import { cookieSecure, insecureHttp, parseHosts } from "./config";
+import { createHostHub } from "./hosts";
 import { adminPasswordIsDefault } from "./storage";
 
 const passwordChangeSchema = z.object({
@@ -224,6 +225,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/metrics/thermal-zones", requireAuth, thermalZonesRouter);
   app.get("/api/metrics/power-status", requireAuth, powerStatusRouter);
   app.get("/api/metrics/nvme", requireAuth, nvmeRouter); // was mounted before auth (public)
+
+  // --- Multi-host (hub): status of the configured agents + read-only proxy ---
+  const hostHub = createHostHub({ hosts: parseHosts() });
+  app.get("/api/hosts", requireAuth, async (_req, res) => {
+    res.json(await hostHub.list());
+  });
+  app.get("/api/hosts/:id/*", requireAuth, async (req, res) => {
+    // originalUrl is the raw path as sent: the allowlist check must see any
+    // %-encoding, not Express's decoded req.params.
+    const { status, body } = await hostHub.proxy(req.params.id, req.originalUrl);
+    res.status(status).json(body);
+  });
+  app.all("/api/hosts/*", requireAuth, (req, res) =>
+    req.method === "GET"
+      ? res.status(404).json({ message: "Not found" })
+      : res.status(405).json({ message: "Remote hosts are read-only" }),
+  );
 
   // These ad-hoc endpoints are also protected by the wrapper above
   app.get("/api/system/history", async (_req, res) => {
