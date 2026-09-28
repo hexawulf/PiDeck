@@ -1,5 +1,6 @@
 import { useUiPrefs, useUiPrefsDispatch } from "@/prefs/UiPrefsProvider";
-import { WIDGETS } from "./registry";
+import { widgetsFor } from "./registry";
+import { useHost } from "@/hosts/HostProvider";
 
 /**
  * Show/hide list for every widget (Edit mode and Settings). Hidden widgets
@@ -8,10 +9,11 @@ import { WIDGETS } from "./registry";
 export function WidgetVisibilityList({ idPrefix }: { idPrefix: string }) {
   const { hidden } = useUiPrefs();
   const dispatch = useUiPrefsDispatch();
+  const widgets = widgetsFor(useHost().isLocal); // a remote host lists only widgets that work there
   const isHidden = new Set(hidden);
   return (
     <ul className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
-      {WIDGETS.map(({ id, title, icon: Icon }) => {
+      {widgets.map(({ id, title, icon: Icon }) => {
         const inputId = `${idPrefix}-${id}`;
         return (
           <li key={id}>

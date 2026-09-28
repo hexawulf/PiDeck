@@ -3,7 +3,8 @@ import { toast } from "@/hooks/use-toast";
 import { diagnosticsLine } from "@/lib/diagnostics";
 import { PREFS_VERSION } from "@/prefs/prefs";
 import { useUiPrefs } from "@/prefs/UiPrefsProvider";
-import { WIDGETS } from "@/widgets/registry";
+import { widgetsFor } from "@/widgets/registry";
+import { useHost } from "@/hosts/HostProvider";
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -15,12 +16,13 @@ const RELEASE_DATE = "September 2026";
 
 function Diagnostics() {
   const prefs = useUiPrefs();
+  const widgets = widgetsFor(useHost().isLocal);
   const hidden = new Set(prefs.hidden);
   const line = diagnosticsLine({
     version: APP_VERSION,
     prefsVersion: PREFS_VERSION,
-    visible: WIDGETS.filter((w) => !hidden.has(w.id)).length,
-    total: WIDGETS.length,
+    visible: widgets.filter((w) => !hidden.has(w.id)).length,
+    total: widgets.length,
     speed: prefs.speed,
     paused: prefs.paused,
     density: prefs.density,

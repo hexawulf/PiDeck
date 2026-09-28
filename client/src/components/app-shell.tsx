@@ -14,6 +14,10 @@ import { useRefreshAll } from "@/hooks/use-refresh-all";
 import { useSystemInfo } from "@/hooks/use-system-info";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { HostSwitcher } from "@/components/host-switcher";
+import { useHost, useHostSummary } from "@/hosts/HostProvider";
+import { hostHref, REMOTE_TABS } from "@/hosts/host-path";
+import { widgetQueryKey } from "@/widgets/useWidgetQuery";
 import Dashboard from "@/pages/dashboard";
 import LogViewer from "@/components/log-viewer";
 import AppMonitor from "@/components/app-monitor";
@@ -30,6 +34,9 @@ export const TABS = [
 export type TabId = (typeof TABS)[number]["id"];
 
 export const isTabId = (s: string | undefined): s is TabId => TABS.some((t) => t.id === s);
+
+/** A remote host has only Dashboard and Apps (Logs, Cron, Settings belong to the hub). */
+const tabsFor = (isLocal: boolean) => (isLocal ? TABS : TABS.filter((t) => (REMOTE_TABS as readonly string[]).includes(t.id)));
 
 /** Toast each new server alert once; forget alerts that cleared. */
 function AlertToasts() {
@@ -61,14 +68,18 @@ export default function AppShell({ tab }: { tab: TabId }) {
   const { logout, isLogoutPending, user } = useAuth();
   const systemInfo = useSystemInfo();
   const refreshAll = useRefreshAll();
-  const reboot = useQuery<{ rebootRequired?: boolean }>({ queryKey: ["/api/reboot-check"] });
+  const host = useHost();
+  const hostLabel = useHostSummary(host.id)?.label ?? host.id;
+  const reboot = useQuery<{ rebootRequired?: boolean }>({ queryKey: widgetQueryKey(host.id, "/api/reboot-check") });
   const commands = useCommandCenter();
+  const tabs = tabsFor(host.isLocal);
   const current = TABS.find((t) => t.id === tab)!;
   const Page = current.component;
 
   useEffect(() => {
-    document.title = tab === "dashboard" ? "PiDeck" : `${current.label} · PiDeck`;
-  }, [tab, current.label]);
+    const base = tab === "dashboard" ? "PiDeck" : `${current.label} · PiDeck`;
+    document.title = host.isLocal ? base : `${hostLabel} · ${base}`;
+  }, [tab, current.label, host.isLocal, hostLabel]);
 
   return (
     <div className="min-h-screen bg-pi-dark">
@@ -89,6 +100,7 @@ export default function AppShell({ tab }: { tab: TabId }) {
                 </h1>
                 <p className="hidden text-sm pi-text-muted sm:block">Raspberry Pi Admin</p>
               </div>
+              <HostSwitcher tab={tab} />
             </div>
 
             <div className="hidden items-center space-x-4 md:flex">
@@ -164,10 +176,10 @@ export default function AppShell({ tab }: { tab: TabId }) {
       <main className="pt-16">
         <div className="mx-auto max-w-7xl px-4">
           <nav aria-label="Sections" className="mb-8 flex space-x-1 overflow-x-auto rounded-xl bg-pi-card p-1">
-            {TABS.map(({ id, label, icon: Icon }) => (
+            {tabs.map(({ id, label, icon: Icon }) => (
               <Link
                 key={id}
-                href={`/${id}`}
+                href={hostHref(host.id, id)}
                 aria-current={id === tab ? "page" : undefined}
                 className={cn("tab-button flex items-center space-x-2", id === tab && "active")}
               >

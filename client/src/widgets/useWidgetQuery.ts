@@ -2,8 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import { getQueryFn } from "@/lib/queryClient";
 import { useRefetch } from "@/hooks/useRefetch";
+import { useHost } from "@/hosts/HostProvider";
+import { apiPath, LOCAL_HOST } from "@/hosts/host-path";
 
 const fetchJson = getQueryFn<unknown>({ on401: "throw" });
+
+/** Query key for `url` on a host: [request path, host id]. The default queryFn fetches key[0]. */
+export const widgetQueryKey = (hostId: string, url: string) => [apiPath(hostId, url), hostId] as const;
 
 /** The response arrived but did not match the widget's schema. */
 export class UnexpectedDataError extends Error {
@@ -20,15 +25,25 @@ export class UnexpectedDataError extends Error {
 }
 
 /**
- * Poll `url` every `baseMs` (scaled by the header speed, off while paused —
- * see useRefetch) and validate with `schema`. Key is `[url]`, so
- * every widget reading the same endpoint shares one request. The query only
- * polls while a component using it is mounted — hidden widgets cost nothing.
+ * Poll `url` on the current host (useHost) every `baseMs` (scaled by the
+ * header speed, off while paused — see useRefetch) and validate with
+ * `schema`. Key is `[apiPath(host, url), host]`: every widget reading the
+ * same endpoint on the same host shares one request, and hosts never share
+ * a cache entry. `scope: "hub"` always asks the hub itself (history, which
+ * only the hub records). The query only polls while a component using it
+ * is mounted — hidden widgets cost nothing.
  */
-export function useWidgetQuery<S extends z.ZodTypeAny>(url: string, baseMs: number | false, schema: S) {
+export function useWidgetQuery<S extends z.ZodTypeAny>(
+  url: string,
+  baseMs: number | false,
+  schema: S,
+  { scope = "host" }: { scope?: "host" | "hub" } = {},
+) {
   const refetchInterval = useRefetch(baseMs);
+  const host = useHost();
+  const hostId = scope === "hub" ? LOCAL_HOST : host.id;
   return useQuery<z.infer<S>, Error>({
-    queryKey: [url],
+    queryKey: widgetQueryKey(hostId, url),
     queryFn: async (ctx) => {
       const raw = await fetchJson(ctx);
       const parsed = schema.safeParse(raw);

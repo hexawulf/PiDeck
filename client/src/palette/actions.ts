@@ -8,8 +8,9 @@
 import type { LogEntry } from "@/hooks/use-host-logs";
 import { logHref } from "@/hooks/use-host-logs";
 import type { Density } from "@/prefs/prefs";
+import { hostHref, REMOTE_TABS } from "@/hosts/host-path";
 
-export type PaletteGroup = "Navigate" | "View" | "Refresh" | "Log pins" | "Logs" | "System" | "Help";
+export type PaletteGroup = "Navigate" | "Hosts" | "View" | "Refresh" | "Log pins" | "Logs" | "System" | "Help";
 
 export type PaletteAction = {
   id: string;
@@ -23,6 +24,7 @@ export type PaletteAction = {
 };
 
 export type PalettePin = { logId: string; label?: string; grep?: string; stale: boolean };
+export type PaletteHost = { id: string; label: string; status: string };
 
 export type PaletteContext = {
   navigate: (to: string) => void;
@@ -41,21 +43,41 @@ export type PaletteContext = {
   pins: readonly PalettePin[];
   requestUpdate: () => void;
   showHelp: () => void;
+  /** Current host ("local" = the hub) and every host the hub knows. */
+  hostId?: string;
+  hosts?: readonly PaletteHost[];
 };
+
+const isRemoteTab = (tab: string) => (REMOTE_TABS as readonly string[]).includes(tab);
 
 const TABS = [
   ["dashboard", "Dashboard"], ["logs", "Logs"], ["apps", "Apps"], ["cron", "Cron"], ["settings", "Settings"],
 ] as const;
 
-export function buildActions(ctx: PaletteContext): PaletteAction[] {
+export function buildActions(input: PaletteContext): PaletteAction[] {
+  const ctx = { ...input, hostId: input.hostId ?? "local", hosts: input.hosts ?? [] };
   const actions: PaletteAction[] = [];
 
+  // Dashboard and Apps stay on the current host; Logs, Cron and Settings are the hub's.
   for (const [id, label] of TABS) {
+    const href = isRemoteTab(id) ? hostHref(ctx.hostId, id) : `/${id}`;
     actions.push({
       id: `go-${id}`, group: "Navigate", label: `Go to ${label}`, keywords: [label, id],
-      hint: ctx.path === `/${id}` ? "current" : undefined,
-      perform: () => ctx.navigate(`/${id}`),
+      hint: ctx.path === href ? "current" : undefined,
+      perform: () => ctx.navigate(href),
     });
+  }
+
+  if (ctx.hosts.length > 1) {
+    const tab = ctx.path.split("/").pop() ?? "dashboard";
+    for (const h of ctx.hosts) {
+      actions.push({
+        id: `host:${h.id}`, group: "Hosts", label: `Switch to ${h.label}`,
+        hint: h.id === ctx.hostId ? "current" : h.status === "online" ? undefined : h.status,
+        keywords: ["host", "switch", "machine", h.id, h.label],
+        perform: () => ctx.navigate(hostHref(h.id, h.id === "local" || isRemoteTab(tab) ? tab : "dashboard")),
+      });
+    }
   }
 
   const nextTheme = ctx.resolvedTheme === "dark" ? "light" : "dark";
@@ -95,10 +117,13 @@ export function buildActions(ctx: PaletteContext): PaletteAction[] {
     });
   }
 
-  actions.push({
-    id: "update-system", group: "System", label: "Update system…", hint: "asks first",
-    keywords: ["apt", "upgrade", "packages"], perform: ctx.requestUpdate,
-  });
+  // The hub's own system only (agents are read-only in H1).
+  if (ctx.hostId === "local") {
+    actions.push({
+      id: "update-system", group: "System", label: "Update system…", hint: "asks first",
+      keywords: ["apt", "upgrade", "packages"], perform: ctx.requestUpdate,
+    });
+  }
   actions.push({ id: "help", group: "Help", label: "Keyboard shortcuts", hint: "?", keywords: ["keys", "help", "shortcuts"], perform: ctx.showHelp });
   return actions;
 }

@@ -20,6 +20,7 @@ import { useUiPrefs, useUiPrefsDispatch } from "@/prefs/UiPrefsProvider";
 import { keyLabel, SHORTCUTS, type Shortcut } from "@/shortcuts/shortcuts";
 import { cn } from "@/lib/utils";
 import { buildActions, type PaletteAction } from "./actions";
+import { useHost, useHosts } from "@/hosts/HostProvider";
 import { fuzzyFilter } from "./fuzzy";
 
 const MAX_RESULTS = 60;
@@ -63,11 +64,13 @@ export function CommandPalette({
   const opener = useOpener(open);
   const listId = useId();
   const optionRefs = useRef(new Map<string, HTMLElement>());
+  const host = useHost();
+  const hosts = useHosts();
 
   const actions = useMemo(
     () =>
       buildActions({
-        navigate, path, canEdit: path === "/dashboard" && isWide, editing: prefs.editing,
+        navigate, path, canEdit: path.endsWith("/dashboard") && isWide, editing: prefs.editing,
         setEditing: (editing) => dispatch({ type: "setEditing", editing }),
         resolvedTheme, toggleTheme, density: prefs.density,
         setDensity: (density) => dispatch({ type: "setDensity", density }),
@@ -75,8 +78,9 @@ export function CommandPalette({
         refresh: () => void refresh(),
         logs: logs.data ?? [], pins: pins.map((p) => ({ ...p, stale: isStale(p.logId) })),
         requestUpdate: () => setConfirmUpdate(true), showHelp: onShowHelp,
+        hostId: host.id, hosts: hosts.data ?? [],
       }),
-    [navigate, path, isWide, prefs.editing, prefs.density, prefs.paused, dispatch, resolvedTheme, toggleTheme, refresh, logs.data, pins, isStale, onShowHelp],
+    [navigate, path, isWide, prefs.editing, prefs.density, prefs.paused, dispatch, resolvedTheme, toggleTheme, refresh, logs.data, pins, isStale, onShowHelp, host.id, hosts.data],
   );
 
   const results = useMemo(() => {

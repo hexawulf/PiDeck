@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { isUnavailable } from "@/widgets/schemas";
-import { UnavailableNotice } from "@/widgets/WidgetFrame";
+import { HostProblemNotice, UnavailableNotice } from "@/widgets/WidgetFrame";
+import { useHost } from "@/hosts/HostProvider";
+import { hostProblemOf } from "@/hosts/host-path";
 import { 
   Box, 
   Zap, 
@@ -17,6 +19,8 @@ import {
 } from "lucide-react";
 
 export default function AppMonitor() {
+  // Remote hosts are read-only in H1: lists only, no action buttons.
+  const host = useHost();
   const dockerContainers = useDocker();
   const pm2Processes = usePm2();
   const containerAction = useContainerAction();
@@ -125,6 +129,8 @@ export default function AppMonitor() {
                  <Skeleton key={i} className="h-16 w-full" />
                ))}
              </div>
+           ) : hostProblemOf(dockerContainers.error) ? (
+             <div className="py-4"><HostProblemNotice problem={hostProblemOf(dockerContainers.error)!} /></div>
            ) : dockerContainers.error ? (
              <div className="text-center py-4">
                <p className="pi-error mb-2">Failed to load Docker containers</p>
@@ -176,7 +182,7 @@ export default function AppMonitor() {
                       <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusBadge(container.status)}`}>
                         {container.state}
                       </span>
-                      {container.state === 'running' ? (
+                      {!host.isLocal ? null : container.state === 'running' ? (
                         <>
                           <Button
                             variant="outline"
@@ -253,6 +259,8 @@ export default function AppMonitor() {
                 <Skeleton key={i} className="h-16 w-full" />
               ))}
             </div>
+          ) : hostProblemOf(pm2Processes.error) ? (
+            <div className="py-4"><HostProblemNotice problem={hostProblemOf(pm2Processes.error)!} /></div>
           ) : pm2Processes.error ? (
             <p className="pi-error text-center py-4">Failed to load PM2 processes</p>
           ) : isUnavailable(pm2Processes.data) ? (
@@ -276,6 +284,7 @@ export default function AppMonitor() {
                     <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusBadge(process.status)}`}>
                       {process.status}
                     </span>
+                    {host.isLocal && (<>
                     <Button
                       variant="outline"
                       size="sm"
@@ -294,6 +303,7 @@ export default function AppMonitor() {
                     >
                       <RotateCw className="w-4 h-4 pi-text-muted" />
                     </Button>
+                    </>)}
                   </div>
                 </div>
               ))}

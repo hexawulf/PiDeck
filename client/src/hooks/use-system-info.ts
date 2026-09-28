@@ -10,7 +10,8 @@ export function useSystemInfo() {
 }
 
 export function useHistory() {
-  return useWidgetQuery("/api/system/history", 60000, historySchema);
+  // Only the hub records history (H2 adds per-host history).
+  return useWidgetQuery("/api/system/history", 60000, historySchema, { scope: "hub" });
 }
 
 export function useUpdateSystem() {

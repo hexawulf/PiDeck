@@ -6,6 +6,9 @@ import { MD_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { useRefreshAll } from "@/hooks/use-refresh-all";
 import { useUiPrefs, useUiPrefsDispatch } from "@/prefs/UiPrefsProvider";
 import { isDialogOpen, isTypingTarget, resolveKey, SEQUENCE_TIMEOUT_MS, type ShortcutId } from "@/shortcuts/shortcuts";
+import { useHost } from "@/hosts/HostProvider";
+import { hostHref } from "@/hosts/host-path";
+import { OPEN_HOST_SWITCHER } from "@/components/host-switcher";
 
 // Main-chunk side of the palette (E23): this trigger, the key handler and the
 // shortcut table. The palette UI and the help sheet load on first use.
@@ -19,6 +22,7 @@ export function useCommandCenter() {
   const dispatch = useUiPrefsDispatch();
   const refreshAll = useRefreshAll();
   const isWide = useMediaQuery(MD_QUERY);
+  const host = useHost();
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -34,8 +38,8 @@ export function useCommandCenter() {
   }, []);
 
   // Latest state for the handler without re-binding the listener.
-  const latest = useRef({ path, paused, editing, isWide });
-  latest.current = { path, paused, editing, isWide };
+  const latest = useRef({ path, paused, editing, isWide, hostId: host.id });
+  latest.current = { path, paused, editing, isWide, hostId: host.id };
 
   const run = useCallback(
     (id: ShortcutId) => {
@@ -44,13 +48,15 @@ export function useCommandCenter() {
         case "palette": return openPalette(); // resolveKey ignores it while a dialog (incl. the palette) is open
         case "help": return openHelp();
         case "theme": return toggleTheme();
-        case "go-dashboard": return navigate("/dashboard");
+        // Dashboard and Apps stay on the current host; Logs, Cron and Settings are the hub's.
+        case "go-dashboard": return navigate(hostHref(s.hostId, "dashboard"));
         case "go-logs": return navigate("/logs");
-        case "go-apps": return navigate("/apps");
+        case "go-apps": return navigate(hostHref(s.hostId, "apps"));
         case "go-cron": return navigate("/cron");
         case "go-settings": return navigate("/settings");
+        case "go-hosts": return void window.dispatchEvent(new Event(OPEN_HOST_SWITCHER)); // no-op without remote hosts
         case "edit":
-          if (s.path === "/dashboard" && s.isWide) dispatch({ type: "setEditing", editing: !s.editing });
+          if (s.path.endsWith("/dashboard") && s.isWide) dispatch({ type: "setEditing", editing: !s.editing });
           return;
         case "pause": return dispatch({ type: "setPaused", paused: !s.paused });
         case "refresh": return void refreshAll();

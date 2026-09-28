@@ -1,9 +1,11 @@
 import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, PlugZap, RotateCw } from "lucide-react";
+import { AlertTriangle, CloudOff, PlugZap, RotateCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { useHost, useHostSummary } from "@/hosts/HostProvider";
+import { formatLastSeen, hostProblemOf, type HostProblem } from "@/hosts/host-path";
 import { describeError } from "./useWidgetQuery";
 import { isUnavailable, type Unavailable } from "./schemas";
 
@@ -171,6 +173,7 @@ export function QueryState<T>({
   emptyText?: string;
   children: (data: Exclude<T, Unavailable>) => ReactNode;
 }) {
+  const host = useHost();
   if (query.isPending) {
     return (
       <div className="space-y-2" aria-busy="true" aria-label="Loading">
@@ -179,6 +182,10 @@ export function QueryState<T>({
       </div>
     );
   }
+  // A remote host that can't be reached replaces even stale data: the numbers
+  // would look live while they aren't.
+  const problem = host.isLocal ? null : hostProblemOf(query.error);
+  if (problem) return <HostProblemNotice problem={problem} />;
   if (query.data === undefined) {
     const { summary, details } = describeError(query.error);
     return <ErrorNotice summary={summary} details={details} onRetry={() => void query.refetch()} />;
@@ -187,6 +194,26 @@ export function QueryState<T>({
   const data = query.data as Exclude<T, Unavailable>;
   if (isEmpty?.(data)) return <p className="text-pi-text-muted">{emptyText}</p>;
   return <>{children(data)}</>;
+}
+
+/** A remote host the hub can't read: offline, bad token, or a bad answer. Calm, not a red error card. */
+export function HostProblemNotice({ problem }: { problem: HostProblem }) {
+  const host = useHost();
+  const summary = useHostSummary(host.id);
+  const label = summary?.label ?? host.id;
+  const lastSeen = problem.lastSeen ?? summary?.lastSeen ?? null;
+  const text =
+    problem.kind === "offline"
+      ? `${label} is offline (last seen ${formatLastSeen(lastSeen)})`
+      : problem.kind === "auth"
+        ? `Can't authenticate to ${label}, check its token.`
+        : `Bad response from ${label}`;
+  return (
+    <div role="status" className="flex items-start gap-2 text-pi-text-muted" data-host-problem={problem.kind}>
+      <CloudOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      <p className="text-pi-text">{text}</p>
+    </div>
+  );
 }
 
 /** Calm "this host can't provide it" state — not an error, nothing to retry. */
