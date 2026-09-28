@@ -82,8 +82,8 @@ test("hiding a widget in Settings removes it from the dashboard; Reset all resto
   await expect(page.locator('[data-widget="mounts"]')).toHaveCount(0);
 
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Reset all" }).click();
+  await page.getByTestId("confirm-dialog").getByRole("button", { name: "Reset all" }).click(); // P3: ConfirmDialog, was window.confirm
   await expect.poll(async () => (await saved(page)).speed).toBe("live");
   expect((await saved(page)).hidden).toEqual([]);
   await expect(page.getByRole("checkbox", { name: "Mounts" })).toBeChecked();
@@ -92,8 +92,8 @@ test("hiding a widget in Settings removes it from the dashboard; Reset all resto
 test("Reset all asks first; Cancel changes nothing", async ({ page }) => {
   await page.goto("/settings");
   await page.getByRole("radio", { name: "Compact" }).check();
-  page.once("dialog", (d) => d.dismiss());
   await page.getByRole("button", { name: "Reset all" }).click();
+  await page.getByTestId("confirm-dialog").getByRole("button", { name: "Cancel" }).click(); // P3: ConfirmDialog, was window.confirm
   expect((await saved(page)).density).toBe("compact");
 });
 

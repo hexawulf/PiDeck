@@ -1,25 +1,15 @@
+import { useState } from "react";
 import { Link } from "wouter";
 import { BarChart3, Download, ListChecks, RefreshCw } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { useRefreshAll } from "@/hooks/use-refresh-all";
-import { useUpdateSystem } from "@/hooks/use-system-info";
+import { UpdateSystemConfirm } from "@/components/update-system-confirm";
 
 const tile =
   "flex h-full min-h-[3.5rem] flex-col items-center justify-center gap-1 rounded-md border border-pi-border bg-pi-darker p-2 text-xs hover:bg-pi-card-hover disabled:opacity-50";
 
 export function QuickActionsBox() {
   const refreshAll = useRefreshAll();
-  const update = useUpdateSystem();
-  const { toast } = useToast();
-
-  const onUpdate = async () => {
-    try {
-      await update.mutateAsync();
-      toast({ title: "Success", description: "System updated successfully" });
-    } catch {
-      toast({ title: "Error", description: "Failed to update system", variant: "destructive" });
-    }
-  };
+  const [confirming, setConfirming] = useState(false);
 
   return (
     <div className="grid h-full grid-cols-2 gap-2">
@@ -27,10 +17,11 @@ export function QuickActionsBox() {
         <RefreshCw className="h-5 w-5 text-pi-accent-text" aria-hidden />
         Refresh data
       </button>
-      <button type="button" className={tile} onClick={onUpdate} disabled={update.isPending} data-testid="update-system">
-        <Download className={`h-5 w-5 text-pi-success ${update.isPending ? "animate-spin" : ""}`} aria-hidden />
+      <button type="button" className={tile} onClick={() => setConfirming(true)} data-testid="update-system">
+        <Download className="h-5 w-5 text-pi-success" aria-hidden />
         Update system
       </button>
+      <UpdateSystemConfirm open={confirming} onOpenChange={setConfirming} />
       <Link href="/apps" className={tile}>
         <ListChecks className="h-5 w-5 text-pi-chart-1" aria-hidden />
         Manage apps

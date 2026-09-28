@@ -4,13 +4,16 @@ import { RefreshCtx } from "./refresh-context";
 import { WIDGETS } from "@/widgets/registry";
 import {
   browserStore, defaultLayout, defaultPrefs, loadPrefs, PREFS_KEY, savePrefs, serializePrefs,
-  type Density, type LayoutItem, type LoadIssue, type PersistedPrefs, type SectionName, type Speed, type Store,
+  type Density, type LayoutItem, type LoadIssue, type PersistedPrefs, type Pin, type SectionName, type Speed, type Store,
 } from "./prefs";
 
 // UI prefs (E2): one reducer, separate state and dispatch contexts so
-// components that only dispatch don't re-render. `paused` is session-only.
+// components that only dispatch don't re-render. Session-only (never saved):
+// `paused`, `editing` (dashboard Edit mode, so the palette and the `e`
+// shortcut can drive it) and `lastReset` (shown in About › Diagnostics).
 
-export type UiPrefsState = PersistedPrefs & { paused: boolean };
+export type ResetRecord = { reason: string; at: string };
+export type UiPrefsState = PersistedPrefs & { paused: boolean; editing: boolean; lastReset: ResetRecord | null };
 
 export type UiPrefsAction =
   | { type: "setLayout"; layout: LayoutItem[] }
@@ -20,8 +23,13 @@ export type UiPrefsAction =
   | { type: "setDensity"; density: Density }
   | { type: "setSpeed"; speed: Speed }
   | { type: "setPaused"; paused: boolean }
-  | { type: "replace"; prefs: PersistedPrefs } // import, reset-all, another tab
+  | { type: "setEditing"; editing: boolean }
+  | { type: "setPins"; pins: Pin[] }
+  /** import, reset-all, another tab; `reason` marks it as a reset for Diagnostics */
+  | { type: "replace"; prefs: PersistedPrefs; reason?: string }
   ;
+
+const stamp = (reason: string): ResetRecord => ({ reason, at: new Date().toISOString() });
 
 export function uiPrefsReducer(state: UiPrefsState, action: UiPrefsAction): UiPrefsState {
   switch (action.type) {
@@ -32,15 +40,24 @@ export function uiPrefsReducer(state: UiPrefsState, action: UiPrefsAction): UiPr
     case "show":
       return { ...state, hidden: state.hidden.filter((id) => id !== action.id) };
     case "resetLayout":
-      return { ...state, layout: defaultLayout(WIDGETS), hidden: [] };
+      return { ...state, layout: defaultLayout(WIDGETS), hidden: [], lastReset: stamp("Reset layout") };
     case "setDensity":
       return { ...state, density: action.density };
     case "setSpeed":
       return { ...state, speed: action.speed };
     case "setPaused":
       return { ...state, paused: action.paused };
+    case "setEditing":
+      return state.editing === action.editing ? state : { ...state, editing: action.editing };
+    case "setPins":
+      return { ...state, pins: action.pins };
     case "replace":
-      return { ...action.prefs, paused: state.paused };
+      return {
+        ...action.prefs,
+        paused: state.paused,
+        editing: state.editing,
+        lastReset: action.reason ? stamp(action.reason) : state.lastReset,
+      };
   }
 }
 
@@ -58,6 +75,13 @@ const SECTION_LABEL: Record<SectionName, string> = {
   layout: "layout", hidden: "hidden widgets", density: "density", speed: "refresh speed", pins: "log pins",
 };
 
+/** Why loading fell back to defaults, in Diagnostics wording (null = it didn't). */
+export function loadResetReason(issue: LoadIssue | null): string | null {
+  if (!issue || issue.kind === "blocked") return null;
+  if (issue.kind === "invalid") return "Saved prefs were invalid (all sections)";
+  return `Saved ${issue.sections.map((s) => SECTION_LABEL[s]).join(", ")} invalid`;
+}
+
 function announce(issue: LoadIssue | null) {
   if (!issue) return;
   if (issue.kind === "blocked") {
@@ -73,7 +97,10 @@ function announce(issue: LoadIssue | null) {
 export function UiPrefsProvider({ children, store = browserStore() }: { children: ReactNode; store?: Store | null }) {
   const initial = useRef<ReturnType<typeof loadPrefs>>();
   if (!initial.current) initial.current = loadPrefs(store, WIDGETS);
-  const [state, dispatch] = useReducer(uiPrefsReducer, undefined, () => ({ ...initial.current!.prefs, paused: false }));
+  const [state, dispatch] = useReducer(uiPrefsReducer, undefined, (): UiPrefsState => {
+    const reason = loadResetReason(initial.current!.issue);
+    return { ...initial.current!.prefs, paused: false, editing: false, lastReset: reason ? stamp(reason) : null };
+  });
 
   // Toast load problems once (StrictMode runs effects twice in dev).
   const announced = useRef(false);

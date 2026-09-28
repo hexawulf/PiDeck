@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Download, RotateCcw, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { defaultPrefs, IMPORT_MAX_BYTES, parseImport, serializePrefs, type Density, type Speed } from "@/prefs/prefs";
@@ -69,10 +70,11 @@ export default function DashboardPrefsPanel() {
     toast({ title: "Preferences imported" });
   };
 
+  const [confirmReset, setConfirmReset] = useState(false);
   const onResetAll = () => {
-    if (!window.confirm("Reset all dashboard preferences (layout, hidden widgets, density, refresh speed)?")) return;
-    dispatch({ type: "replace", prefs: defaultPrefs(WIDGETS) });
+    dispatch({ type: "replace", prefs: defaultPrefs(WIDGETS), reason: "Reset all (Settings)" });
     setImportError(null);
+    setConfirmReset(false);
     toast({ title: "Dashboard preferences reset" });
   };
 
@@ -118,9 +120,18 @@ export default function DashboardPrefsPanel() {
               data-testid="prefs-import"
               onChange={(e) => void onImport(e.target.files?.[0])}
             />
-            <Button variant="outline" size="sm" className={`${outline} text-pi-error`} onClick={onResetAll}>
+            <Button variant="outline" size="sm" className={`${outline} text-pi-error`} onClick={() => setConfirmReset(true)}>
               <Trash2 className="h-4 w-4" aria-hidden /> Reset all
             </Button>
+            <ConfirmDialog
+              open={confirmReset}
+              onOpenChange={setConfirmReset}
+              title="Reset all dashboard preferences?"
+              description="Layout, hidden widgets, density, refresh speed and log pins go back to their defaults. Export first if you want a copy."
+              confirmLabel="Reset all"
+              destructive
+              onConfirm={onResetAll}
+            />
           </div>
           {importError && (
             <p role="alert" className="text-sm text-pi-error">

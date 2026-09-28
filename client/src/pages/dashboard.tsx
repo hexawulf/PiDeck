@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef } from "react";
 import { Check, LayoutGrid, RotateCcw, Rows3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MD_QUERY, useMediaQuery } from "@/hooks/use-media-query";
@@ -42,7 +42,9 @@ export default function Dashboard() {
   const prefs = useUiPrefs();
   const dispatch = useUiPrefsDispatch();
   const isGrid = useMediaQuery(MD_QUERY);
-  const [editing, setEditing] = useState(false);
+  // Edit mode lives in UiPrefs (session-only) so the palette and the `e` shortcut can toggle it.
+  const editing = prefs.editing;
+  const setEditing = (next: boolean) => dispatch({ type: "setEditing", editing: next });
   const editToggle = useRef<HTMLButtonElement>(null);
   const pendingFocus = useRef<{ id: string; action: EditAction } | null>(null);
 
@@ -51,12 +53,14 @@ export default function Dashboard() {
 
   // Edit mode exists only with the grid; Esc or Done leaves it.
   useEffect(() => {
-    if (!isGrid) setEditing(false);
-  }, [isGrid]);
+    if (!isGrid) dispatch({ type: "setEditing", editing: false });
+  }, [isGrid, dispatch]);
+  useEffect(() => () => dispatch({ type: "setEditing", editing: false }), [dispatch]); // leaving the tab ends Edit mode
   useEffect(() => {
     if (!editing) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      // Esc inside a dialog (palette, confirm) only closes that dialog.
+      if (e.key === "Escape" && !document.querySelector('[role="dialog"], [role="alertdialog"]')) {
         setEditing(false);
         editToggle.current?.focus();
       }
@@ -116,7 +120,7 @@ export default function Dashboard() {
             size="sm"
             className={toolbarButton}
             aria-pressed={editing}
-            onClick={() => setEditing((e) => !e)}
+            onClick={() => setEditing(!editing)}
           >
             {editing ? <Check className="h-4 w-4" aria-hidden /> : <LayoutGrid className="h-4 w-4" aria-hidden />}
             {editing ? "Done" : "Edit layout"}
