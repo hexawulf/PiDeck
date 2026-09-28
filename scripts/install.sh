@@ -99,6 +99,12 @@ if [ -n "$NVME_DEVICE" ] && ! [[ "$NVME_DEVICE" =~ ^/dev/nvme[0-9]+(n[0-9]+)?$ ]
   echo "--nvme-device must look like /dev/nvme0 or /dev/nvme0n1" >&2; exit 64
 fi
 
+# Refuse root before touching anything (not even the log directory).
+if [ "$(id -u)" -eq 0 ]; then
+  echo "Error: run this as the user who will own PiDeck, not as root (sudo is used where needed)." >&2
+  exit 1
+fi
+
 # ── output & logging ───────────────────────────────────────────────────
 # fd 3 = the real terminal (for the one-time password, which must not reach
 # the log); everything else is tee'd into the log. A dry run writes its log
@@ -188,7 +194,6 @@ TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pideck-install.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 # ── identity ───────────────────────────────────────────────────────────
-[ "$(id -u)" -eq 0 ] && die "run this as the user who will own PiDeck, not as root (sudo is used where needed)."
 RUN_USER="$(id -un)"
 ENV_FILE="$APP_DIR/.env"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pideck"
@@ -313,7 +318,12 @@ DATABASE_URL_VALUE=""
 write_env() {
   step ".env"
   local tmp="$TMP_DIR/env" added=() k v
-  if [ -f "$ENV_FILE" ]; then cp "$ENV_FILE" "$tmp"; else : > "$tmp"; fi
+  if [ -f "$ENV_FILE" ]; then cp "$ENV_FILE" "$tmp"
+  elif [ -f "$APP_DIR/.env.example" ]; then
+    # New .env: the example's comments, with its KEY= lines commented out so
+    # its placeholder values never count as set; real values are appended below.
+    sed -E 's/^([A-Z][A-Z0-9_]*=)/# \1/' "$APP_DIR/.env.example" > "$tmp"
+  else : > "$tmp"; fi
   local -A want=(
     [NODE_ENV]=production
     [PORT]="$PORT"
@@ -322,12 +332,12 @@ write_env() {
     [CSP_ENFORCE]=true
   )
   [ -n "$DATABASE_URL_VALUE" ] && want[DATABASE_URL]="$DATABASE_URL_VALUE"
-  [ "$LAN_HTTP" = 1 ] && want[PIDECK_INSECURE_HTTP]=1
+  if [ "$LAN_HTTP" = 1 ]; then want[PIDECK_INSECURE_HTTP]=1; want[TRUST_PROXY]=false; fi
   [ -n "$NVME_DEVICE" ] && want[PIDECK_NVME_DEVICE]="$NVME_DEVICE"
   if ! env_has SESSION_SECRET; then
     if [ "$DRY_RUN" = 1 ]; then want[SESSION_SECRET]="(generated)"; else want[SESSION_SECRET]="$(openssl rand -hex 32)"; fi
   fi
-  local order=(NODE_ENV PORT SESSION_SECRET DATABASE_URL CSP_ENFORCE PIDECK_LOGS_DIR PM2_LOGS_DIR PIDECK_INSECURE_HTTP PIDECK_NVME_DEVICE)
+  local order=(NODE_ENV PORT SESSION_SECRET DATABASE_URL CSP_ENFORCE PIDECK_LOGS_DIR PM2_LOGS_DIR PIDECK_INSECURE_HTTP TRUST_PROXY PIDECK_NVME_DEVICE)
   local header=0
   for k in "${order[@]}"; do
     [ -n "${want[$k]+x}" ] || continue

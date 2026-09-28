@@ -41,6 +41,11 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+if [ "$(id -u)" -eq 0 ]; then
+  echo "Error: run this as the user who owns PiDeck, not as root (sudo is used where needed)." >&2
+  exit 1
+fi
+
 if [ "$DRY_RUN" = 1 ]; then LOG="${TMPDIR:-/tmp}/pideck-uninstall-dryrun-$TS.log"
 else mkdir -p "$HOME/logs"; LOG="$HOME/logs/pideck-uninstall-$TS.log"; fi
 exec > >(tee -a "$LOG") 2>&1
@@ -65,7 +70,6 @@ run() {
 have() { command -v "$1" >/dev/null 2>&1; }
 pm2_bin() { have pm2 && command -v pm2 || { [ -x "$APP_DIR/node_modules/.bin/pm2" ] && echo "$APP_DIR/node_modules/.bin/pm2"; } || true; }
 
-[ "$(id -u)" -eq 0 ] && die "run this as the user who owns PiDeck, not as root (sudo is used where needed)."
 
 ENV_FILE="$APP_DIR/.env"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pideck"
