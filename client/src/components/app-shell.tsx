@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ThemeToggle } from "@/components/theme-toggle";
 import AboutModal from "@/components/modals/about-modal";
 import { RefreshControl } from "@/components/refresh-control";
+import { PaletteButton, useCommandCenter } from "@/components/command-center";
 import { useAuth } from "@/hooks/use-auth";
 import { useAlerts } from "@/hooks/use-alerts";
 import { useRefreshAll } from "@/hooks/use-refresh-all";
@@ -61,6 +62,7 @@ export default function AppShell({ tab }: { tab: TabId }) {
   const systemInfo = useSystemInfo();
   const refreshAll = useRefreshAll();
   const reboot = useQuery<{ rebootRequired?: boolean }>({ queryKey: ["/api/reboot-check"] });
+  const commands = useCommandCenter();
   const current = TABS.find((t) => t.id === tab)!;
   const Page = current.component;
 
@@ -75,12 +77,13 @@ export default function AppShell({ tab }: { tab: TabId }) {
         <div className="mx-auto max-w-7xl sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-pi-accent">
+              {/* The tile is the visible logo link below sm, where the name is screen-reader only. */}
+              <Link href="/dashboard" tabIndex={-1} aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pi-accent">
                 <Server className="h-5 w-5 text-pi-on-accent" />
-              </div>
+              </Link>
               <div>
                 <h1 className="text-xl font-bold">
-                  <Link href="/dashboard" className="pi-text hover:text-primary">
+                  <Link href="/dashboard" className="pi-text hover:text-primary sr-only sm:not-sr-only">
                     PiDeck
                   </Link>
                 </h1>
@@ -97,6 +100,7 @@ export default function AppShell({ tab }: { tab: TabId }) {
             </div>
 
             <div className="flex items-center space-x-2 sm:space-x-3">
+              <PaletteButton onOpen={commands.openPalette} />
               <RefreshControl />
               <AboutModal />
               <ThemeToggle />
@@ -166,6 +170,7 @@ export default function AppShell({ tab }: { tab: TabId }) {
           </div>
         </div>
       </main>
+      {commands.dialogs}
     </div>
   );
 }
