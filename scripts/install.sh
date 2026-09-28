@@ -46,7 +46,8 @@ PiDeck installer — scripts/install.sh [options]
   --update                  git pull --ff-only, npm ci, build, restart, health check
   --port N                  listen port (default 5006; env PIDECK_PORT)
   --database-url URL        use this PostgreSQL instead of a local role/db
-                            (env PIDECK_DATABASE_URL; never printed)
+                            (never printed; prefer env PIDECK_DATABASE_URL,
+                            which keeps it out of the process list)
   --no-apt                  don't offer apt-get for missing distro packages
   --service pm2|systemd|none   how to run PiDeck (default: pm2 if found, else systemd)
   --sudoers                 install /etc/sudoers.d/pideck (smartctl, ufw, apt-get only)
@@ -55,13 +56,14 @@ PiDeck installer — scripts/install.sh [options]
   --admin-password-file F   use the password in F (0600) for the admin account
   --generate-password       generate the admin password (default with --yes)
   --reset-password          replace the admin password even if it was changed in the UI
-  --public-url URL          where you open PiDeck (for the final message and health check)
+  --public-url URL          where you open PiDeck (shown in the final message)
   --skip-health             don't run the health check
   -h, --help                this help
 
 Env equivalents: PIDECK_YES=1 PIDECK_PORT PIDECK_DATABASE_URL PIDECK_NO_APT=1
 PIDECK_SERVICE PIDECK_SUDOERS=1 PIDECK_LAN_HTTP=1 PIDECK_ADMIN_PASSWORD_FILE
-PIDECK_NVME_DEVICE PIDECK_PUBLIC_URL NO_COLOR=1
+PIDECK_NVME_DEVICE PIDECK_PUBLIC_URL PIDECK_DB_NAME PIDECK_DB_USER (default pideck)
+NO_COLOR=1
 EOF
 }
 
@@ -622,7 +624,7 @@ update() {
   service
   health
   step "Rollback, if needed"
-  info "cd $APP_DIR && git reset --keep $prev && npm ci && rm -rf dist && cp -a $backup/dist dist && $([ "$SERVICE" = pm2 ] && echo "pm2 restart pideck" || echo "sudo systemctl restart pideck")"
+  info "cd $APP_DIR && git reset --keep $prev && npm ci && rm -rf dist && cp -a $backup/dist dist && $([ "$SERVICE" = pm2 ] && echo "$(pm2_bin) restart pideck" || echo "sudo systemctl restart pideck")"
 }
 
 # ── main ───────────────────────────────────────────────────────────────
