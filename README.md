@@ -2,7 +2,7 @@
 
 A sleek, full-stack web application for monitoring and managing Raspberry Pi servers. Built with modern technologies, PiDeck provides a centralized control hub for system monitoring, service management, and log analysis.
 
-**Current version: 2.1.1** — 2.0 GUI refresh phase 2 (customisable dashboard layout, density and refresh controls) plus dependency security updates. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
+**Current version: 2.2.0** — the 2.0 GUI refresh is complete: command palette, keyboard shortcuts, log pins and confirm dialogs on top of the customisable dashboard. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
 
 ![PiDeck 2.0 dashboard (dark theme)](./docs/screenshots/dashboard.png)
 
@@ -11,6 +11,10 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 - **Customisable dashboard** (2.1): drag, resize, hide and reorder widgets in Edit mode (keyboard-accessible); layout is saved per browser
 - **Density and refresh controls** (2.1): Comfortable / Compact, Live / Relaxed / Slow refresh, and Pause/Resume in the header
 - **Portable preferences** (2.1): export, import and reset dashboard settings under Settings
+- **Command palette** (2.2): Ctrl/⌘+K to jump anywhere, toggle settings, open logs or run actions
+- **Keyboard shortcuts** (2.2): press `?` for the list
+- **Log pins** (2.2): pin logs with their filters for one-click access
+- **Safer actions** (2.2): Update System and Reset all ask for confirmation
 - **Deep-linkable tabs**: `/dashboard`, `/logs`, `/apps`, `/cron` and `/settings` are real URLs; the back button works
 - **Resilient widgets**: every card validates its data and has its own error boundary, so one failing endpoint never blanks the dashboard
 - **Leaner polling**: each tab only fetches its own data
@@ -132,6 +136,19 @@ npm run test:e2e       # E2E on a separate build at :5017, never the prod dist/
 - **Apps** (`/apps`): Manage Docker containers and PM2 processes
 - **Cron** (`/cron`): Monitor and execute scheduled tasks
 - **Settings** (`/settings`): Change the admin password; dashboard density, refresh speed, widgets, export/import/reset of preferences
+
+### Keyboard Shortcuts
+| Keys | Action |
+|---|---|
+| Ctrl/⌘ + K | Command palette |
+| `?` | Show all shortcuts |
+| `t` | Toggle light / dark theme |
+| `g` then `d` / `l` / `a` / `c` / `s` | Go to Dashboard / Logs / Apps / Cron / Settings |
+| `e` | Edit layout / done (dashboard, wide screens) |
+| `p` | Pause / resume auto-refresh |
+| `r` | Refresh now |
+
+Single-key shortcuts are ignored while typing or when a dialog is open.
 
 ### Security Features
 - bcrypt password hashing

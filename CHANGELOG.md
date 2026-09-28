@@ -5,6 +5,24 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-09-28
+
+Third and final phase of the 2.0 GUI refresh (plan: `docs/plans/2.0-gui.md`, tag `2.0-p3`).
+
+### Added
+- Command palette (Ctrl/⌘+K or the header button): navigate, toggle theme/density/Edit mode, pause/resume, refresh, open or search logs, Update System. Loaded lazily (3.5 KB gzip chunk)
+- Keyboard shortcuts with a `?` help sheet: `t` theme, `g` then `d`/`l`/`a`/`c`/`s` to switch tabs, `e` edit layout, `p` pause, `r` refresh. Inactive while typing or when a dialog is open; nothing destructive has a shortcut
+- Log pins and saved filters: pin a log with its current filter; pins appear at the top of the log picker and in the palette, survive reloads and export/import, and are greyed out when the file is gone. `/logs?log=…&grep=…` opens a log directly
+- About › Diagnostics line (version, prefs version, visible widgets, refresh state, density, last prefs reset) with a copy button
+- Unit tests 172 → 214, E2E 77 → 100
+
+### Changed
+- Update System (Quick Actions and palette) and Settings › Reset all now ask for confirmation in a shared, accessible dialog (focus starts on Cancel)
+- Below `sm` the header shows the logo tile only, to fit the palette button at 390 px
+
+### Security
+- `PIDECK_DISABLE_SYSTEM_UPDATE=1` makes `POST /api/system/update` return 409 without running apt; the E2E server sets it because it shares the prod host
+
 ## [2.1.1] - 2026-09-28
 
 ### Security
