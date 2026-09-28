@@ -17,6 +17,7 @@ import rasplogsRouter from "./routes/rasplogs";
 import hostLogsRouter from "./routes/hostLogs";
 import thermalZonesRouter from "./routes/thermalZones";
 import powerStatusRouter from "./routes/powerStatus";
+import { createSystemUpdateHandler } from "./routes/system-update";
 
 import { loginSchema } from "@shared/schema";
 import { rateLimitLogin } from "./middleware/rateLimitLogin";
@@ -230,15 +231,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/system/update", async (_req, res) => {
-    try {
-      const output = await SystemService.updateSystem();
-      res.json({ message: "System updated", output });
-    } catch (error) {
-      console.error("System update error:", error);
-      res.status(500).json({ message: "Failed to update system" });
-    }
-  });
+  // 409 without running anything when PIDECK_DISABLE_SYSTEM_UPDATE=1 (E2E builds).
+  app.post("/api/system/update", createSystemUpdateHandler({ run: () => SystemService.updateSystem() }));
 
   app.get("/api/reboot-check", async (_req, res) => {
     try {

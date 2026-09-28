@@ -6,7 +6,9 @@
 #              APP_PASSWORD is forced empty so a prod value in .env is ignored.
 #              PIDECK_SAMPLER=off: this build shares the prod database, and
 #              its sampler would double the prod history rows.
-# Modified:    2026-09-27
+#              PIDECK_DISABLE_SYSTEM_UPDATE=1: it also shares the prod host, so
+#              POST /api/system/update answers 409 instead of running apt.
+# Modified:    2026-09-28
 # Usage:       scripts/e2e-server.sh [--dry-run]
 set -euo pipefail
 
@@ -32,5 +34,5 @@ npx vite build --outDir "$OUT/public" --emptyOutDir >>"$LOG" 2>&1
 npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir="$OUT" >>"$LOG" 2>&1
 
 echo "serving dist-dev on :$PORT (log: $LOG)"
-exec env NODE_ENV=production CSP_ENFORCE=true PIDECK_SAMPLER=off PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \
+exec env NODE_ENV=production CSP_ENFORCE=true PIDECK_SAMPLER=off PIDECK_DISABLE_SYSTEM_UPDATE=1 PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \
   node "$OUT/index.js" 2>&1 | tee -a "$LOG"
