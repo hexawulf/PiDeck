@@ -106,3 +106,19 @@ export function insecureHttp(env: NodeJS.ProcessEnv = process.env): boolean {
 export function cookieSecure(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.NODE_ENV === "production" && !insecureHttp(env);
 }
+
+/**
+ * TRUST_PROXY → Express "trust proxy". Unset = 1 (one reverse proxy in front,
+ * the documented setup). "false"/"0" = no proxy (plain --lan-http install:
+ * X-Forwarded-* from clients must not be believed, or the login rate limit
+ * could be dodged). A number = that many hops; anything else is passed through
+ * (e.g. "loopback", a subnet list).
+ */
+export function trustProxy(env: NodeJS.ProcessEnv = process.env): boolean | number | string {
+  const v = env.TRUST_PROXY?.trim();
+  if (!v) return 1;
+  if (/^(false|0|no|off)$/i.test(v)) return false;
+  if (/^(true|yes|on)$/i.test(v)) return true;
+  if (/^\d+$/.test(v)) return Number(v);
+  return v;
+}

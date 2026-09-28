@@ -14,7 +14,7 @@ import compatRouter from "./routes/compat";
 import { startSampler } from "./services/sampler";
 import { initializeStorage, pool } from "./storage";
 import { installCsp } from "./security";
-import { cookieSecure, corsOrigins, insecureHttp } from "./config";
+import { cookieSecure, corsOrigins, insecureHttp, trustProxy } from "./config";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,7 +25,7 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const SESSION_SECRET = process.env.SESSION_SECRET || "CHANGE_ME_SESSION_SECRET_LONG_RANDOM";
 const SESSION_COOKIE_DOMAIN =
   process.env.SESSION_COOKIE_DOMAIN || process.env.COOKIE_DOMAIN || undefined;
-const TRUST_PROXY = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) || 1 : 1;
+const TRUST_PROXY = trustProxy();
 
 // ---------- app ----------
 const app = express();

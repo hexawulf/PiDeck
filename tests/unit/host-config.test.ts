@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { cookieSecure, corsOrigins, defaultHostLogs, hostLogs, insecureHttp, parseHostLogs } from "../../server/config";
+import { cookieSecure, corsOrigins, defaultHostLogs, hostLogs, insecureHttp, parseHostLogs, trustProxy } from "../../server/config";
 import { transportWarning } from "@/components/transport-notice";
 
 const PM2 = "/home/op/.pm2/logs";
@@ -59,6 +59,21 @@ describe("insecure-HTTP switch", () => {
     expect(cookieSecure({ NODE_ENV: "production" })).toBe(true);
     expect(cookieSecure({ NODE_ENV: "production", PIDECK_INSECURE_HTTP: "1" })).toBe(false);
     expect(cookieSecure({ NODE_ENV: "development" })).toBe(false);
+  });
+});
+
+describe("TRUST_PROXY", () => {
+  it("defaults to one proxy hop", () => {
+    expect(trustProxy({})).toBe(1);
+    expect(trustProxy({ TRUST_PROXY: "" })).toBe(1);
+  });
+  it("can be switched off (plain LAN HTTP, no proxy)", () => {
+    for (const v of ["false", "0", "no", "OFF"]) expect(trustProxy({ TRUST_PROXY: v })).toBe(false);
+  });
+  it("takes hop counts, true, and Express presets", () => {
+    expect(trustProxy({ TRUST_PROXY: "2" })).toBe(2);
+    expect(trustProxy({ TRUST_PROXY: "true" })).toBe(true);
+    expect(trustProxy({ TRUST_PROXY: "loopback" })).toBe("loopback");
   });
 });
 
