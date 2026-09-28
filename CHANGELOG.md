@@ -5,6 +5,17 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-09-28
+
+### Security
+- Production dependencies have no known vulnerabilities (`npm audit --omit=dev`: 11 → 0; all dependencies: 22 → 4, the rest dev-only in drizzle-kit's bundled esbuild)
+- Updated: express 4.22.3, tsx 4.23.15, esbuild 0.28.2, plus `npm audit fix` (body-parser, ws, postcss, nanoid, ip-address, systeminformation, protobufjs, @grpc/grpc-js, vite 8.3)
+- `overrides` for transitive fixes: js-yaml ^4.3.2 (pm2), qs ^6.16.0 (express), uuid ^11.1.1 (dockerode)
+
+### Changed
+- `@vitejs/plugin-react` 4 → 6 (Vite 8 support) and `@types/node` 20.16 → 22 (matches the Node 22 runtime): `npm install` / `npm ci` no longer need `--legacy-peer-deps`
+- Remote repository cleaned up: 68 merged or abandoned branches removed
+
 ## [2.1.0] - 2026-09-28
 
 Second phase of the 2.0 GUI refresh (plan: `docs/plans/2.0-gui.md`, tag `2.0-p2`).

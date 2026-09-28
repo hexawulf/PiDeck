@@ -2,7 +2,7 @@
 
 A sleek, full-stack web application for monitoring and managing Raspberry Pi servers. Built with modern technologies, PiDeck provides a centralized control hub for system monitoring, service management, and log analysis.
 
-**Current version: 2.1.0** — 2.0 GUI refresh phase 2: customisable dashboard layout, density and refresh controls. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
+**Current version: 2.1.1** — 2.0 GUI refresh phase 2 (customisable dashboard layout, density and refresh controls) plus dependency security updates. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
 
 ![PiDeck 2.0 dashboard (dark theme)](./docs/screenshots/dashboard.png)
 
@@ -92,9 +92,8 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 
 2. **Install dependencies**
    ```bash
-   npm install --legacy-peer-deps
+   npm install
    ```
-   `--legacy-peer-deps` is needed until `@vitejs/plugin-react` supports Vite 8.
 
 3. **Configure the environment**
    ```bash
