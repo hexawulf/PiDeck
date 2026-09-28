@@ -1,4 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useLocation, useSearch } from "wouter";
+import { useHostLogs, type LogEntry } from "@/hooks/use-host-logs";
+import { LogListItem } from "@/components/logview/log-list-item";
+import { PinnedLogs } from "@/components/logview/pinned-logs";
+import { markLogMissing, markLogPresent, useLogPins } from "@/hooks/use-log-pins";
+import type { Pin as LogPin } from "@/prefs/prefs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +15,6 @@ import {
   RefreshCw,
   Search,
   AlertCircle,
-  CheckCircle2,
   HardDrive,
   ChevronLeft,
   ChevronRight,
@@ -17,18 +22,10 @@ import {
   Globe,
   Terminal,
   FolderOpen,
+  Pin,
+  PinOff,
 } from "lucide-react";
 
-interface LogEntry {
-  id: string;
-  name: string;
-  label: string;
-  path: string;
-  size: number;
-  mtime: string;
-  source: "home" | "nginx" | "pm2" | "project";
-  large?: boolean;
-}
 
 type DateFilter = "all" | "24h" | "7d" | "30d";
 
@@ -40,23 +37,6 @@ const CATEGORY_META: Record<string, { label: string; Icon: React.ElementType; ac
 };
 const CATEGORY_ORDER = ["nginx", "pm2", "project", "home"];
 
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 // --- Syntax highlighting ------------------------------------------------
 
@@ -100,59 +80,23 @@ const LogLineHighlighter: React.FC<{ line: string }> = ({ line }) => {
   return <>{parts}</>;
 };
 
-// --- Sidebar log list button -------------------------------------------
-
-function LogListItem({
-  log,
-  selected,
-  onClick,
-  compact,
-}: {
-  log: LogEntry;
-  selected: boolean;
-  onClick: () => void | Promise<void>;
-  compact?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors ${
-        selected
-          ? "bg-pi-accent text-pi-on-accent"
-          : "hover:bg-pi-card-hover text-pi-text"
-      }`}
-    >
-      <div className="flex items-center gap-2 min-w-0">
-        <CheckCircle2
-          className={`h-3 w-3 flex-shrink-0 ${
-            selected ? "text-pi-on-accent" : "text-pi-success"
-          }`}
-        />
-        <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium truncate">
-            {log.label || log.name}
-          </div>
-          {!compact && (
-            <div
-              className={`text-[10px] mt-0.5 ${
-                selected ? "text-pi-on-accent opacity-70" : "text-pi-text-muted"
-              }`}
-            >
-              {relativeTime(log.mtime)} · {formatSize(log.size)}
-            </div>
-          )}
-        </div>
-      </div>
-    </button>
-  );
-}
-
 // --- Main component ----------------------------------------------------
 
 export default function LogViewer() {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [isLoadingLogs, setIsLoadingLogs] = useState(true);
-  const [logsError, setLogsError] = useState<string | null>(null);
+  const logsQuery = useHostLogs();
+  const logs = useMemo(() => logsQuery.data ?? [], [logsQuery.data]);
+  const isLoadingLogs = logsQuery.isPending;
+  const logsError = logsQuery.error?.message ?? null;
+  const search = useSearch();
+  const [, navigate] = useLocation();
+  const { isPinned, pin, unpin } = useLogPins();
+  // A log id that isn't in the list (stale pin, old link): open it anyway so the 404 shows.
+  const entryFor = (id: string): LogEntry =>
+    logs.find((l) => l.id === id) ?? { id, name: id, label: id, path: "", size: 0, mtime: "", source: "home" };
+  const openPin = (p: LogPin) => {
+    setSearchFilter(p.grep ?? "");
+    void handleLogSelect(entryFor(p.logId), p.grep ?? "");
+  };
 
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [logContent, setLogContent] = useState<string[]>([]);
@@ -179,33 +123,22 @@ export default function LogViewer() {
     localStorage.setItem("logViewer:sidebarCollapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
 
-  // Fetch logs on mount
+  // Open ?log=<id>[&grep=…] (palette, pins), else restore the last selection.
   useEffect(() => {
-    const fetchLogs = async () => {
-      try {
-        setIsLoadingLogs(true);
-        const response = await fetch("/api/hostlogs", { credentials: "include" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-        const logData = await response.json();
-        setLogs(Array.isArray(logData) ? logData : []);
-      } catch (err) {
-        console.error("Error fetching logs:", err);
-        setLogsError(err instanceof Error ? err.message : "Failed to fetch logs");
-      } finally {
-        setIsLoadingLogs(false);
-      }
-    };
-    fetchLogs();
-  }, []);
-
-  // Restore last selection
-  useEffect(() => {
-    const lastId = localStorage.getItem("logViewer:lastId");
-    if (lastId && logs.length) {
-      const log = logs.find((l) => l.id === lastId);
-      if (log) handleLogSelect(log);
+    if (!logs.length) return;
+    const params = new URLSearchParams(search);
+    const wanted = params.get("log");
+    if (wanted) {
+      const grep = params.get("grep") ?? "";
+      setSearchFilter(grep);
+      handleLogSelect(entryFor(wanted), grep);
+      navigate("/logs", { replace: true }); // consume the link so reload/back don't re-open it
+      return;
     }
-  }, [logs]);
+    const lastId = localStorage.getItem("logViewer:lastId");
+    const log = lastId ? logs.find((l) => l.id === lastId) : undefined;
+    if (log && !selectedLog) handleLogSelect(log);
+  }, [logs, search]);
 
   // Cleanup EventSource
   useEffect(() => {
@@ -276,7 +209,7 @@ export default function LogViewer() {
     });
   };
 
-  const handleLogSelect = async (log: LogEntry) => {
+  const handleLogSelect = async (log: LogEntry, grep = searchFilter) => {
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
     setIsFollowing(false);
@@ -284,10 +217,10 @@ export default function LogViewer() {
     setLogContent([]);
     setError(null);
     localStorage.setItem("logViewer:lastId", log.id);
-    await fetchLogContent(log.id, false);
+    await fetchLogContent(log.id, false, grep);
   };
 
-  const fetchLogContent = async (logId: string, follow: boolean) => {
+  const fetchLogContent = async (logId: string, follow: boolean, grep = searchFilter) => {
     setIsLoading(true);
     setError(null);
     try {
@@ -296,10 +229,12 @@ export default function LogViewer() {
         setIsFollowing(false);
       } else {
         const params = new URLSearchParams({ tail: tailLines });
-        if (searchFilter) params.append("grep", searchFilter);
+        if (grep) params.append("grep", grep);
         const response = await fetch(`/api/hostlogs/${logId}?${params.toString()}`, {
           credentials: "include",
         });
+        if (response.status === 404) markLogMissing(logId); // pins show it as stale
+        else if (response.ok) markLogPresent(logId);
         if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
         const text = await response.text();
         setLogContent(text ? text.split("\n").filter((l: string) => l.trim()) : []);
@@ -436,7 +371,9 @@ export default function LogViewer() {
                 </div>
               </CardHeader>
 
-              {/* Pinned filters */}
+              <PinnedLogs activeId={selectedLog?.id} onOpen={openPin} />
+
+              {/* List filters */}
               <div className="px-3 pb-2 space-y-2 flex-shrink-0 border-b border-pi-border">
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-pi-text-muted pointer-events-none" />
@@ -552,6 +489,17 @@ export default function LogViewer() {
                 </CardTitle>
                 {selectedLog && (
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {(() => {
+                      const grep = searchFilter.trim() || undefined; // pins the log with the filter typed right now
+                      const pinned = isPinned(selectedLog.id, grep);
+                      const what = grep ? "log with this filter" : "log";
+                      return (
+                        <Button size="sm" variant="outline" aria-pressed={pinned} aria-label={pinned ? `Unpin ${what}` : `Pin ${what}`} title={pinned ? `Unpin ${what}` : `Pin ${what}`}
+                          onClick={() => (pinned ? unpin({ logId: selectedLog.id, grep }) : pin({ logId: selectedLog.id, label: selectedLog.label || selectedLog.name, grep }))}>
+                          {pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                        </Button>
+                      );
+                    })()}
                     <Button
                       size="sm"
                       variant="outline"
