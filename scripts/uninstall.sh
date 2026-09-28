@@ -82,6 +82,15 @@ run() {
   "$@"
 }
 have() { command -v "$1" >/dev/null 2>&1; }
+# Does a (root-owned) path exist? /etc/sudoers.d is 0750 root on Debian/
+# Ubuntu, so a plain `[ -e ]` from the owning user is always false there.
+# Ask sudo only when the directory can't be searched.
+path_exists() {
+  local p="$1"
+  [ -e "$p" ] && return 0
+  [ -x "$(dirname "$p")" ] && return 1
+  sudo -n test -e "$p" 2>/dev/null
+}
 pm2_bin() { have pm2 && command -v pm2 || { [ -x "$APP_DIR/node_modules/.bin/pm2" ] && echo "$APP_DIR/node_modules/.bin/pm2"; } || true; }
 # Asking pm2 anything (even `describe`) starts a pm2 daemon when none is
 # running, which a systemd host doesn't want. Probe the pid file first: no
@@ -109,7 +118,7 @@ info "log: $LOG"
 PM2="$(pm2_bin)"
 HAS_PM2=0; pm2_has_pideck "$PM2" && HAS_PM2=1
 HAS_UNIT=0; [ -f "$UNIT" ] && HAS_UNIT=1
-HAS_SUDOERS=0; [ -e "$SUDOERS" ] && HAS_SUDOERS=1
+HAS_SUDOERS=0; path_exists "$SUDOERS" && HAS_SUDOERS=1
 
 step "Plan"
 [ "$HAS_PM2" = 1 ] && info "- pm2: delete app 'pideck', pm2 save"

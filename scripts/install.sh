@@ -167,11 +167,22 @@ confirm() { # confirm "question" default(y|n)
 
 # install_file SRC DEST MODE [sudo] — atomic install; backs up and summarises
 # the change when DEST exists and differs. SRC is a validated temp file.
+# Does a (root-owned) path exist? /etc/sudoers.d is 0750 root on Debian/
+# Ubuntu, so a plain `[ -e ]` from the owning user is always false there.
+# Ask sudo only when the directory can't be searched.
+path_exists() {
+  local p="$1"
+  [ -e "$p" ] && return 0
+  [ -x "$(dirname "$p")" ] && return 1
+  sudo -n test -e "$p" 2>/dev/null
+}
 install_file() {
   local src="$1" dest="$2" mode="$3" use_sudo="${4:-}" pre=()
   [ -n "$use_sudo" ] && pre=(sudo)
-  if [ -e "$dest" ] && "${pre[@]}" cmp -s "$src" "$dest"; then ok "$dest unchanged"; return 0; fi
-  if [ -e "$dest" ]; then
+  local exists=0
+  if [ -n "$use_sudo" ]; then path_exists "$dest" && exists=1; else [ -e "$dest" ] && exists=1; fi
+  if [ "$exists" = 1 ] && "${pre[@]}" cmp -s "$src" "$dest"; then ok "$dest unchanged"; return 0; fi
+  if [ "$exists" = 1 ]; then
     local added removed
     added=$("${pre[@]}" diff "$dest" "$src" | grep -c '^>' || true)
     removed=$("${pre[@]}" diff "$dest" "$src" | grep -c '^<' || true)

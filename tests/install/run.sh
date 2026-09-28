@@ -291,6 +291,11 @@ check "re-run detects systemd and restarts (no second instance)" bash -c "grep -
 uninst --yes || bad "uninstall exit $?"
 check "uninstall: unit removed, copy kept in ~/backups" bash -c "test ! -e '$unit' && ls '$W'/home/backups/pideck-uninstall-*/pideck.service >/dev/null"
 check "re-run + uninstall never start a pm2 daemon either" bash -c "! grep -q SPAWNED-DAEMON '$W/state/calls' && test ! -e '$W/home/.pm2'"
+# /etc/sudoers.d is 0750 root on real hosts: existence must be asked via sudo.
+chmod 000 "$W/etc/sudoers.d"; : > "$W/state/calls"
+uninst --dry-run || bad "uninstall dry run exit $?"
+check "unsearchable sudoers.d → existence checked with sudo -n test -e" grep -q '^sudo -n test -e .*/sudoers.d/pideck' "$W/state/calls"
+chmod 755 "$W/etc/sudoers.d"
 cleanup
 
 new_sandbox "--update"
