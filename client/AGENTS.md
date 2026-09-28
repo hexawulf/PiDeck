@@ -89,8 +89,9 @@ it applies the header speed (Live ×1, Relaxed ×2, Slow ×5) and returns `false
 ### UI Prefs Pattern
 **Reference**: `client/src/prefs/prefs.ts`, `client/src/prefs/UiPrefsProvider.tsx`
 - `useUiPrefs()` reads; `useUiPrefsDispatch()` changes (`setLayout`, `hide`, `show`, `resetLayout`,
-  `setDensity`, `setSpeed`, `setPaused`, `replace`). Persisted to `localStorage["pideck:prefs:v1"]`;
-  `paused` is session-only and never saved.
+  `setDensity`, `setSpeed`, `setPaused`, `setEditing`, `setPins`, `replace`). Persisted to
+  `localStorage["pideck:prefs:v1"]`; `paused`, `editing` and `lastReset` are session-only and never saved.
+  Pass `reason` with `replace` when it is a reset, so About › Diagnostics can show it.
 - Adding a section: add a zod schema to `SECTIONS` in `prefs.ts` (a bad section falls back alone).
 - Layout geometry (compact, reading order, keyboard moves) lives in `prefs.ts`, not in the grid, so
   react-grid-layout stays in the lazy `DashboardGrid` chunk. Don't import `react-grid-layout` elsewhere.
@@ -100,6 +101,31 @@ it applies the header speed (Live ×1, Relaxed ×2, Slow ×5) and returns `false
 `<html data-density="comfortable|compact">` drives `--pi-card-pad`, `--pi-gap`, `--pi-cell-pad-y`,
 `--pi-font-body`, `--pi-chart-h` (`index.css`). Use these tokens for spacing inside cards instead of fixed
 padding; the grid's row height/margin mirror them in `GRID_METRICS` (`DashboardGrid.tsx`).
+
+### Confirming risky actions (E7)
+**Reference**: `client/src/components/ui/confirm-dialog.tsx`, `client/src/components/update-system-confirm.tsx`
+- Anything that changes the host or wipes prefs goes through `<ConfirmDialog>` — never `window.confirm`, never
+  a single click. Focus starts on Cancel, Esc/overlay cancel, `pending` blocks dismissal, focus returns to the
+  opener (or `returnFocusRef` when the opener is gone, e.g. the palette).
+- Update System: render `<UpdateSystemConfirm open onOpenChange />`; it owns the mutation and the toasts.
+
+### Keyboard shortcuts & command palette
+- **Shortcut table**: `client/src/shortcuts/shortcuts.ts` (`SHORTCUTS` + pure `resolveKey`). The `?` sheet renders
+  the table, so add a shortcut there and in `useCommandCenter`'s `run()` switch — nowhere else. Single keys must
+  be ignored while typing / with a dialog open (the resolver does it); never bind a destructive action.
+- **Palette actions**: `client/src/palette/actions.ts` → `buildActions(ctx)`. Add an entry (group, label,
+  keywords, `perform`). Destructive entries only open a ConfirmDialog.
+- **Lazy chunk**: `palette/CommandPalette.tsx` (palette + help sheet) is loaded on first open by
+  `components/command-center.tsx`. Don't import `palette/*` from main-chunk code; the E2E palette spec checks the
+  main JS for palette strings.
+
+### Log pins (`useLogPins`)
+**Reference**: `client/src/hooks/use-log-pins.ts`, `components/logview/pinned-logs.tsx`
+- Pins are the `pins` prefs section (`logId`, optional `label`/`grep`, max 100); `pin()` dedupes same log + filter
+  and refuses a 101st. Stale = not in `/api/hostlogs` or 404 on open (`markLogMissing`); stale pins stay, greyed.
+- Open a log from anywhere with `logHref(id, grep?)` → `/logs?log=…&grep=…` (the log list is `useHostLogs()`).
+- Keep new log UI out of `log-viewer.tsx` (it should only shrink); put it in `components/logview/` — not
+  `components/logs/`, which `.gitignore` ignores.
 
 ### Styling Guidelines
 - **Muted text**: `text-pi-text-muted` · **Warnings**: `text-pi-warning` · **Errors**: `text-pi-error`
@@ -134,6 +160,7 @@ import { Card } from '@/components/ui/card'
 - **Shell/routes**: `client/src/components/app-shell.tsx` - header (incl. `RefreshControl`) + tabs at `/:tab`
 - **Prefs**: `client/src/prefs/UiPrefsProvider.tsx` - wraps the shell in `App.tsx`
 - **Dashboard**: `client/src/pages/dashboard.tsx` (toolbar, phone stack) → lazy `widgets/DashboardGrid.tsx`
+- **Palette/shortcuts**: `client/src/components/command-center.tsx` → lazy `palette/CommandPalette.tsx`
 
 ### Example Files (Good Patterns)
 - **Widget**: `client/src/components/widgets/MountInfoBox.tsx`

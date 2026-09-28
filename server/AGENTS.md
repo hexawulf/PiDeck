@@ -221,6 +221,12 @@ rg -n "'/api/" server/routes
 - `/api/system/info` is read-only; disk/network rates are deltas against a per-caller baseline
   (`createRateBaseline()`), so the sampler and browser polls don't share one.
 
+### System update guard
+`POST /api/system/update` (`server/routes/system-update.ts`) runs `sudo apt-get update && upgrade -y`.
+`PIDECK_DISABLE_SYSTEM_UPDATE=1` makes it answer `409 { message: "System update disabled in this environment" }`
+without running anything. `scripts/e2e-server.sh` sets it (the E2E build shares the prod host); E2E specs also
+stub the endpoint with `page.route`.
+
 ### Log filters
 User `?grep=` values go through `server/services/log-filter.ts`: literal by default, regex only for
 `/…/`, ≤200 chars, no newline/NUL. Pass them to grep only as `-e <pattern> --`, never as the first argument.
