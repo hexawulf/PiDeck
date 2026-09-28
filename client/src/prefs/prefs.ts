@@ -6,13 +6,16 @@
  *           ▼
  *         JSON.parse ──fails──► back up raw to "…v1.bad", defaults, toast
  *           ▼
- *         version === 1 ? ──no──► same as above (old/unknown version)
+ *         version 1 or 2 ? ──no──► same as above (unknown version)
+ *           │ 1 → migrate: no layoutByHost yet (= every host uses the local layout)
  *           ▼
- *         per-section zod (layout · hidden · density · speed · pins)
+ *         per-section zod (layout · hidden · density · speed · pins · layoutByHost)
  *           │  a bad section falls back alone; the toast names it (E3)
  *           ▼
  *         reconcile(registry): drop unknown ids, append new ids at the
- *           bottom, clamp sizes, keep hidden ids hidden, compact
+ *           bottom, clamp sizes, keep hidden ids hidden, compact — the local
+ *           layout against every widget, each remote host's against the
+ *           `hosts: "any"` widgets
  *
  *  save:  only persisted sections (never `paused`) → setItem
  *           QuotaExceededError → keep in memory, toast "Couldn't save layout"
@@ -24,7 +27,7 @@ import { z } from "zod";
 
 export const PREFS_KEY = "pideck:prefs:v1";
 export const PREFS_BAD_KEY = `${PREFS_KEY}.bad`;
-export const PREFS_VERSION = 1;
+export const PREFS_VERSION = 2; // 2: layoutByHost (multi-host H1); 1 still loads and imports
 export const GRID_COLS = 12;
 export const IMPORT_MAX_BYTES = 64 * 1024;
 
@@ -40,24 +43,38 @@ export const pinSchema = z
   .object({ logId: z.string().max(200), label: z.string().max(200).optional(), grep: z.string().max(200).optional() })
   .strict();
 
+const layoutSchema = z.array(layoutItemSchema).max(200);
+const hiddenSchema = z.array(z.string().max(64)).max(200);
+export const MAX_HOST_LAYOUTS = 32;
+/** One remote host's dashboard; the local one stays in `layout`/`hidden`. */
+export const hostLayoutSchema = z.object({ layout: layoutSchema, hidden: hiddenSchema }).strict();
+export const layoutByHostSchema = z
+  .record(z.string().regex(/^[a-z0-9-]{1,32}$/), hostLayoutSchema)
+  .refine((o) => Object.keys(o).length <= MAX_HOST_LAYOUTS, `at most ${MAX_HOST_LAYOUTS} hosts`)
+  .refine((o) => !("local" in o), "the local layout is `layout`, not layoutByHost.local");
+
 export const SECTIONS = {
-  layout: z.array(layoutItemSchema).max(200),
-  hidden: z.array(z.string().max(64)).max(200),
+  layout: layoutSchema,
+  hidden: hiddenSchema,
   density: densitySchema,
   speed: speedSchema,
   pins: z.array(pinSchema).max(100),
+  layoutByHost: layoutByHostSchema,
 } as const;
 export type SectionName = keyof typeof SECTIONS;
 
-/** Import accepts only this exact shape (unknown keys rejected). */
+/** Import accepts only these exact shapes (unknown keys rejected): the current file, or a v1 file. */
 export const importSchema = z
   .object({ version: z.literal(PREFS_VERSION), ...SECTIONS })
   .strict();
+const { layoutByHost: _v2only, ...V1_SECTIONS } = SECTIONS;
+export const importSchemaV1 = z.object({ version: z.literal(1), ...V1_SECTIONS }).strict();
 
 export type LayoutItem = z.infer<typeof layoutItemSchema>;
 export type Density = z.infer<typeof densitySchema>;
 export type Speed = z.infer<typeof speedSchema>;
 export type Pin = z.infer<typeof pinSchema>;
+export type HostLayout = z.infer<typeof hostLayoutSchema>;
 export type PersistedPrefs = { [K in SectionName]: z.infer<(typeof SECTIONS)[K]> };
 
 /** What prefs needs to know about a widget (a subset of WidgetDef). */
@@ -66,7 +83,11 @@ export type WidgetSizing = {
   defaultSize: { w: number; h: number };
   minSize?: { w: number; h: number };
   maxSize?: { w: number; h: number };
+  hosts?: "local" | "any";
 };
+
+/** The widgets a remote host's dashboard can show. */
+export const remoteRegistry = (registry: readonly WidgetSizing[]) => registry.filter((d) => (d.hosts ?? "any") === "any");
 
 // ── layout geometry ──────────────────────────────────────────────────
 const collides = (a: LayoutItem, b: LayoutItem) =>
@@ -122,7 +143,7 @@ export function defaultLayout(registry: readonly WidgetSizing[]): LayoutItem[] {
 }
 
 export function defaultPrefs(registry: readonly WidgetSizing[]): PersistedPrefs {
-  return { layout: defaultLayout(registry), hidden: [], density: "comfortable", speed: "live", pins: [] };
+  return { layout: defaultLayout(registry), hidden: [], density: "comfortable", speed: "live", pins: [], layoutByHost: {} };
 }
 
 /** Make a layout/hidden pair valid for the current registry. */
@@ -146,6 +167,43 @@ export function reconcile(
     layout: compact([...kept, ...added]),
     hidden: [...new Set(hidden)].filter((id) => defs.has(id)),
   };
+}
+
+/** Reconcile every remote host's saved layout against the remote registry. */
+export function reconcileHosts(
+  byHost: Readonly<Record<string, HostLayout>>,
+  registry: readonly WidgetSizing[],
+): Record<string, HostLayout> {
+  const remote = remoteRegistry(registry);
+  const out: Record<string, HostLayout> = {};
+  for (const [id, l] of Object.entries(byHost)) if (id !== "local") out[id] = reconcile(l.layout, l.hidden, remote);
+  return out;
+}
+
+/**
+ * A host's layout: the local one for "local"; for a remote host its own
+ * saved layout, or — until it has one — the local layout minus local-only
+ * widgets (plan › Layout prefs: "falling back to the local layout").
+ */
+export function hostLayout(
+  prefs: Pick<PersistedPrefs, "layout" | "hidden" | "layoutByHost">,
+  hostId: string,
+  registry: readonly WidgetSizing[],
+): HostLayout {
+  if (hostId === "local") return { layout: prefs.layout, hidden: prefs.hidden };
+  return prefs.layoutByHost[hostId] ?? reconcile(prefs.layout, prefs.hidden, remoteRegistry(registry));
+}
+
+/** Prefs with one host's layout/hidden changed (a remote host gets its own entry from now on). */
+export function withHostLayout(
+  prefs: PersistedPrefs,
+  hostId: string,
+  change: Partial<HostLayout>,
+  registry: readonly WidgetSizing[],
+): PersistedPrefs {
+  if (hostId === "local") return { ...prefs, ...change };
+  const current = hostLayout(prefs, hostId, registry);
+  return { ...prefs, layoutByHost: { ...prefs.layoutByHost, [hostId]: { ...current, ...change } } };
 }
 
 /** The visible cards, compacted as the grid will show them, in reading order. */
@@ -225,11 +283,14 @@ export function loadPrefs(store: Store | null, registry: readonly WidgetSizing[]
     backup(store, raw);
     return { prefs: defaults, issue: { kind: "invalid" } };
   }
-  if (typeof data !== "object" || data === null || Array.isArray(data) || (data as { version?: unknown }).version !== PREFS_VERSION) {
+  const version = (data as { version?: unknown } | null)?.version;
+  if (typeof data !== "object" || data === null || Array.isArray(data) || (version !== PREFS_VERSION && version !== 1)) {
     backup(store, raw);
     return { prefs: defaults, issue: { kind: "invalid" } };
   }
 
+  // v1 → v2: the only change is the new layoutByHost section, which a v1
+  // value simply lacks (a missing section is the default: {}).
   const obj = data as Record<string, unknown>;
   const bad: SectionName[] = [];
   const out = { ...defaults } as Record<SectionName, unknown>;
@@ -241,13 +302,14 @@ export function loadPrefs(store: Store | null, registry: readonly WidgetSizing[]
   }
   const prefs = out as PersistedPrefs;
   Object.assign(prefs, reconcile(prefs.layout, prefs.hidden, registry));
+  prefs.layoutByHost = reconcileHosts(prefs.layoutByHost, registry);
   if (bad.length) backup(store, raw);
   return { prefs, issue: bad.length ? { kind: "sections", sections: bad } : null };
 }
 
 export function serializePrefs(prefs: PersistedPrefs): string {
-  const { layout, hidden, density, speed, pins } = prefs; // explicit: nothing session-only leaks in
-  return JSON.stringify({ version: PREFS_VERSION, layout, hidden, density, speed, pins });
+  const { layout, hidden, density, speed, pins, layoutByHost } = prefs; // explicit: nothing session-only leaks in
+  return JSON.stringify({ version: PREFS_VERSION, layout, hidden, density, speed, pins, layoutByHost });
 }
 
 export type SaveResult = "ok" | "quota" | "blocked";
@@ -279,13 +341,20 @@ export function parseImport(
   } catch {
     return { ok: false, error: "Not valid JSON" };
   }
-  const parsed = importSchema.safeParse(data);
+  const isV1 = (data as { version?: unknown } | null)?.version === 1;
+  const parsed = isV1
+    ? importSchemaV1.transform((d) => ({ ...d, layoutByHost: {} }))
+        .safeParse(data)
+    : importSchema.safeParse(data);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     return { ok: false, error: `${issue.path.join(".") || "(root)"}: ${issue.message}` };
   }
   const { version: _v, ...prefs } = parsed.data;
-  return { ok: true, prefs: { ...prefs, ...reconcile(prefs.layout, prefs.hidden, registry) } };
+  return {
+    ok: true,
+    prefs: { ...prefs, ...reconcile(prefs.layout, prefs.hidden, registry), layoutByHost: reconcileHosts(prefs.layoutByHost, registry) },
+  };
 }
 
 /** localStorage, or null when the browser refuses access to it. */

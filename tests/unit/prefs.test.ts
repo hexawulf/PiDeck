@@ -51,7 +51,7 @@ describe("loadPrefs", () => {
   it.each([
     ["corrupt JSON", "{not json"],
     ["v0", JSON.stringify({ version: 0, layout: [] })],
-    ["unknown version", JSON.stringify({ version: 2 })],
+    ["unknown version", JSON.stringify({ version: 3 })],
     ["no version", JSON.stringify({ layout: [] })],
     ["array", "[]"],
     ["null", "null"],
@@ -113,7 +113,7 @@ describe("savePrefs", () => {
     const prefs = { ...defaultPrefs(REG), paused: true } as ReturnType<typeof defaultPrefs>;
     expect(savePrefs(store, prefs)).toBe("ok");
     const written = JSON.parse(store.data.get(PREFS_KEY)!);
-    expect(Object.keys(written).sort()).toEqual(["density", "hidden", "layout", "pins", "speed", "version"]);
+    expect(Object.keys(written).sort()).toEqual(["density", "hidden", "layout", "layoutByHost", "pins", "speed", "version"]);
     expect(loadPrefs(store, REG)).toEqual({ prefs: defaultPrefs(REG), issue: null }); // round trip
   });
 
@@ -154,7 +154,7 @@ describe("parseImport", () => {
   it("rejects wrong types and versions with the path", () => {
     const bad = { ...JSON.parse(good), speed: "warp" };
     expect(parseImport(JSON.stringify(bad), REG)).toMatchObject({ ok: false, error: expect.stringMatching(/^speed: /) });
-    expect(parseImport(JSON.stringify({ ...JSON.parse(good), version: 2 }), REG)).toMatchObject({ ok: false, error: expect.stringMatching(/^version: /) });
+    expect(parseImport(JSON.stringify({ ...JSON.parse(good), version: 3 }), REG)).toMatchObject({ ok: false, error: expect.stringMatching(/^version: /) });
   });
 
   it("reconciles imported ids against the registry", () => {

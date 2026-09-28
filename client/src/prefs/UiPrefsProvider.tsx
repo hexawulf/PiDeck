@@ -1,25 +1,32 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type Dispatch, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type Dispatch, type ReactNode } from "react";
 import { toast } from "@/hooks/use-toast";
 import { RefreshCtx } from "./refresh-context";
 import { WIDGETS } from "@/widgets/registry";
+import { useHost } from "@/hosts/HostProvider";
 import {
-  browserStore, defaultLayout, defaultPrefs, loadPrefs, PREFS_KEY, savePrefs, serializePrefs,
-  type Density, type LayoutItem, type LoadIssue, type PersistedPrefs, type Pin, type SectionName, type Speed, type Store,
+  browserStore, defaultLayout, defaultPrefs, hostLayout, loadPrefs, PREFS_KEY, remoteRegistry, savePrefs, serializePrefs, withHostLayout,
+  type Density, type HostLayout, type LayoutItem, type LoadIssue, type PersistedPrefs, type Pin, type SectionName, type Speed, type Store,
 } from "./prefs";
 
 // UI prefs (E2): one reducer, separate state and dispatch contexts so
 // components that only dispatch don't re-render. Session-only (never saved):
 // `paused`, `editing` (dashboard Edit mode, so the palette and the `e`
 // shortcut can drive it) and `lastReset` (shown in About › Diagnostics).
+//
+// Multi-host: one layout per host. The state holds them all (`layout` /
+// `hidden` = local, `layoutByHost` = remote hosts); what useUiPrefs() hands
+// out is the *current host's* view, and useUiPrefsDispatch() tags layout
+// actions with the current host — so the dashboard and the visibility list
+// need no host logic of their own.
 
 export type ResetRecord = { reason: string; at: string };
 export type UiPrefsState = PersistedPrefs & { paused: boolean; editing: boolean; lastReset: ResetRecord | null };
 
 export type UiPrefsAction =
-  | { type: "setLayout"; layout: LayoutItem[] }
-  | { type: "hide"; id: string }
-  | { type: "show"; id: string }
-  | { type: "resetLayout" }
+  | { type: "setLayout"; layout: LayoutItem[]; host?: string }
+  | { type: "hide"; id: string; host?: string }
+  | { type: "show"; id: string; host?: string }
+  | { type: "resetLayout"; host?: string }
   | { type: "setDensity"; density: Density }
   | { type: "setSpeed"; speed: Speed }
   | { type: "setPaused"; paused: boolean }
@@ -31,16 +38,30 @@ export type UiPrefsAction =
 
 const stamp = (reason: string): ResetRecord => ({ reason, at: new Date().toISOString() });
 
+const LAYOUT_ACTIONS = new Set<UiPrefsAction["type"]>(["setLayout", "hide", "show", "resetLayout"]);
+
+/** Apply a layout change to one host's layout, keeping the session-only fields. */
+function onHost(state: UiPrefsState, host: string | undefined, change: (l: HostLayout) => Partial<HostLayout>): UiPrefsState {
+  const h = host ?? "local";
+  const current = hostLayout(state, h, WIDGETS);
+  return { ...state, ...withHostLayout(state, h, change(current), WIDGETS) };
+}
+
 export function uiPrefsReducer(state: UiPrefsState, action: UiPrefsAction): UiPrefsState {
   switch (action.type) {
     case "setLayout":
-      return { ...state, layout: action.layout };
+      return onHost(state, action.host, () => ({ layout: action.layout }));
     case "hide":
-      return state.hidden.includes(action.id) ? state : { ...state, hidden: [...state.hidden, action.id] };
+      return hostLayout(state, action.host ?? "local", WIDGETS).hidden.includes(action.id)
+        ? state
+        : onHost(state, action.host, (l) => ({ hidden: [...l.hidden, action.id] }));
     case "show":
-      return { ...state, hidden: state.hidden.filter((id) => id !== action.id) };
-    case "resetLayout":
-      return { ...state, layout: defaultLayout(WIDGETS), hidden: [], lastReset: stamp("Reset layout") };
+      return onHost(state, action.host, (l) => ({ hidden: l.hidden.filter((id) => id !== action.id) }));
+    case "resetLayout": {
+      const local = (action.host ?? "local") === "local";
+      const layout = defaultLayout(local ? WIDGETS : remoteRegistry(WIDGETS));
+      return { ...onHost(state, action.host, () => ({ layout, hidden: [] })), lastReset: stamp("Reset layout") };
+    }
     case "setDensity":
       return { ...state, density: action.density };
     case "setSpeed":
@@ -73,6 +94,7 @@ export const useUiPrefsDispatch = () => useContext(DispatchCtx);
 
 const SECTION_LABEL: Record<SectionName, string> = {
   layout: "layout", hidden: "hidden widgets", density: "density", speed: "refresh speed", pins: "log pins",
+  layoutByHost: "per-host layouts",
 };
 
 /** Why loading fell back to defaults, in Diagnostics wording (null = it didn't). */
@@ -113,11 +135,11 @@ export function UiPrefsProvider({ children, store = browserStore() }: { children
 
   // Persist on every change to a persisted section. Discrete events only —
   // the grid dispatches setLayout on drag/resize stop, never while dragging (E21).
-  const { layout, hidden, density, speed, pins } = state;
+  const { layout, hidden, density, speed, pins, layoutByHost } = state;
   const lastSaved = useRef(serializePrefs(initial.current.prefs));
   const quotaWarned = useRef(false);
   useEffect(() => {
-    const prefs = { layout, hidden, density, speed, pins };
+    const prefs = { layout, hidden, density, speed, pins, layoutByHost };
     const text = serializePrefs(prefs);
     if (text === lastSaved.current || blocked.current) return;
     const result = savePrefs(store, prefs);
@@ -131,7 +153,7 @@ export function UiPrefsProvider({ children, store = browserStore() }: { children
       blocked.current = true;
       announce({ kind: "blocked" });
     }
-  }, [store, layout, hidden, density, speed, pins]);
+  }, [store, layout, hidden, density, speed, pins, layoutByHost]);
 
   // Another tab saved: adopt its prefs (no write-back, so no ping-pong).
   useEffect(() => {
@@ -150,10 +172,21 @@ export function UiPrefsProvider({ children, store = browserStore() }: { children
     document.documentElement.dataset.density = density;
   }, [density]);
 
+  // The current host's view: its layout/hidden in place of the local ones.
+  const host = useHost();
+  const view = useMemo<UiPrefsState>(
+    () => (host.isLocal ? state : { ...state, ...hostLayout(state, host.id, WIDGETS) }),
+    [state, host],
+  );
+  const hostDispatch = useCallback<Dispatch<UiPrefsAction>>(
+    (action) => dispatch(LAYOUT_ACTIONS.has(action.type) && !("host" in action && action.host) ? ({ ...action, host: host.id } as UiPrefsAction) : action),
+    [host.id],
+  );
+
   const refresh = useMemo(() => ({ speed: state.speed, paused: state.paused }), [state.speed, state.paused]);
   return (
-    <DispatchCtx.Provider value={dispatch}>
-      <StateCtx.Provider value={state}>
+    <DispatchCtx.Provider value={hostDispatch}>
+      <StateCtx.Provider value={view}>
         <RefreshCtx.Provider value={refresh}>{children}</RefreshCtx.Provider>
       </StateCtx.Provider>
     </DispatchCtx.Provider>
