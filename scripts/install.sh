@@ -160,7 +160,7 @@ confirm() { # confirm "question" default(y|n)
   local q="$1" def="${2:-y}" ans
   if [ "$YES" = 1 ]; then [ "$def" = y ]; return; fi
   if [ ! -t 0 ]; then [ "$def" = y ]; return; fi
-  read -r -p "  $q [$([ "$def" = y ] && echo Y/n || echo y/N)] " ans </dev/tty || ans=""
+  { read -r -p "  $q [$([ "$def" = y ] && echo Y/n || echo y/N)] " ans </dev/tty; } 2>/dev/null || ans=""
   ans="${ans:-$def}"
   [[ "$ans" =~ ^[Yy] ]]
 }
