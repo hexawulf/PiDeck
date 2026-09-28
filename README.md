@@ -36,7 +36,7 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 - **System Services**: Control various system processes
 
 ### Log Management
-- **Log Viewer**: Browse and view log files from `/home/zk/logs/`
+- **Log Viewer**: Browse project logs (`PIDECK_LOGS_DIR`, default `~/logs`), pm2 and nginx logs, plus any files listed in `PIDECK_HOST_LOGS`
 - **Log Pins & Saved Filters**: Pin logs with their filters; deep links like `/logs?log=…&grep=…`
 - **Real-time Updates**: Auto-refresh log content every 5 seconds
 - **Log Download**: Export log files for offline analysis

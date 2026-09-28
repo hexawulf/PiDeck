@@ -109,12 +109,12 @@ GET /api/logs
 [
   {
     "name": "app.log",
-    "path": "/home/zk/logs/app.log",
+    "path": "/home/pi/logs/app.log",
     "size": "2.5 KB"
   },
   {
     "name": "error.log",
-    "path": "/home/zk/logs/error.log",
+    "path": "/home/pi/logs/error.log",
     "size": "1.2 KB"
   }
 ]

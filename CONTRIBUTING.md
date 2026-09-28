@@ -278,7 +278,7 @@ Add any other context or screenshots.
 DEBUG=express:* npm run dev
 
 # View logs
-tail -f /home/zk/logs/*.log
+tail -f ~/logs/*.log
 ```
 
 ### Database Changes
