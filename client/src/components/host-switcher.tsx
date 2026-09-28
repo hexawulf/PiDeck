@@ -46,11 +46,13 @@ export function tabOnHost(currentTab: string, hostId: string): string {
 }
 
 /**
- * Header host switcher (plan › UI): a disclosure button listing every host
- * with a status dot. Rendered only when the hub has remote hosts.
+ * Host switcher (plan › UI): a disclosure button listing every host with a
+ * status dot. Rendered only when the hub has remote hosts. `header` sits in
+ * the header from sm up; below sm the header is full, so `bar` renders as a
+ * full-width row above the tabs instead (app-shell shows one or the other).
  * Keyboard: Enter/Space open, ↑/↓ move, Esc closes and returns focus.
  */
-export function HostSwitcher({ tab }: { tab: string }) {
+export function HostSwitcher({ tab, variant = "header" }: { tab: string; variant?: "header" | "bar" }) {
   const host = useHost();
   const { data: hosts } = useHosts();
   const [open, setOpen] = useState(false);
@@ -59,11 +61,13 @@ export function HostSwitcher({ tab }: { tab: string }) {
   const list = useRef<HTMLUListElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const listId = useId();
+  const focusList = useRef(false); // opened from the keyboard (g h / palette): move focus into the list
 
   useEffect(() => {
     const onOpen = () => {
+      if (!root.current || root.current.offsetParent === null) return; // the hidden variant
+      focusList.current = true;
       setOpen(true);
-      requestAnimationFrame(() => list.current?.querySelector<HTMLElement>('[aria-current="true"], a')?.focus());
     };
     window.addEventListener(OPEN_HOST_SWITCHER, onOpen);
     return () => window.removeEventListener(OPEN_HOST_SWITCHER, onOpen);
@@ -71,11 +75,27 @@ export function HostSwitcher({ tab }: { tab: string }) {
 
   useEffect(() => {
     if (!open) return;
+    if (focusList.current) {
+      focusList.current = false;
+      list.current?.querySelector<HTMLElement>('[aria-current="true"], a')?.focus();
+    }
     const onDown = (e: PointerEvent) => {
       if (!root.current?.contains(e.target as Node)) setOpen(false);
     };
+    // Esc closes wherever focus is, and stops there (no dashboard Edit-mode exit).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+      button.current?.focus();
+    };
     document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   if (!hosts || hosts.length < 2) return null;
@@ -83,12 +103,6 @@ export function HostSwitcher({ tab }: { tab: string }) {
   const hubVersion = hosts.find((h) => h.local)?.version;
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape" && open) {
-      e.preventDefault();
-      setOpen(false);
-      button.current?.focus();
-      return;
-    }
     if (!open || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
     e.preventDefault();
     const links = Array.from(list.current?.querySelectorAll<HTMLElement>("a") ?? []);
@@ -98,7 +112,12 @@ export function HostSwitcher({ tab }: { tab: string }) {
   };
 
   return (
-    <div ref={root} className="relative" onKeyDown={onKeyDown} data-testid="host-switcher">
+    <div
+      ref={root}
+      className={cn("relative", variant === "bar" && "mb-4 w-full")}
+      onKeyDown={onKeyDown}
+      data-testid={variant === "bar" ? "host-switcher-bar" : "host-switcher"}
+    >
       <button
         ref={button}
         type="button"
@@ -106,18 +125,25 @@ export function HostSwitcher({ tab }: { tab: string }) {
         aria-controls={listId}
         aria-label={`Host: ${current?.label ?? host.id}, ${current ? hostStatusText(current, hubVersion) : "unknown"}. Switch host`}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex h-9 max-w-[9rem] items-center gap-2 rounded-md border border-pi-border px-2 text-sm text-pi-text hover:bg-pi-card-hover sm:max-w-[14rem]"
+        className={cn(
+          "inline-flex h-9 items-center gap-2 rounded-md border border-pi-border px-2 text-sm text-pi-text hover:bg-pi-card-hover",
+          variant === "bar" ? "w-full bg-pi-card" : "max-w-[14rem]",
+        )}
       >
         {current && <StatusDot host={current} hubVersion={hubVersion} />}
+        {variant === "bar" && <span className="text-pi-text-muted">Host:</span>}
         <span className="truncate">{current?.label ?? host.id}</span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-pi-text-muted" aria-hidden />
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-pi-text-muted", variant === "bar" && "ml-auto")} aria-hidden />
       </button>
       {open && (
         <ul
           ref={list}
           id={listId}
           aria-label="Hosts"
-          className="absolute left-0 z-30 mt-1 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border border-pi-border bg-pi-card py-1 text-sm text-pi-text shadow-lg"
+          className={cn(
+            "absolute left-0 z-30 mt-1 overflow-hidden rounded-md border border-pi-border bg-pi-card py-1 text-sm text-pi-text shadow-lg",
+            variant === "bar" ? "w-full" : "w-64",
+          )}
         >
           {hosts.map((h) => {
             const isCurrent = h.id === host.id;

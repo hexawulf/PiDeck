@@ -100,7 +100,9 @@ export default function AppShell({ tab }: { tab: TabId }) {
                 </h1>
                 <p className="hidden text-sm pi-text-muted sm:block">Raspberry Pi Admin</p>
               </div>
-              <HostSwitcher tab={tab} />
+              <span className="hidden sm:block">
+                <HostSwitcher tab={tab} />
+              </span>
             </div>
 
             <div className="hidden items-center space-x-4 md:flex">
@@ -175,6 +177,9 @@ export default function AppShell({ tab }: { tab: TabId }) {
 
       <main className="pt-16">
         <div className="mx-auto max-w-7xl px-4">
+          <div className="sm:hidden">
+            <HostSwitcher tab={tab} variant="bar" />
+          </div>
           <nav aria-label="Sections" className="mb-8 flex space-x-1 overflow-x-auto rounded-xl bg-pi-card p-1">
             {tabs.map(({ id, label, icon: Icon }) => (
               <Link
