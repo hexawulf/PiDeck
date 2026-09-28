@@ -41,7 +41,7 @@ test("export downloads prefs JSON without `paused`", async ({ page }) => {
   await page.getByRole("button", { name: "Export" }).click();
   const file = await (await download).path();
   const data = JSON.parse(fs.readFileSync(file, "utf8"));
-  expect(Object.keys(data).sort()).toEqual(["density", "hidden", "layout", "pins", "speed", "version"]);
+  expect(Object.keys(data).sort()).toEqual(["density", "hidden", "layout", "layoutByHost", "pins", "speed", "version"]); // v2: layoutByHost (multi-host)
 });
 
 test("import rejects bad files inline and keeps current prefs; accepts a good one", async ({ page }) => {

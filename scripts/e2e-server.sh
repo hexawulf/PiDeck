@@ -8,6 +8,8 @@
 #              its sampler would double the prod history rows.
 #              PIDECK_DISABLE_SYSTEM_UPDATE=1: it also shares the prod host, so
 #              POST /api/system/update answers 409 instead of running apt.
+#              Also starts two read-only agents (PIDECK_MODE=agent) on
+#              127.0.0.1:5018/5019 and points the hub at them (multi-host).
 # Modified:    2026-09-28
 # Usage:       scripts/e2e-server.sh [--dry-run]
 set -euo pipefail
@@ -21,6 +23,7 @@ LOGDIR="$HOME/logs"; LOG="$LOGDIR/pideck-e2e-server-$(date +%Y%m%d-%H%M%S).log"
 if [ "${1:-}" = "--dry-run" ]; then
   echo "would build client → $OUT/public, server → $OUT/index.js"
   echo "would serve on :$PORT with APP_PASSWORD_FILE=$PWFILE (log: $LOG)"
+  echo "would start e2e agents on 127.0.0.1:${E2E_AGENT_PORT:-5018} and :$(( ${E2E_AGENT_PORT:-5018} + 1 ))"
   exit 0
 fi
 
@@ -36,6 +39,30 @@ npx vite build --outDir "$OUT/public" --emptyOutDir >>"$LOG" 2>&1
 rm -f "$OUT"/*.js
 npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --splitting --outdir="$OUT" >>"$LOG" 2>&1
 
-echo "serving dist-dev on :$PORT (log: $LOG)"
-exec env NODE_ENV=production CSP_ENFORCE=true PIDECK_SAMPLER=off PIDECK_DISABLE_SYSTEM_UPDATE=1 PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \
+# Multi-host E2E (tests/e2e/multi-host.spec.ts): two local agents from the
+# same build, bound to 127.0.0.1, with fixed test-only tokens:
+#   e2e-agent     → :AGENT_PORT      right token      (online)
+#   e2e-badtoken  → :AGENT_PORT+1    wrong token      (auth-error; its own
+#                   agent, so the failure limit never locks out e2e-agent)
+#   e2e-offline   → :AGENT_PORT+2    nothing listens  (offline)
+AGENT_PORT="${E2E_AGENT_PORT:-5018}"
+AGENT_TOKEN="e2e-agent-token-test-only-0123456789abcdef"
+sha() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
+start_agent() { # start_agent PORT TOKEN
+  env NODE_ENV=production PIDECK_MODE=agent PIDECK_AGENT_BIND=127.0.0.1 PIDECK_AGENT_PORT="$1" \
+    PIDECK_AGENT_TOKEN_SHA256="$(sha "$2")" PIDECK_DISABLE_SYSTEM_UPDATE=1 node "$OUT/index.js" >>"$LOG" 2>&1 &
+  AGENT_PIDS+=("$!")
+}
+AGENT_PIDS=()
+trap 'kill "${AGENT_PIDS[@]}" 2>/dev/null' EXIT INT TERM
+start_agent "$AGENT_PORT" "$AGENT_TOKEN"
+start_agent "$((AGENT_PORT + 1))" "another-agents-token-test-only-0123456789"
+
+echo "serving dist-dev on :$PORT with e2e agents on :$AGENT_PORT-$((AGENT_PORT + 2)) (log: $LOG)"
+env NODE_ENV=production CSP_ENFORCE=true PIDECK_SAMPLER=off PIDECK_DISABLE_SYSTEM_UPDATE=1 PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \
+  PIDECK_HOSTS="e2e-agent=http://127.0.0.1:$AGENT_PORT,e2e-badtoken=http://127.0.0.1:$((AGENT_PORT + 1)),e2e-offline=http://127.0.0.1:$((AGENT_PORT + 2))" \
+  PIDECK_HOST_TOKEN_E2E_AGENT="$AGENT_TOKEN" \
+  PIDECK_HOST_TOKEN_E2E_BADTOKEN="wrong-token-test-only-0123456789abcdef" \
+  PIDECK_HOST_TOKEN_E2E_OFFLINE="unused-token-test-only-0123456789abcdef" \
+  PIDECK_HOST_LABELS="e2e-agent=E2E agent" \
   node "$OUT/index.js" 2>&1 | tee -a "$LOG"
