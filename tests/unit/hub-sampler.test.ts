@@ -80,7 +80,8 @@ function setup(fleet: Fleet, { offlineMinutes = 5, store = memoryAlertStore(), l
       clock += MIN;
     }
   };
-  return { run, tick, rows, history, alerts, store, hostHub, lastSample, logger, lock, agentTemp, agentBoot, fetchImpl, clock: () => clock };
+  const advance = (ms: number) => void (clock += ms);
+  return { run, advance, tick, rows, history, alerts, store, hostHub, lastSample, logger, lock, agentTemp, agentBoot, fetchImpl, clock: () => clock };
 }
 
 const open = (s: { store: { rows: Alert[] } }, type?: string) => s.store.rows.filter((a) => !a.resolvedAt && (!type || a.type === type));
@@ -176,6 +177,14 @@ describe("hub sampler: alerts per host", () => {
     fleet.flaky = "good";
     await s.run(1);
     expect(open(s, "offline")).toEqual([]);
+  });
+
+  it("offline fires on the tick N minutes after the first failure even when the timer runs a little early", async () => {
+    const s = setup({ gone: "down" }, { offlineMinutes: 1 });
+    await s.tick(); // first failed poll
+    s.advance(MIN - 40); // setInterval drift
+    await s.tick();
+    expect(open(s, "offline")).toEqual([expect.objectContaining({ hostId: "gone" })]);
   });
 
   it("after a hub restart: no offline alert for a host it hasn't polled for N minutes yet", async () => {

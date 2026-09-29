@@ -32,6 +32,8 @@ export const SAMPLE_INTERVAL_MS = 60_000;
 export const SAMPLER_LOCK_KEY = 0x506944656b;
 export const HOST_TIMEOUT_MS = 5_000;
 export const TICK_BUDGET_MS = 10_000;
+/** setInterval drifts: a tick "one minute" later can be a few ms short of it. */
+export const OFFLINE_SLACK_MS = 5_000;
 
 type Logger = Pick<Console, "info" | "warn" | "error">;
 export type TickResult = "ran" | "busy" | "locked" | "failed";
@@ -176,7 +178,7 @@ export function createSampleTick({
     if (p.outcome === "offline" || p.outcome === "timeout") {
       const since = failingSince.get(p.id) ?? t;
       failingSince.set(p.id, since);
-      const overdue = t - since >= runtime.offlineMinutes * 60_000;
+      const overdue = t - since >= runtime.offlineMinutes * 60_000 - OFFLINE_SLACK_MS;
       const lastSeen = hostHub.lastSeenAt(p.id);
       const from = new Date(lastSeen !== null && lastSeen < since ? lastSeen : since);
       await alerts.evaluate(p.id, "offline", overdue ? true : null, { severity: "critical", message: offlineMessage(from), startedAt: from });
