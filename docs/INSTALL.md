@@ -621,7 +621,26 @@ PIDECK_HOST_LOGS=messages:Messages=/var/log/messages,agent:PiDeck agent=/var/ser
 PIDECK_AGENT_DOCKER_LOGS=on
 ```
 
+Example (Ubuntu VPS over WireGuard, after `sudo usermod -aG adm zk`):
+```
+PIDECK_AGENT_LOGS=on
+PIDECK_HOST_LOGS=syslog:Syslog=/var/log/syslog,auth:Auth log=/var/log/auth.log,ufw:UFW=/var/log/ufw.log,fail2ban:Fail2ban=/var/log/fail2ban.log,nginx_access:Nginx access=/var/log/nginx/access.log,nginx_error:Nginx error=/var/log/nginx/error.log
+PIDECK_AGENT_JOURNAL_UNITS=pideck-agent,ssh,nginx,fail2ban,wg-quick@wg-pideck,user:openclaw-gateway
+```
+
 How it behaves:
+- **Only what you list**: an agent serves exactly the files in its
+  `PIDECK_HOST_LOGS`. The hub's built-in nginx and pm2 entries are not
+  added on agents, so list nginx explicitly where it runs.
+- **Memory**: files are read from the end and answers are capped (below),
+  so large logs don't grow the agent much (measured peak 62–76 MB with a
+  9 MB syslog). On a host with `--memory-max`, check
+  `systemctl show -p MemoryPeak pideck-agent` after turning logs on. To
+  raise the cap later, re-run the agent install with a new
+  `--memory-max` (or edit `MemoryMax=` in
+  `/etc/systemd/system/pideck-agent.service.d/10-install.conf`, then
+  `daemon-reload` and restart; a later re-run writes the file again, so
+  pass the same value there).
 - **Permissions**: the agent reads as its own user. A file it can't read is
   listed greyed with a hint (Ubuntu: add the user to `adm`; DSM: `log`); a
   journal it can't read says `systemd-journal`/`adm`. Restart the agent

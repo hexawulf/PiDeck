@@ -5,6 +5,17 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1] - 2026-09-30
+
+Remote logs for the cloud hosts. No change to the hub or agent code; the agents on piapps3, piapps4 and hwca-ap02 were configured through their `.env`, and the docs describe how.
+
+### Added
+- **Remote logs on the WireGuard agents**: syslog, auth, ufw and fail2ban on all three, nginx access/error where nginx runs, a few `~/logs` files, and journald units incl. user units (`user:openclaw-gateway`, `user:syncthing`, `user:piapps4-mail-listener`). The agent user joins `adm` for the `/var/log` files and the system journal
+- [docs/INSTALL.md › Remote logs](./docs/INSTALL.md): an Ubuntu VPS example, and notes that an agent serves only the files listed in its `PIDECK_HOST_LOGS` (the hub's default nginx entries don't apply there) and how to raise `--memory-max` on a host already installed
+
+### Changed
+- hwca-ap02's agent memory cap 128M → 160M (it idled at ~84 MB); peak with logs read: 62–76 MB on the three VPSes
+
 ## [2.7.0] - 2026-09-29
 
 Cloud hosts over WireGuard (plan: [docs/plans/multi-host-2.7.0.md](./docs/plans/multi-host-2.7.0.md)): machines outside the LAN join as agents through a dedicated tunnel, so their agent port never faces the internet. No change to the hub or agent code; everything is in the installer and the docs.
