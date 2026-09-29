@@ -1,27 +1,29 @@
-# PiDeck multi-host H3 — remote logs, DS920+, WireGuard VPSes (2.6.0)
+# PiDeck multi-host H3 — remote logs and DS920+ on the LAN (2.6.0)
 
-Status: **draft** (2026-09-29), open questions below. Owner: 0xWulf.
+Status: **ready** — drafted and decided 2026-09-29 (see "Decisions"). Owner: 0xWulf.
 Base: v2.5.0 (7654902). Parent plan: [multi-host.md](./multi-host.md);
 previous phase: [multi-host-h2.md](./multi-host-h2.md) (shipped as 2.5.0).
 
 ## Goal
-Every machine in one dashboard, including its logs:
-1. **Remote logs**: read logs of piapps2 and every other agent host from the
-   hub's Logs tab (pulled forward from H4; remote *actions* stay in H4).
-2. **DS920+ as its own host** (quick win: LAN, Node 22 already installed).
-3. **piapps3 and piapps4** as agents over a new WireGuard tunnel; nothing
-   new reachable from the internet except one silent WireGuard UDP port.
+Logs first, for the machines at home:
+1. **Remote logs** (read-only) for the homelab's **local nodes**, priority
+   piapps2 and the DS920+, from the hub's Logs tab. Pulled forward from H4;
+   remote *actions* stay in H4.
+2. **DS920+ as its own host**, including the logs of **all its Docker
+   containers** (media stack and the rest).
+3. **LAN only**, like piapps2 today: no WireGuard in this phase.
+
+**Postponed to a later phase (lower priority):** piapps3/piapps4, the
+WireGuard tunnel, and logs from cloud hosts. Track C below is kept as the
+design for that phase, not for 2.6.0. Other LAN nodes (linuxsvr, linuxws1/3)
+can join later with the same LAN agent pattern.
 
 ## Who does what (and in which order)
 | Step | Work | Who | Needs new code? |
 |---|---|---|---|
-| 1 | DS920+ agent on **2.5.0** (manual install, LAN, like piapps2) | Claude Code on piapps2 + operator (DSM GUI: boot task, firewall) | no (temperature shows "not available" until step 3) |
-| 2 | WireGuard hub ↔ piapps3/piapps4, 2.5.0 agents there, `--add-host` on the hub | Claude Code, phase-gated (keys, firewalls on internet-facing hosts) | no |
-| 3 | Remote logs, DSM/x86 support, TODOs → branch `feat/multi-host-h3` | **cloud Claude** (in parallel with steps 1–2) | yes |
-| 4 | Review, deploy 2.6.0 (agents first, then hub), enable logs per host (group memberships), release | Claude Code + operator | — |
-
-Steps 1 and 2 are pure infrastructure on today's code and give history,
-alerts and overview tiles for three more hosts before 2.6.0 exists.
+| 1 | DS920+ agent on **2.5.0** as user `zk` (manual install, LAN), `--add-host ds920` | Claude Code on piapps2 + operator (DSM GUI: boot task, firewall) | no (temperature "not available" until step 2) |
+| 2 | Remote logs incl. Docker logs, DSM/hwmon support, TODOs → branch `feat/multi-host-h3` | **cloud Claude** (can start in parallel with step 1) | yes |
+| 3 | Review, deploy 2.6.0 (piapps2 + ds920 agents first, then hub), enable logs on piapps2 and ds920, release | Claude Code + operator | — |
 
 ## Where we are (facts, read-only recon 2026-09-29)
 | Host | Facts |
@@ -34,13 +36,20 @@ alerts and overview tiles for three more hosts before 2.6.0 exists.
 | Code | Temperature: `thermal_zone0` → vcgencmd → `sensors` (none works on DSM). Agent `capabilities.logs: false`; local logs: `server/routes/hostLogs.ts` (`/`, `/:id`, `/:id/follow`), `server/routes/rasplogs.ts`, filters in `server/services/log-filter.ts` (plain text default, `/…/` regex, ReDoS-guarded). Server build is `--packages=external` (agent needs `node_modules`, `npm ci --omit=dev` works without dev deps) |
 
 ## Track A — DS920+ as a host
-**Step 1 (infra, 2.5.0, today):**
+**Step 1 (infra, 2.5.0):**
 - Copy a `git archive` of v2.5.0 plus a built `dist/` (esbuild output is
   platform-independent JS) to `/volume1/pideck-agent/`; `npm ci --omit=dev`
   with the NAS's Node 22 npm (x86_64 native deps build there).
-- Run as a **dedicated non-admin DSM user `pideck`** (see Open questions):
-  `/proc`, `/sys`, `df` work unprivileged; SMART/NVMe and Docker widgets show
-  "not available" (the DS920 report + Dozzle already cover those).
+- Run as **user `zk`** (decided): DSM admin, member of `docker`
+  (socket `root:docker 660`), so Docker widgets and Docker logs work without
+  root. Checked 2026-09-29 as `zk` (via `su` from the root session): `docker
+  ps` lists all 11 containers, `docker logs` works, hwmon temperature and the
+  NAS's Node 22 work; `/var/log/messages` (`system:log 660`) is **not**
+  readable (see Decisions). SMART/NVMe need root → "not available" (the DS920
+  report covers them). Being in `docker` is root-equivalent on the NAS, so the
+  agent code must only ever issue read-only Docker API calls.
+- SSH to the NAS: root key only (`PasswordAuthentication no`, `zk` has no
+  `~/.ssh`). Nothing about that changes in this phase; the agent needs no SSH.
 - Start at boot: DSM **Task Scheduler → Triggered task → Boot-up** running a
   small start script (operator creates it in the GUI; CLI can't). Script:
   `set -euo pipefail`, env from a 0600 file (`PIDECK_MODE=agent`,
@@ -96,15 +105,24 @@ alerts and overview tiles for three more hosts before 2.6.0 exists.
 - The hub logs one line per remote log read (host, source id, user) — the
   same pattern H4 will use for remote actions.
 
-**Per-host defaults (operator decides, see Open questions)**
-- piapps2: `/var/log/syslog`, `/var/log/auth.log`, `pideck-agent`,
-  `docker` containers, `/home/zk/logs/agentmail-send.log`,
-  `/home/zk/logs/wulfreport/<month>.log` (month rotation: glob or fixed id).
-- piapps3/piapps4: syslog, auth.log, `pideck-agent`, `wg-quick@wg-pideck`,
-  plus their `/home/zk/logs/*.log` of choice (RELAY poster, BUILD monitors).
-- ds920: `/var/log/messages` (needs a read grant for user `pideck`).
+**Log sources (decided; the defaults may be extended later)**
+- piapps2: `/var/log/syslog`, `/var/log/auth.log`, journald `pideck-agent`,
+  **all Docker containers**, `/home/zk/logs/agentmail-send.log`,
+  `/home/zk/logs/wulfreport/<month>.log` (monthly name: support a `%Y-%m`
+  placeholder or a glob resolved to the newest file). zk is in `adm` and
+  `docker` there, so all of these are readable.
+- ds920: **all Docker containers** (bazarr, sonarr, sabnzbd, prowlarr, plex,
+  radarr, tautulli, watchtower, ds920-filebeat, dozzle, cadvisor; new ones
+  appear automatically), plus the agent's own log file. `/var/log/messages`
+  stays out until a read grant exists (see Decisions).
+- Docker logs: list containers via the Docker API (`GET /containers/json`,
+  running and stopped), tail via `GET /containers/{id}/logs?tail=&timestamps=1`
+  (demux stdout/stderr); **no other Docker endpoint**. Unit-test that the
+  client refuses anything else.
 
-## Track C — WireGuard + piapps3/piapps4 (infra, step 2)
+## Track C — WireGuard + piapps3/piapps4 (**postponed**, later phase)
+Kept as the design for the later cloud-hosts phase; not part of 2.6.0.
+
 - New interface **`wg-pideck`** on all three hosts (never touch piapps4's
   `wg0`). Subnet **`10.77.0.0/24`** (free on all hosts, checked):
   hub `10.77.0.1`, piapps3 `10.77.0.3`, piapps4 `10.77.0.4` (piapps2 `.2`
@@ -146,8 +164,8 @@ From TODOS.md (added at the 2.5.0 release):
 | Agent logs | filter regex too costly | existing ReDoS guard → 400 | "Filter too complex" |
 | Proxy | agent < 2.6 (no logs capability) | tab hidden | nothing |
 | Redaction | pattern miss | defence in depth: logs opt-in, token + WG/LAN-only | — |
-| WireGuard | tunnel down | agent offline → gap + offline alert after 5 min | grey tile, toast |
-| Agent on VPS | bind before `wg-pideck` is up | systemd ordering + restart | brief offline at boot |
+| Docker logs | container gone between list and tail | 404 → "container no longer exists" | refreshed list |
+| Docker logs | Docker daemon down / socket missing | source list without containers + hint | "Docker not reachable" |
 | DS920 | DSM update removes start task/Node package | offline alert; runbook to re-enable | grey tile, toast |
 | DS920 | temperature missing (2.5 agent) | hwmon fallback in 2.6 | "not available" until then |
 
@@ -161,38 +179,39 @@ From TODOS.md (added at the 2.5.0 release):
   because ids map to configured paths only.
 - **E2E:** remote Logs tab with the local test agents (list, tail, filter,
   unreadable source, redacted token), tab hidden for an agent without logs.
-- **Installer harness:** `--after <unit>` drop-in; rollback commit from
-  `dist/.build-commit`; `--check-login`.
+- **Docker logs:** stdout/stderr demux, TTY containers, huge lines, only
+  the two allowed Docker API calls (anything else refused).
+- **Installer harness:** rollback commit from `dist/.build-commit`;
+  `--check-login`.
 - Budgets as before: main JS ≤ 302,680 B gzip, `npm audit --omit=dev` = 0.
 
 ## Rollout
-1. (step 1) DS920 agent 2.5.0 + DSM boot task + DSM firewall; `--add-host ds920`.
-2. (step 2, phase-gated) install `wireguard-tools` on piapps, piapps3,
-   piapps4 → keys → `wg-pideck` up → ping both ways → agents → ufw → hub
-   `--add-host` ×2 → overview shows 5 hosts.
-3. Cloud session on `feat/multi-host-h3`; review worktree on piapps; suites.
-4. Update agents first (piapps2, piapps3, piapps4, ds920 by hand), then hub;
-   enable logs per host (`PIDECK_AGENT_LOGS=on` + sources + group
-   memberships: `adm` on piapps3/4, read grant on ds920); verify redaction
-   live; release 2.6.0.
+1. (step 1) DS920 agent 2.5.0 as `zk` + DSM boot task + DSM firewall
+   (5016 only from 192.168.50.102); verify from the hub (200 with token, 401
+   without) and from piapps2 (must time out); `--add-host ds920`.
+2. Cloud session on `feat/multi-host-h3`; review worktree on piapps; suites.
+3. Update agents first (piapps2 via `install.sh --update`, ds920 by hand per
+   `deploy/dsm/`), then the hub; enable logs (`PIDECK_AGENT_LOGS=on`, sources
+   above); verify Docker logs and redaction live; release 2.6.0.
 
-## Open questions (decide before step 1)
-1. **DS920 agent user:** dedicated non-admin `pideck` (plan; no Docker/SMART
-   widgets) or root (all widgets, but a root process on the NAS)?
-2. **Remote log sources per host:** accept the defaults above? Add or drop any
-   (e.g. auth.log on the VPSes)?
-3. **Redaction on by default** with the listed patterns? (Plan: yes.)
-4. **piapps2 onto WireGuard too?** (Plan: no; LAN + single-source ufw is
-   fine and has fewer moving parts.)
-5. **WireGuard port 51821/udp** open to anywhere on the VPSes (Taipei WAN IP
-   is dynamic), or restricted to the current WAN IP with a DDNS-driven
-   update? (Plan: anywhere; WireGuard is silent without a valid key.)
+## Decisions (operator, 2026-09-29)
+- **DS920 agent runs as `zk`** (admin, `docker` group).
+- **DS920 logs = all Docker containers** (media stack and the rest).
+- **piapps3/piapps4 and WireGuard postponed**; LAN access only in 2.6.0.
+- **Priority:** logs for local homelab nodes first; cloud hosts later.
+- Defaults taken (operator didn't object; say so to change): piapps2 log
+  sources as listed; redaction on by default; no WireGuard for piapps2.
+
+## Open question (non-blocking)
+- DS920 `/var/log/messages`: add `zk` to the `log` group (DSM may revert
+  group edits on updates), or leave it out and rely on Docker logs + the
+  existing DS920 report? (Plan: leave it out for 2.6.0.)
 
 ## Brief for the cloud session (paste with this file)
-> Implement Tracks A-step-3, B and D of `docs/plans/multi-host-h3.md` on
-> branch `feat/multi-host-h3` from `main` (v2.5.0). Track C and the DS920
-> deploy are infrastructure and are done outside your session: don't touch
-> WireGuard. Remote logs are read-only and opt-in per agent; redaction
+> Implement Track A step 3, Track B (incl. Docker logs) and Track D of
+> `docs/plans/multi-host-h3.md` on branch `feat/multi-host-h3` from `main`
+> (v2.5.0). Track C is postponed; the DS920 deploy is done outside your
+> session. Remote logs are read-only and opt-in per agent; redaction
 > happens on the agent. Push the branch; don't merge, tag, bump the version
 > or deploy. Report: commits, new env vars, redaction patterns with tests,
 > test counts before/after, bundle numbers, agent RSS, deviations, open
