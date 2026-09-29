@@ -371,7 +371,7 @@ built="$(git -C "$APP" rev-parse --short HEAD)"
 ( cd "$W/src" && git pull -q "$APP" main 2>/dev/null; printf '\n# installer v3\n' >> scripts/install.sh && git -c user.name=t -c user.email=t@t commit -qam "installer v3" )
 nb="$(ls -d "$W"/home/backups/pideck-dist-* | wc -l)"; : > "$W/state/calls"
 inst --update || { bad "update with a new installer exit $?"; tail -n 20 "$W/out"; }
-log="$(ls -t "$W"/home/logs/pideck-install-*.log | head -n 1)"
+log="$(find "$W/home/logs" -name 'pideck-install-*.log' -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d' ' -f2-)"
 check "a pulled install.sh takes over the run (re-exec once)" bash -c "grep -q 'the pull changed scripts/install.sh' '$W/out' && grep -q 'continuing with the updated installer (rollback target $built)' '$W/out' && [ \"\$(grep -c 'continuing with the updated installer' '$W/out')\" = 1 ]"
 check "…the new script is what finished the update" grep -q '# installer v3' "$APP/scripts/install.sh"
 check "…one dist backup and one pull, then build and restart" bash -c "[ \"\$(ls -d '$W'/home/backups/pideck-dist-* | wc -l)\" = \$(( $nb + 1 )) ] && ! grep -q 'Already up to date' '$W/out' && grep -q '^npm run build' '$W/state/calls' && grep -q '^pm2 restart pideck' '$W/state/calls'"
