@@ -55,9 +55,9 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l);
 };
 
-/** Pure: is this pin's file gone? */
+/** Pure: is this pin's file gone? Remote pins ("h:<host>:<source>") are stale only after a 404. */
 export function isPinStale(logId: string, known: ReadonlySet<string> | null, missing: ReadonlySet<string>): boolean {
-  return missing.has(logId) || (known !== null && !known.has(logId));
+  return missing.has(logId) || (known !== null && !logId.startsWith("h:") && !known.has(logId));
 }
 
 export function useLogPins() {

@@ -6,7 +6,7 @@ import { MD_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { useRefreshAll } from "@/hooks/use-refresh-all";
 import { useUiPrefs, useUiPrefsDispatch } from "@/prefs/UiPrefsProvider";
 import { isDialogOpen, isTypingTarget, resolveKey, SEQUENCE_TIMEOUT_MS, type ShortcutId } from "@/shortcuts/shortcuts";
-import { useHost } from "@/hosts/HostProvider";
+import { useHost, useHostSummary } from "@/hosts/HostProvider";
 import { hostHref } from "@/hosts/host-path";
 import { OPEN_HOST_SWITCHER } from "@/components/host-switcher";
 
@@ -38,8 +38,9 @@ export function useCommandCenter() {
   }, []);
 
   // Latest state for the handler without re-binding the listener.
-  const latest = useRef({ path, paused, editing, isWide, hostId: host.id });
-  latest.current = { path, paused, editing, isWide, hostId: host.id };
+  const hostLogs = useHostSummary(host.id)?.logs === true && !host.isLocal;
+  const latest = useRef({ path, paused, editing, isWide, hostId: host.id, hostLogs });
+  latest.current = { path, paused, editing, isWide, hostId: host.id, hostLogs };
 
   const run = useCallback(
     (id: ShortcutId) => {
@@ -50,7 +51,7 @@ export function useCommandCenter() {
         case "theme": return toggleTheme();
         // Dashboard and Apps stay on the current host; Logs, Cron and Settings are the hub's.
         case "go-dashboard": return navigate(hostHref(s.hostId, "dashboard"));
-        case "go-logs": return navigate("/logs");
+        case "go-logs": return navigate(s.hostLogs ? hostHref(s.hostId, "logs") : "/logs"); // a remote host's own logs when it has them
         case "go-apps": return navigate(hostHref(s.hostId, "apps"));
         case "go-cron": return navigate("/cron");
         case "go-settings": return navigate("/settings");

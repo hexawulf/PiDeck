@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { DbMigrationBanner } from "@/components/db-migration-banner";
 import { HostSwitcher } from "@/components/host-switcher";
 import { useHost, useHostSummary } from "@/hosts/HostProvider";
-import { hostHref, REMOTE_TABS } from "@/hosts/host-path";
+import { hostHref, remoteTabs } from "@/hosts/host-path";
 import { widgetQueryKey } from "@/widgets/useWidgetQuery";
 import Dashboard from "@/pages/dashboard";
 import LogViewer from "@/components/log-viewer";
@@ -25,8 +25,9 @@ import AppMonitor from "@/components/app-monitor";
 import CronManager from "@/components/cron-manager";
 import Settings from "@/pages/settings";
 
-// The overview is its own chunk: most visits never open it.
+// The overview and remote logs are their own chunks: most visits never open them.
 const HostsOverview = lazy(() => import("@/pages/hosts"));
+const RemoteLogs = lazy(() => import("@/components/remote-logs"));
 
 export const TABS = [
   { id: "dashboard", label: "Dashboard", icon: Activity, component: Dashboard },
@@ -39,8 +40,8 @@ export type TabId = (typeof TABS)[number]["id"];
 
 export const isTabId = (s: string | undefined): s is TabId => TABS.some((t) => t.id === s);
 
-/** A remote host has only Dashboard and Apps (Logs, Cron, Settings belong to the hub). */
-const tabsFor = (isLocal: boolean) => (isLocal ? TABS : TABS.filter((t) => (REMOTE_TABS as readonly string[]).includes(t.id)));
+/** A remote host has Dashboard and Apps, plus Logs when its agent serves them (Cron, Settings belong to the hub). */
+const tabsFor = (isLocal: boolean, logs?: boolean) => (isLocal ? TABS : TABS.filter((t) => remoteTabs(logs).includes(t.id)));
 
 /**
  * Toast each alert once, naming its host ("piapps2: offline since 08:12"),
@@ -80,11 +81,17 @@ export default function AppShell({ tab }: { tab: TabId | "hosts" }) {
   const systemInfo = useSystemInfo();
   const refreshAll = useRefreshAll();
   const host = useHost();
-  const hostLabel = useHostSummary(host.id)?.label ?? host.id;
+  const hostSummary = useHostSummary(host.id);
+  const hostLabel = hostSummary?.label ?? host.id;
   const reboot = useQuery<{ rebootRequired?: boolean }>({ queryKey: widgetQueryKey(host.id, "/api/reboot-check") });
   const commands = useCommandCenter();
-  const tabs = tabsFor(host.isLocal);
-  const current = tab === "hosts" ? { label: "All hosts", component: HostsOverview } : TABS.find((t) => t.id === tab)!;
+  const tabs = tabsFor(host.isLocal, hostSummary?.logs);
+  const current =
+    tab === "hosts"
+      ? { label: "All hosts", component: HostsOverview }
+      : tab === "logs" && !host.isLocal
+        ? { label: "Logs", component: RemoteLogs }
+        : TABS.find((t) => t.id === tab)!;
   const Page = current.component;
 
   useEffect(() => {

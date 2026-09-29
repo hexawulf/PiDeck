@@ -8,7 +8,7 @@
 import type { LogEntry } from "@/hooks/use-host-logs";
 import { logHref } from "@/hooks/use-host-logs";
 import type { Density } from "@/prefs/prefs";
-import { hostHref, REMOTE_TABS } from "@/hosts/host-path";
+import { hostHref, parseRemotePinId, remoteLogHref, remoteTabs } from "@/hosts/host-path";
 
 export type PaletteGroup = "Navigate" | "Hosts" | "View" | "Refresh" | "Log pins" | "Logs" | "System" | "Help";
 
@@ -24,7 +24,7 @@ export type PaletteAction = {
 };
 
 export type PalettePin = { logId: string; label?: string; grep?: string; stale: boolean };
-export type PaletteHost = { id: string; label: string; status: string };
+export type PaletteHost = { id: string; label: string; status: string; logs?: boolean };
 
 export type PaletteContext = {
   navigate: (to: string) => void;
@@ -48,7 +48,7 @@ export type PaletteContext = {
   hosts?: readonly PaletteHost[];
 };
 
-const isRemoteTab = (tab: string) => (REMOTE_TABS as readonly string[]).includes(tab);
+const hasLogs = (ctx: { hostId: string; hosts: readonly PaletteHost[] }, id = ctx.hostId) => ctx.hosts.find((h) => h.id === id)?.logs === true;
 
 const TABS = [
   ["dashboard", "Dashboard"], ["logs", "Logs"], ["apps", "Apps"], ["cron", "Cron"], ["settings", "Settings"],
@@ -60,7 +60,7 @@ export function buildActions(input: PaletteContext): PaletteAction[] {
 
   // Dashboard and Apps stay on the current host; Logs, Cron and Settings are the hub's.
   for (const [id, label] of TABS) {
-    const href = isRemoteTab(id) ? hostHref(ctx.hostId, id) : `/${id}`;
+    const href = remoteTabs(hasLogs(ctx)).includes(id) ? hostHref(ctx.hostId, id) : `/${id}`;
     actions.push({
       id: `go-${id}`, group: "Navigate", label: `Go to ${label}`, keywords: [label, id],
       hint: ctx.path === href ? "current" : undefined,
@@ -81,7 +81,7 @@ export function buildActions(input: PaletteContext): PaletteAction[] {
         id: `host:${h.id}`, group: "Hosts", label: `Switch to ${h.label}`,
         hint: h.id === ctx.hostId ? "current" : h.status === "online" ? undefined : h.status,
         keywords: ["host", "switch", "machine", h.id, h.label],
-        perform: () => ctx.navigate(hostHref(h.id, h.id === "local" || isRemoteTab(tab) ? tab : "dashboard")),
+        perform: () => ctx.navigate(hostHref(h.id, h.id === "local" || remoteTabs(h.logs).includes(tab) ? tab : "dashboard")),
       });
     }
   }
@@ -113,7 +113,10 @@ export function buildActions(input: PaletteContext): PaletteAction[] {
       label: pin.grep ? `${name} — “${pin.grep}”` : name,
       hint: pin.stale ? "file no longer available" : "pinned",
       muted: pin.stale, keywords: [pin.logId, pin.grep ?? ""],
-      perform: () => ctx.navigate(logHref(pin.logId, pin.grep)),
+      perform: () => {
+        const remote = parseRemotePinId(pin.logId);
+        ctx.navigate(remote ? remoteLogHref(remote.hostId, remote.sourceId, pin.grep) : logHref(pin.logId, pin.grep));
+      },
     });
   }
   for (const log of ctx.logs) {

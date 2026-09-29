@@ -11,7 +11,7 @@ import AppShell, { isTabId } from "@/components/app-shell";
 import NotFound from "@/pages/not-found";
 import { UiPrefsProvider } from "@/prefs/UiPrefsProvider";
 import { HostProvider, useHosts } from "@/hosts/HostProvider";
-import { HOST_ID_RE, hostHref, isLocalHost, REMOTE_TABS } from "@/hosts/host-path";
+import { HOST_ID_RE, hostHref, isLocalHost, remoteTabs } from "@/hosts/host-path";
 
 function Loading() {
   return (
@@ -50,12 +50,13 @@ function RemoteHost({ hostId, tab }: { hostId: string; tab: string }) {
   if (isLocalHost(hostId)) return <Redirect to={`/${isTabId(tab) ? tab : "dashboard"}`} replace />;
   if (!HOST_ID_RE.test(hostId)) return <NoSuchHost hostId={hostId} />;
   if (hosts.isPending) return <Loading />;
-  if (!hosts.data?.some((h) => h.id === hostId && !h.local)) return <NoSuchHost hostId={hostId} />;
-  if (!(REMOTE_TABS as readonly string[]).includes(tab)) return <Redirect to={hostHref(hostId, "dashboard")} replace />;
+  const summary = hosts.data?.find((h) => h.id === hostId && !h.local);
+  if (!summary) return <NoSuchHost hostId={hostId} />;
+  if (!remoteTabs(summary.logs).includes(tab)) return <Redirect to={hostHref(hostId, "dashboard")} replace />;
   return (
     <HostProvider hostId={hostId}>
       <UiPrefsProvider>
-        <AppShell tab={tab as (typeof REMOTE_TABS)[number]} />
+        <AppShell tab={tab as "dashboard" | "apps" | "logs"} />
       </UiPrefsProvider>
     </HostProvider>
   );

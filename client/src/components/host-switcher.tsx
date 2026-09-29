@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { Check, ChevronDown, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHost, useHosts, type HostSummary } from "@/hosts/HostProvider";
-import { formatLastSeen, hostHref, REMOTE_TABS } from "@/hosts/host-path";
+import { formatLastSeen, hostHref, remoteTabs } from "@/hosts/host-path";
 
 /** `g h` and the palette open the switcher through this window event. */
 export const OPEN_HOST_SWITCHER = "pideck:open-host-switcher";
@@ -45,9 +45,9 @@ export function StatusDot({ host, hubVersion }: { host: HostSummary; hubVersion?
 }
 
 /** The tab to open on another host: the same tab when it has it, else its dashboard (also from /hosts). */
-export function tabOnHost(currentTab: string, hostId: string): string {
+export function tabOnHost(currentTab: string, hostId: string, hasLogs = false): string {
   if (currentTab === "hosts") return "dashboard";
-  return hostId === "local" || (REMOTE_TABS as readonly string[]).includes(currentTab) ? currentTab : "dashboard";
+  return hostId === "local" || remoteTabs(hasLogs).includes(currentTab) ? currentTab : "dashboard";
 }
 
 /**
@@ -155,12 +155,12 @@ export function HostSwitcher({ tab, variant = "header" }: { tab: string; variant
             return (
               <li key={h.id}>
                 <Link
-                  href={hostHref(h.id, tabOnHost(tab, h.id))}
+                  href={hostHref(h.id, tabOnHost(tab, h.id, h.logs))}
                   aria-current={isCurrent ? "true" : undefined}
                   onClick={(e) => {
                     e.preventDefault();
                     setOpen(false);
-                    navigate(hostHref(h.id, tabOnHost(tab, h.id)));
+                    navigate(hostHref(h.id, tabOnHost(tab, h.id, h.logs)));
                     button.current?.focus();
                   }}
                   className="flex items-center gap-2 px-3 py-2 hover:bg-pi-card-hover focus:bg-pi-card-hover focus:outline-none"

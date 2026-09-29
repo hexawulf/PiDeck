@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 
 /** Pinned logs / saved filters at the top of the log picker. */
 export function PinnedLogs({ activeId, onOpen }: { activeId?: string; onOpen: (pin: Pin) => void }) {
-  const { pins, isStale, unpin } = useLogPins();
+  const { pins: all, isStale, unpin } = useLogPins();
+  const pins = all.filter((p) => !p.logId.startsWith("h:")); // remote hosts' pins show in their own Logs tab
   if (!pins.length) return null;
   return (
     <section aria-label="Pinned logs" className="border-b border-pi-border px-3 py-2">

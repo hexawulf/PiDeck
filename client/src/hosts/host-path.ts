@@ -6,8 +6,10 @@
 export const LOCAL_HOST = "local";
 export const HOST_ID_RE = /^[a-z0-9-]{1,32}$/;
 
-/** Tabs a remote host has in H1 (Logs, Cron, Settings are the hub's own). */
+/** Tabs every remote host has (Cron and Settings are the hub's own). */
 export const REMOTE_TABS = ["dashboard", "apps"] as const;
+/** A remote host's tabs: + Logs when its agent serves remote logs (2.6, capabilities.logs). */
+export const remoteTabs = (logs: boolean | undefined): readonly string[] => (logs ? [...REMOTE_TABS, "logs"] : REMOTE_TABS);
 
 export const isLocalHost = (hostId: string) => hostId === LOCAL_HOST;
 
@@ -59,4 +61,20 @@ export function hostProblemOf(error: unknown): HostProblem | null {
   if (b.auth === true) return { kind: "auth", lastSeen: null };
   if (b.badResponse === true) return { kind: "bad", lastSeen: null };
   return null;
+}
+
+// ── remote log pins (H3) ──────────────────────────────────────────────
+// Pins live in the one `pins` prefs section; a remote source's pin id is
+// "h:<host>:<source>" (local log ids never contain ":"), so pins are per host.
+const SOURCE_ID_RE = /^[a-z0-9_-]{1,64}$/;
+export const remotePinId = (hostId: string, sourceId: string) => `h:${hostId}:${sourceId}`;
+export function parseRemotePinId(logId: string): { hostId: string; sourceId: string } | null {
+  const m = /^h:([a-z0-9-]{1,32}):([a-z0-9_-]{1,64})$/.exec(logId);
+  return m && HOST_ID_RE.test(m[1]) && SOURCE_ID_RE.test(m[2]) ? { hostId: m[1], sourceId: m[2] } : null;
+}
+/** Deep link to a remote log source (optionally filtered). */
+export function remoteLogHref(hostId: string, sourceId: string, grep?: string): string {
+  const q = new URLSearchParams({ log: sourceId });
+  if (grep) q.set("grep", grep);
+  return `${hostHref(hostId, "logs")}?${q.toString()}`;
 }
