@@ -617,9 +617,12 @@ PIDECK_AGENT_DOCKER_LOGS=on
 Example (DS920+, after `synogroup --memberadd log zk`):
 ```
 PIDECK_AGENT_LOGS=on
-PIDECK_HOST_LOGS=messages:Messages=/var/log/messages,agent:PiDeck agent=/var/services/homes/zk/logs/pideck-agent-%Y%m%d.log
+PIDECK_HOST_LOGS=messages:Messages=/var/log/messages,agent:PiDeck agent=/var/services/homes/zk/logs/pideck-agent-*.log
 PIDECK_AGENT_DOCKER_LOGS=on
 ```
+`start-agent.sh` names its log after the day the supervisor started and keeps
+writing to it, so use the newest-match `*` here, not `%Y%m%d` (which finds
+no file from the day after a start).
 
 Example (Ubuntu VPS over WireGuard, after `sudo usermod -aG adm zk`):
 ```
