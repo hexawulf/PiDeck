@@ -9,8 +9,14 @@ export const users = pgTable("users", {
   last_password_change: timestamp("last_password_change").defaultNow(),
   failed_login_attempts: integer("failed_login_attempts").default(0),
   account_locked_until: timestamp("account_locked_until"), // Nullable
+  // No separate username index: the unique constraint indexes it.
+  // migrations/0000 (baseline) still creates idx_users_username because prod
+  // has it (old hand-written migration); migrations/0001 drops it.
 });
 
+// Unused (auth sessions live in connect-pg-simple's user_sessions, which is
+// deliberately *not* declared here and never touched by migrations). Kept
+// declared, FK included, so the baseline matches existing databases.
 export const sessions = pgTable("sessions", {
   id: text("id").primaryKey(),
   userId: integer("user_id").references(() => users.id),
