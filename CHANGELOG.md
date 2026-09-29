@@ -5,6 +5,21 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] - 2026-09-29
+
+Small follow-ups from the 2.6.0 rollout.
+
+### Added
+- **Download the viewed log**: a download button left of the pin in the Logs viewer (local and remote) saves exactly the lines on screen — remote ones already filtered and redacted by the agent — as `<host>-<source>-YYYYMMDD-HHMM.log`, in the browser (no new endpoint). Replaces the local viewer's unlabelled download button
+- `PIDECK_HOST_TIMEOUT_<ID>` (1–9 s, default 5): more time for one slow host (e.g. a NAS during a media library scan), for its samples and proxied requests; the sampler's "skipped" line names each host's timeout
+
+### Fixed
+- Remote-log audit lines: logged when a (host, source, user, ip) is first read, then at most every 10 minutes with `polls=N`; errors always (an open log used to write a line per poll)
+- The header stays on one line with the host switcher at 1024–1440 px: no "Raspberry Pi Admin" subtitle when several hosts are configured, compact uptime ("Up 5d 23h", full text as tooltip, from 1280 px)
+- `npm run build` no longer deletes the running server's lazily loaded chunks: esbuild writes a metafile and `scripts/prune-dist.mjs` keeps the current and the previous build's chunks
+- `install.sh --update` continues with the pulled installer when the pull changed it (one re-exec, same log, no second backup or pull), so installer fixes apply in the same run
+- Tests: unit 533 → 549, installer 145 → 151, E2E 121 → 123
+
 ## [2.6.0] - 2026-09-29
 
 Multi-host, phase H3 (plan: [docs/plans/multi-host-h3.md](./docs/plans/multi-host-h3.md)): logs from the machines at home, and the DS920+ as a host. LAN only; WireGuard and the cloud VPSes come in a later phase.
