@@ -150,7 +150,7 @@ if [ "$HAS_PM2$HAS_UNIT$HAS_AGENT$HAS_UFW$HAS_SUDOERS$PURGE" = 000000 ]; then ok
 
 if [ "$DRY_RUN" != 1 ] && [ "$YES" != 1 ]; then
   [ -t 0 ] || die "not a terminal: pass --yes to proceed without prompts"
-  { read -r -p "  Proceed? [y/N] " ans </dev/tty; } 2>/dev/null || ans=""
+  { printf '%s' "  Proceed? [y/N] " >/dev/tty; read -r ans </dev/tty; } 2>/dev/null || ans=""
   [[ "${ans:-n}" =~ ^[Yy] ]] || { info "aborted; nothing changed"; exit 0; }
 fi
 
@@ -202,7 +202,7 @@ if [ "$PURGE" = 1 ]; then
     ans="${PIDECK_PURGE_CONFIRM:-}"
     if [ "$ans" != purge ]; then
       warn "This deletes the PiDeck database this installer created (metrics history, admin account), .env and the admin password."
-      { read -r -p "  Type 'purge' to continue: " ans </dev/tty; } 2>/dev/null || ans=""
+      { printf '%s' "  Type 'purge' to continue: " >/dev/tty; read -r ans </dev/tty; } 2>/dev/null || ans=""
     fi
     [ "$ans" = purge ] || { info "not purged; the database, .env and backups are kept"; exit 0; }
   fi

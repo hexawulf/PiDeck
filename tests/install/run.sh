@@ -216,6 +216,7 @@ inst --dry-run "${STD[@]}" --sudoers --lan-http --nvme-device /dev/nvme0 || bad 
 check "tree + \$HOME + /etc unchanged" test "$before" = "$(tree_sum)"
 check "prints what it would do" grep -q '\[dry-run\] would' "$W/out"
 check "no sudo/apt/psql/pm2 calls" test ! -s "$W/state/calls"
+check "prompts go to /dev/tty, never to a silenced stderr" bash -c "! grep -nE 'read -r[^|]*-p .*2>/dev/null' '$ROOT/scripts/install.sh' '$ROOT/scripts/uninstall.sh'"
 check "dry-run log kept out of \$HOME" test ! -e "$W/home/logs"
 uninst --dry-run --purge || bad "uninstall dry run exit $?"
 check "uninstall --dry-run --purge changes nothing" test "$before" = "$(tree_sum)"

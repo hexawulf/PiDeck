@@ -233,7 +233,7 @@ confirm() { # confirm "question" default(y|n)
   local q="$1" def="${2:-y}" ans
   if [ "$YES" = 1 ]; then [ "$def" = y ]; return; fi
   if [ ! -t 0 ]; then [ "$def" = y ]; return; fi
-  { read -r -p "  $q [$([ "$def" = y ] && echo Y/n || echo y/N)] " ans </dev/tty; } 2>/dev/null || ans=""
+  { printf '%s' "  $q [$([ "$def" = y ] && echo Y/n || echo y/N)] " >/dev/tty; read -r ans </dev/tty; } 2>/dev/null || ans=""
   ans="${ans:-$def}"
   [[ "$ans" =~ ^[Yy] ]]
 }
@@ -738,7 +738,7 @@ health() {
       ( umask 077; cp "$CHECK_LOGIN_FILE" "$pwf" )
     elif [ -r /dev/tty ] && { : </dev/tty; } 2>/dev/null; then
       local typed=""
-      { read -r -s -p "  Admin password (to test the login; input hidden): " typed </dev/tty; } 2>/dev/null || typed=""
+      { printf '%s' "  Admin password (to test the login; input hidden): " >/dev/tty; read -r -s typed </dev/tty; } 2>/dev/null || typed=""
       echo
       [ -n "$typed" ] || die "--check-login: no password entered"
       ( umask 077; printf '%s' "$typed" > "$pwf" )
@@ -1017,7 +1017,7 @@ add_host() {
   elif [ "$DRY_RUN" = 1 ]; then
     token=""
   elif [ -t 0 ] || [ -r /dev/tty ]; then
-    { read -r -s -p "  Agent token for $ADD_HOST (input hidden): " token </dev/tty; } 2>/dev/null || token=""
+    { printf '%s' "  Agent token for $ADD_HOST (input hidden): " >/dev/tty; read -r -s token </dev/tty; } 2>/dev/null || token=""
     echo >&3
   else
     die "no token: use --token-file F (0600) or PIDECK_ADD_HOST_TOKEN"
