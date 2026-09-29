@@ -5,6 +5,20 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-09-29
+
+Cloud hosts over WireGuard (plan: [docs/plans/multi-host-2.7.0.md](./docs/plans/multi-host-2.7.0.md)): machines outside the LAN join as agents through a dedicated tunnel, so their agent port never faces the internet. No change to the hub or agent code; everything is in the installer and the docs.
+
+### Added
+- **Agents over WireGuard** ([docs/INSTALL.md › Agents over WireGuard (2.7)](./docs/INSTALL.md)): a separate `wg-pideck` interface, the VPS listens and the hub dials out, /32 `AllowedIPs` only; the agent binds to its tunnel address
+- `install.sh --agent --after <unit>`: start the agent after (and pull in) e.g. `wg-quick@wg-pideck`; `--memory-max <size>`: hard memory cap (`MemoryMax=`, at least 96M). Both live in a systemd drop-in (`pideck-agent.service.d/10-install.conf`) that re-runs and `--update` keep and uninstall removes
+- `--ufw-interface <iface>` with `--ufw-allow-from`: the agent rule only on the tunnel (`ufw allow in on wg-pideck from 10.77.0.1 …`); uninstall deletes exactly that rule
+- `--prebuilt`: install an agent from a bundle (`dist/` + runtime `node_modules/`) built on another machine from the same commit, for small VPSes where `npm ci` and the build (~650 MB peak each) would crowd out the host's real job; `--update` is refused on such hosts (update = pull, new bundle, re-run)
+
+### Changed
+- The agent installer refuses a bind address the machine doesn't have (a dry run warns), and preflight warns on an architecture other than aarch64/x86_64. First x86_64 agent installs (Ubuntu 24.04 and 26.04, Node 22 and 24)
+- Tests: installer 151 → 188
+
 ## [2.6.1] - 2026-09-29
 
 Small follow-ups from the 2.6.0 rollout.

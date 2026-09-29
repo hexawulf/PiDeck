@@ -1,6 +1,7 @@
-# PiDeck 2.7.0 — cloud hosts over WireGuard (todo)
+# PiDeck 2.7.0 — cloud hosts over WireGuard (done)
 
-Status: **todo**, to start 2026-09-30. Owner: 0xWulf.
+Status: **done** 2026-09-29 (released as v2.7.0). Owner: 0xWulf.
+Ops runbook: Obsidian `2026-09-29-pideck-wireguard-agents-runbook.md`.
 Base: v2.6.1 (aa37934). Design origin: [multi-host-h3.md](./multi-host-h3.md) › Track C
 (postponed there); parent plan: [multi-host.md](./multi-host.md).
 
@@ -21,9 +22,8 @@ per the homelab standard. No cloud session needed.
    touches nginx/fail2ban, rollout last and only after piapps4/piapps3 went
    cleanly. (The homelab skill's "colleague-billed, read/ops only" wording
    is outdated for this purpose; correct it in step 5.)
-2. **Logs for cloud hosts in 2.7.0?** Plan: metrics/history/alerts first;
-   remote logs opt-in per host afterwards (lower priority, decided
-   2026-09-29). Which sources, if any (auth.log, RELAY/BUILD logs)?
+2. **Logs for cloud hosts:** not in 2.7.0 — metrics, history and alerts only;
+   remote logs opt-in per host later (TODOS.md).
 3. ~~51821/udp open to any address?~~ **Decided 2026-09-30: pinned.** The
    Taipei WAN IP is a static Chunghwa Telecom address, `122.116.150.249`:
    VPS ufw (and any provider firewall) allows `51821/udp` from it only.
@@ -58,12 +58,10 @@ per the homelab standard. No cloud session needed.
   5 s default (`PIDECK_HOST_TIMEOUT_<ID>` exists if needed).
 
 ## Todo
-### 0. Prep (read-only)
-- [ ] Decisions 1–3 above.
-- [ ] Cloud-provider firewalls in front of the VPSes (DO Cloud Firewall,
-      Hetzner Firewall, Linode Cloud Firewall): does 51821/udp need opening there too?
-- [ ] Snapshot before/after state: `wg show`, `ip -br addr`, `ufw status numbered`
-      on all hosts; piapps4 `wg0` handshake + brixhouse monitor status.
+### 0. Prep (read-only) — done
+- [x] Decisions 1–3 above.
+- [x] Cloud-provider firewalls: none blocked 51821/udp (first handshake worked on DO, Hetzner, Linode).
+- [x] Snapshot: `~/backups/pideck-2.7.0-pre-20260929/` on piapps2; piapps4 `wg0` checked before/after.
 
 ### 1. Code (small, on a branch, CLI) — done on `feat/2.7.0`
 - [x] `install.sh --agent --after <unit>`: drop-in
@@ -76,35 +74,34 @@ per the homelab standard. No cloud session needed.
       (recorded; uninstall deletes exactly that rule).
 - [x] Installer harness: flags, validation, x86_64 + unknown-arch preflight.
 - [x] docs/INSTALL.md: "Agents over WireGuard (2.7)".
-- [ ] Release notes / version 2.7.0 (after the rollout).
+- [x] `--prebuilt` (added during the rollout: `npm ci`/build peak ~650 MB, measured on piapps4).
+- [x] Release notes / version 2.7.0 (after the rollout).
 
-### 2. Hub (piapps) — approval gate: apt, network
-- [ ] `apt install wireguard-tools` (backup nothing; note needrestart).
-- [ ] Key pair, `wg-pideck.conf` with the VPS peers (added one by one).
-- [ ] `wg-quick@wg-pideck` enabled; hub ufw needs no inbound rule (it dials out).
+### 2. Hub (piapps) — done
+- [x] `wireguard-tools` with `NEEDRESTART_MODE=l` (containerd restart deferred, not done).
+- [x] Key pair, `wg-pideck.conf`; peers added one by one with `systemctl reload` (`wg syncconf`).
+- [x] `wg-quick@wg-pideck` enabled; no inbound ufw rule.
 
-### 3. Per VPS (piapps4 first — most RAM; then piapps3; hwca-ap02 last)
-- [ ] `apt install wireguard-tools`; key pair; `wg-pideck.conf`; ufw `51821/udp`.
-- [ ] `wg-quick@wg-pideck` up + enabled; ping `10.77.0.1` ↔ `10.77.0.x`.
-- [ ] piapps4: confirm `wg0` (brixhouse) unchanged and its monitors green.
-- [ ] Agent: `install.sh --agent` bound to `10.77.0.x:5016`, `--after`,
-      `--memory-max`; ufw rule on `wg-pideck` from `10.77.0.1` only.
-- [ ] From the VPS's public side and from piapps2: 5016 unreachable.
-- [ ] RSS after 30 min; piapps3: available memory before/after.
+### 3. Per VPS — done (piapps4, piapps3, hwca-ap02 in that order)
+- [x] `wireguard-tools`; key pair; `wg-pideck.conf`; ufw `51821/udp` from `122.116.150.249` only.
+- [x] `wg-quick@wg-pideck` up + enabled; ping both ways (piapps4 ~257 ms, piapps3 ~60, hwca-ap02 ~64).
+- [x] piapps4: `wg0` unchanged (config checksum, port, handshake, brixhouse ping).
+- [x] Agents on `10.77.0.x:5016`, `--after`, `--memory-max` (piapps4 160M built locally;
+      piapps3 + hwca-ap02 128M from a `--prebuilt` bundle); ufw on `wg-pideck` from `10.77.0.1`.
+- [x] Public side and piapps2: 5016 unreachable.
+- [x] Memory: RSS 73–79 MB; available piapps3 747 → 705 MB, hwca-ap02 617 → 580 MB, no swap churn;
+      hwca.de 200 before/after.
 
-### 4. Hub registration + verification
-- [ ] `install.sh --add-host piapps4 --url http://10.77.0.4:5016 --label …`
-      (then piapps3, hwca-ap02); `pm2 restart pideck --update-env`.
-- [ ] Overview shows 5–6 hosts; history rows per host; temperature via hwmon
-      (VPS may have none → "not available").
-- [ ] Offline test: `wg-quick down wg-pideck` on one VPS for 6 min → offline
-      alert + toast, then recovery.
-- [ ] Reboot test on one VPS (tunnel + agent come back by themselves).
+### 4. Hub registration + verification — done
+- [x] `--add-host` piapps4, piapps3, hwca-ap02 (tokens via 0600 files, shredded); sampler "local + 5 agents".
+- [x] Overview shows all hosts (operator checked); history rows per host; VPS temperature: none.
+- [x] Offline test (piapps4): alert after ~5.6 min, resolved ~30 s after the tunnel returned; the agent
+      needed no restart.
+- [x] Reboot test (piapps4): tunnel + agent back in ~20 s, `wg0` fine, no alert.
 
 ### 5. Docs + release
-- [ ] Obsidian runbook `pideck-wireguard-agents-runbook.md` (topology, keys'
-      locations, add/remove a host, rollback).
-- [ ] hexawulf-homelab skill: `references/network.md` (new tunnel),
+- [x] Obsidian runbook `2026-09-29-pideck-wireguard-agents-runbook.md`.
+- [x] hexawulf-homelab skill v3.3 (clawdops/hexawulf-homelab c8f0783): `references/network.md` (new tunnel),
       `references/hosts-detail.md` (pideck agents; DS920 is DSM 7.4.1, not 7.3;
       hwca-ap02: operator is the admin, owner HWCA studio — replace the
       "colleague-billed, read/ops only" wording with what's actually allowed).
