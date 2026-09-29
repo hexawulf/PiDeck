@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import type { ActiveAlert, SystemInfo } from "@shared/schema";
+import type { SystemInfo } from "@shared/schema";
 import { SystemService } from "../services/system";
 
 export const systemRouter = Router();
@@ -16,15 +16,6 @@ systemRouter.get("/system/info", async (_req, res) => {
   }
 });
 
-systemRouter.get("/system/alerts", (_req, res) => {
-  try {
-    const alerts: ActiveAlert[] = SystemService.getActiveAlerts();
-    res.json(alerts);
-  } catch (error) {
-    console.error("[systemRouter] Failed to load system alerts", error);
-    res.json([] satisfies ActiveAlert[]);
-  }
-});
 
 /** GET /api/reboot-check — shared by the hub (routes.ts) and the agent. */
 export async function rebootCheckHandler(_req: Request, res: Response) {

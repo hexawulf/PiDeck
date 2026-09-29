@@ -23,8 +23,9 @@ import { unavailable } from "./services/unavailable";
 import { loginSchema } from "@shared/schema";
 import { rateLimitLogin } from "./middleware/rateLimitLogin";
 import { envPasswordMatches } from "./services/env-password";
-import { cookieSecure, insecureHttp, parseHosts } from "./config";
-import { createHostHub } from "./hosts";
+import { cookieSecure, insecureHttp } from "./config";
+import { hubRuntime } from "./runtime";
+import { registerFleetRoutes } from "./routes/fleet";
 import { schemaReady, schemaState } from "./db-schema";
 import { adminPasswordIsDefault } from "./storage";
 
@@ -230,7 +231,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/metrics/nvme", requireAuth, nvmeRouter); // was mounted before auth (public)
 
   // --- Multi-host (hub): status of the configured agents + read-only proxy ---
-  const hostHub = createHostHub({ hosts: parseHosts() });
+  const runtime = hubRuntime();
+  const hostHub = runtime.hostHub;
+  // History, alerts and the overview for every host (hub DB + memory, not proxied).
+  registerFleetRoutes(app, requireAuth, runtime);
   app.get("/api/hosts", requireAuth, async (_req, res) => {
     res.json(await hostHub.list());
   });
@@ -247,16 +251,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // These ad-hoc endpoints are also protected by the wrapper above
-  app.get("/api/system/history", async (_req, res) => {
-    try {
-      const historicalData = await SystemService.getHistoricalData();
-      res.json(historicalData);
-    } catch (error) {
-      console.error("System history error:", error);
-      res.status(500).json({ message: "Failed to get system historical data" });
-    }
-  });
-
   // 409 without running anything when PIDECK_DISABLE_SYSTEM_UPDATE=1 (E2E builds).
   app.post("/api/system/update", createSystemUpdateHandler({ run: () => SystemService.updateSystem() }));
 
