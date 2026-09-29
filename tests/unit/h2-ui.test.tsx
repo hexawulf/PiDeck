@@ -99,7 +99,7 @@ describe("/hosts overview", () => {
     expect(gone.getAttribute("href")).toBe("/h/gone/dashboard");
     expect(gone.textContent).toMatch(/offline, last seen/);
     expect(gone.textContent).toContain("1 alert");
-    expect(gone.className).toContain("opacity-70");
+    expect(gone.className).toContain("bg-pi-darker");
     const old = screen.getByTestId("host-tile-old");
     expect(old.textContent).toContain("update the agent for history");
     expect(old.className).toContain("border-pi-warning");

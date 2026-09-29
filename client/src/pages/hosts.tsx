@@ -60,9 +60,10 @@ function Tile({ h, hubVersion }: { h: HostTile; hubVersion: string | null }) {
         data-testid={`host-tile-${h.id}`}
         data-status={h.status}
         className={cn(
-          "block h-full rounded-xl border bg-pi-card p-4 text-pi-text transition-colors hover:bg-pi-card-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-pi-accent",
+          "block h-full rounded-xl border p-4 text-pi-text transition-colors hover:bg-pi-card-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-pi-accent",
           needsAgentUpdate(h) ? "border-pi-warning" : h.status === "auth-error" ? "border-pi-error" : "border-pi-border",
-          !reachable && h.status !== "auth-error" && "opacity-70",
+          // Offline is grey, not an error; a darker surface keeps text contrast (no opacity).
+          h.status === "offline" ? "border-dashed bg-pi-darker" : "bg-pi-card",
         )}
       >
         <div className="mb-3 flex items-center gap-2">

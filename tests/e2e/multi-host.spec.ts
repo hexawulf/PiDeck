@@ -40,7 +40,8 @@ test.describe("multi-host", () => {
     await expect(nav.getByRole("link")).toHaveText(["Dashboard", "Apps"]);
     await expect(nav.getByRole("link", { name: "Apps" })).toHaveAttribute("href", "/h/e2e-agent/apps");
     await expect(card(page, "cpu")).toBeVisible();
-    for (const id of ["quick-actions", "disk-io", "net-bandwidth"]) await expect(card(page, id)).toHaveCount(0);
+    await expect(card(page, "quick-actions")).toHaveCount(0);
+    await expect(card(page, "disk-io")).toBeVisible(); // history charts work on every host since H2
     // Tabs the remote host doesn't have fall back to its dashboard.
     await page.goto("/h/e2e-agent/logs");
     await expect(page).toHaveURL(/\/h\/e2e-agent\/dashboard$/);

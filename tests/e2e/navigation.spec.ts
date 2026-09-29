@@ -57,6 +57,6 @@ test("leaving the dashboard stops widget polling", async ({ page }) => {
   const seen: string[] = [];
   page.on("request", (r) => seen.push(new URL(r.url()).pathname));
   await page.waitForTimeout(12_000); // > docker/pm2 (10s) and most metric intervals
-  const offTab = seen.filter((p) => /^\/api\/(docker|pm2|system\/history|metrics)\//.test(p) || p === "/api/system/history");
+  const offTab = seen.filter((p) => /^\/api\/(docker|pm2|system\/history|metrics)\//.test(p) || p === "/api/system/history" || p === "/api/history");
   expect(offTab).toEqual([]);
 });

@@ -31,7 +31,7 @@ test("Pause stops widget polling, alerts keep polling, badge shows, manual refre
   const seen = recordRequests(page);
   await page.waitForTimeout(15_000);
   expect(seen.filter((r) => WIDGET_POLL.test(r.path)).map((r) => r.path)).toEqual([]);
-  expect(seen.filter((r) => r.path === "/api/system/alerts").length).toBeGreaterThanOrEqual(2); // 7s, unaffected
+  expect(seen.filter((r) => r.path === "/api/alerts").length).toBeGreaterThanOrEqual(2); // 7s, unaffected (all hosts since H2)
 
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect.poll(() => seen.some((r) => r.path === "/api/system/info")).toBe(true);
