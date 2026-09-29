@@ -61,6 +61,11 @@ switch (cmd) {
   case "login-body":
     fs.writeFileSync(args[1], JSON.stringify({ password: readSecret(args[0]) }), { mode: 0o600 });
     break;
+  case "db-dump":
+    fs.appendFileSync(f("calls"), "helper db-dump\n");
+    fs.writeFileSync(args[0], "PGDMP fake dump", { mode: 0o600 });
+    console.log("15");
+    break;
   default:
     fail(`unknown command ${cmd}`);
 }

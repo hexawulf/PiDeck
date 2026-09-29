@@ -109,13 +109,13 @@ describe("createSampleTick", () => {
     const insert = vi.spyOn(SystemService, "logHistoricalData").mockResolvedValue();
     const prune = vi.spyOn(SystemService, "pruneHistory").mockResolvedValue();
 
-    const held = createSampleTick(async (fn) => (await fn(), true));
+    const held = createSampleTick(async (fn) => (await fn(), true), () => true);
     expect(await held()).toBe(true);
     expect(alert).toHaveBeenCalledWith(42);
     expect(insert).toHaveBeenCalledWith(info);
     expect(prune).toHaveBeenCalledTimes(1);
 
-    const elsewhere = createSampleTick(async () => false);
+    const elsewhere = createSampleTick(async () => false, () => true);
     expect(await elsewhere()).toBe(false);
     expect(alert).toHaveBeenCalledTimes(2); // alerts are per process, still evaluated
     expect(insert).toHaveBeenCalledTimes(1);
@@ -124,7 +124,7 @@ describe("createSampleTick", () => {
   it("evaluates alerts even when the DB lock/transaction fails", async () => {
     vi.spyOn(SystemService, "collectMetrics").mockResolvedValue(info);
     const alert = vi.spyOn(SystemService, "checkTemperatureAlert").mockImplementation(() => {});
-    const tick = createSampleTick(async () => { throw new Error("connection refused"); });
+    const tick = createSampleTick(async () => { throw new Error("connection refused"); }, () => true);
     await expect(tick()).rejects.toThrow("connection refused");
     expect(alert).toHaveBeenCalledTimes(1);
   });
@@ -132,12 +132,21 @@ describe("createSampleTick", () => {
   it("measures rates against its own baseline, not the client's", async () => {
     const spy = vi.spyOn(SystemService, "collectMetrics").mockResolvedValue(info);
     vi.spyOn(SystemService, "checkTemperatureAlert").mockImplementation(() => {});
-    const tick = createSampleTick(async () => true);
+    const tick = createSampleTick(async () => true, () => true);
     await tick();
     await tick();
     const [a] = spy.mock.calls[0];
     const [b] = spy.mock.calls[1];
     expect(a).toBe(b); // same baseline object across this sampler's ticks
     expect(a).toEqual({ disk: null, net: null });
+  });
+
+  it("writes nothing while schema migrations are pending (M0)", async () => {
+    vi.spyOn(SystemService, "collectMetrics").mockResolvedValue({ temperature: 42 } as Awaited<ReturnType<typeof SystemService.collectMetrics>>);
+    vi.spyOn(SystemService, "checkTemperatureAlert").mockImplementation(() => {});
+    const withLock = vi.fn(async (fn: () => Promise<void>) => (await fn(), true));
+    const tick = createSampleTick(withLock, () => false);
+    expect(await tick()).toBe(false);
+    expect(withLock).not.toHaveBeenCalled();
   });
 });

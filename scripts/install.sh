@@ -49,6 +49,7 @@ ADD_URL=""
 TOKEN_FILE=""
 ADD_LABEL=""
 REPLACE=0
+NO_DB_BACKUP="${PIDECK_NO_DB_BACKUP:-0}"
 
 usage() {
   cat <<'EOF'
@@ -56,7 +57,9 @@ PiDeck installer — scripts/install.sh [options]
 
   --dry-run                 print every action, change nothing (do this first)
   --yes                     non-interactive: accept defaults, no prompts
-  --update                  git pull --ff-only, npm ci, build, restart, health check
+  --update                  git pull --ff-only, npm ci, pg_dump + db:migrate (hub),
+                            build, restart, health check
+  --no-db-backup            with --update: skip the pg_dump before migrating
   --port N                  listen port (default 5006; env PIDECK_PORT)
   --database-url URL        use this PostgreSQL instead of a local role/db
                             (never printed; prefer env PIDECK_DATABASE_URL,
@@ -127,6 +130,7 @@ while [ $# -gt 0 ]; do
     --token-file) TOKEN_FILE="${2:?--token-file needs a file}"; shift ;;
     --label) ADD_LABEL="${2:?--label needs text}"; shift ;;
     --replace) REPLACE=1 ;;
+    --no-db-backup) NO_DB_BACKUP=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)" >&2; exit 64 ;;
   esac
@@ -524,17 +528,38 @@ deps() {
 
 # ── 3c. schema ─────────────────────────────────────────────────────────
 schema() {
-  step "Schema"
-  if [ "$DRY_RUN" = 1 ]; then dry "check tables; if missing: DATABASE_URL=… npx drizzle-kit push --force </dev/null"; return; fi
+  step "Schema (migrations)"
+  if [ "$DRY_RUN" = 1 ]; then dry "npm run db:migrate (a pre-2.5 database gets a baseline mark first; then pending migrations)"; return; fi
   helper db-check >/dev/null || die "cannot reach the database (see the message above)"
-  local missing; missing="$(helper tables)"
-  if [ -z "$missing" ]; then ok "tables present (users, historical_metrics); not touching the schema"; return; fi
-  info "missing tables: $missing → creating the schema (fresh database)"
-  # Fresh database: push creates everything; --force + no stdin keeps it non-interactive.
-  (cd "$APP_DIR" && DATABASE_URL="$(env_get DATABASE_URL)" timeout 180 npx drizzle-kit push --force </dev/null >/dev/null) \
-    || die "schema push failed (run: npm run db:push)"
-  [ -z "$(helper tables)" ] || die "schema push finished but tables are still missing"
-  ok "schema created"
+  # Fresh database: every migration runs. Existing (2.3/2.4) database: 0000 is
+  # recorded without running, then only the new ones run. Each in its own transaction.
+  db_migrate || die "schema migration failed (see above); nothing else was changed"
+  [ -z "$(helper tables)" ] || die "migrations finished but PiDeck tables are still missing"
+  ok "schema up to date"
+}
+
+# npm run db:migrate, with its (secret-free) output on the terminal and in the log.
+db_migrate() {
+  (cd "$APP_DIR" && node scripts/migrate.mjs)
+}
+
+# pg_dump -Fc of the PiDeck database to ~/backups (update only). Sets DB_DUMP.
+DB_DUMP=""
+db_backup() {
+  DB_DUMP="$HOME/backups/pideck-db-$TS.dump"
+  if [ "$NO_DB_BACKUP" = 1 ]; then warn "--no-db-backup: not dumping the database before migrating"; DB_DUMP=""; return; fi
+  if [ "$DRY_RUN" = 1 ]; then dry "pg_dump -Fc the PiDeck database to $DB_DUMP (0600)"; return; fi
+  have pg_dump || die "pg_dump not found: install postgresql-client (same major version as the server), or pass --no-db-backup"
+  install -d -m 700 "$HOME/backups"
+  local size
+  size="$(helper db-dump "$DB_DUMP")" || die "database backup failed; nothing was migrated (see above)"
+  ok "database backed up: $DB_DUMP ($size bytes)"
+}
+
+restore_hint() {
+  [ -n "$DB_DUMP" ] || return 0
+  info "Restore the database from before this update, if needed:"
+  info "  cd $APP_DIR && pg_restore --clean --if-exists --no-owner --dbname \"\$(sed -n 's/^DATABASE_URL=//p' .env)\" $DB_DUMP"
 }
 
 # ── 5. admin password ──────────────────────────────────────────────────
@@ -1045,7 +1070,20 @@ update() {
   if [ -d "$APP_DIR/dist" ]; then run "back up dist/ to $backup" bash -c "mkdir -p \"\$1\" && cp -a \"\$2/dist\" \"\$1/\"" _ "$backup" "$APP_DIR"; fi
   run "git pull --ff-only" git -C "$APP_DIR" pull --ff-only
   deps
-  if [ "$agent" != 1 ] && [ "$DRY_RUN" != 1 ] && [ -n "$(helper tables)" ]; then warn "PiDeck tables are missing; run scripts/install.sh (not --update)"; fi
+  if [ "$agent" != 1 ]; then
+    # Migrate after npm ci and before the build/restart: if it fails, the
+    # running PiDeck keeps its current build and nothing is restarted.
+    step "Database"
+    db_backup
+    if [ "$DRY_RUN" = 1 ]; then dry "npm run db:migrate (baseline mark first on a pre-2.5 database)"
+    elif ! db_migrate; then
+      step "Migration failed — update stopped"
+      warn "The failing migration was rolled back. PiDeck was NOT rebuilt or restarted: it keeps running its current build."
+      restore_hint
+      info "Back to the previous code: cd $APP_DIR && git reset --keep $prev && npm ci"
+      die "migration failed"
+    fi
+  fi
   build
   if [ "$agent" = 1 ]; then agent_service; agent_health; else service; health; fi
   local restart
@@ -1054,6 +1092,7 @@ update() {
   else restart="sudo systemctl restart pideck"; fi
   step "Rollback, if needed"
   info "cd $APP_DIR && git reset --keep $prev && npm ci && rm -rf dist && cp -a $backup/dist dist && $restart"
+  [ "$agent" = 1 ] || restore_hint
 }
 
 # ── main ───────────────────────────────────────────────────────────────

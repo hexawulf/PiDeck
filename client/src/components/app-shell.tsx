@@ -14,6 +14,7 @@ import { useRefreshAll } from "@/hooks/use-refresh-all";
 import { useSystemInfo } from "@/hooks/use-system-info";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { DbMigrationBanner } from "@/components/db-migration-banner";
 import { HostSwitcher } from "@/components/host-switcher";
 import { useHost, useHostSummary } from "@/hosts/HostProvider";
 import { hostHref, REMOTE_TABS } from "@/hosts/host-path";
@@ -158,6 +159,7 @@ export default function AppShell({ tab }: { tab: TabId }) {
         </div>
       </header>
 
+      {user?.maintenance?.dbMigrationsPending && <DbMigrationBanner />}
       {user?.defaultPassword && (
         <div role="status" className="mx-4 mt-4 rounded-xl border border-pi-warning px-4 py-2 text-center text-sm text-pi-text" data-testid="default-password-banner">
           The admin password is still the default (<code>admin</code>).{" "}

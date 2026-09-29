@@ -14,6 +14,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import compatRouter from "./routes/compat";
 import { startSampler } from "./services/sampler";
 import { initializeStorage, pool } from "./storage";
+import { checkSchema, schemaReady, schemaState } from "./db-schema";
 import { installCsp } from "./security";
 import { cookieSecure, corsOrigins, insecureHttp, trustProxy } from "./config";
 
@@ -100,7 +101,21 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
     throw new Error("SESSION_SECRET must be set in production.");
   }
 
-  await initializeStorage();
+  // Schema migrations are applied by `npm run db:migrate` (the installer runs
+  // it), never here. With work pending: log, keep serving, banner, re-check
+  // every minute; the sampler skips its writes until then (no crash loop).
+  await checkSchema(pool);
+  if (!schemaReady() && !schemaState().error) {
+    const recheck = setInterval(() => void checkSchema(pool).then(() => schemaReady() && clearInterval(recheck)), 60_000);
+    recheck.unref();
+  }
+  try {
+    await initializeStorage();
+  } catch (error) {
+    // Unreachable database: fail as before. Unmigrated schema: keep serving.
+    if (schemaReady() || schemaState().error) throw error;
+    console.error("[bootstrap] storage init failed because the schema isn't migrated yet:", (error as Error).message);
+  }
 
   // History rows + temperature alerts every 60s (off with PIDECK_SAMPLER=off).
   const sampler = startSampler();

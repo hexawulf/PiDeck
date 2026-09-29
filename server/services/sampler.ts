@@ -16,6 +16,7 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { createRateBaseline, SystemService } from "./system";
+import { schemaReady } from "../db-schema";
 
 export const SAMPLE_INTERVAL_MS = 60_000;
 /** Arbitrary fixed key for pg_try_advisory_xact_lock ("PiDeck" in ASCII). */
@@ -110,11 +111,15 @@ export async function withAdvisoryLock(fn: () => Promise<void>): Promise<boolean
  * before any DB work (they keep working if Postgres is down); only the
  * history writes are behind the lock.
  */
-export function createSampleTick(withLock: (fn: () => Promise<void>) => Promise<boolean> = withAdvisoryLock) {
+export function createSampleTick(
+  withLock: (fn: () => Promise<void>) => Promise<boolean> = withAdvisoryLock,
+  isReady: () => boolean = schemaReady,
+) {
   const baseline = createRateBaseline();
   return async (): Promise<boolean> => {
     const info = await SystemService.collectMetrics(baseline);
     SystemService.checkTemperatureAlert(info.temperature);
+    if (!isReady()) return false; // pending migrations: no DB writes (see server/db-schema.ts)
     return withLock(async () => {
       await SystemService.logHistoricalData(info);
       await SystemService.pruneHistory();

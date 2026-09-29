@@ -7,6 +7,8 @@ interface AuthStatus {
   userId?: number;
   /** How the session cookie is sent (see components/transport-notice.tsx). */
   transport?: { secureCookie: boolean; insecureHttp: boolean };
+  /** Schema migrations are pending (hub serves anyway; see server/db-schema.ts). */
+  maintenance?: { dbMigrationsPending: boolean };
   /** Signed in and the admin password is still the seeded default. */
   defaultPassword?: boolean;
 }

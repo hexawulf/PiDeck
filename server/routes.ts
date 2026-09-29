@@ -25,6 +25,7 @@ import { rateLimitLogin } from "./middleware/rateLimitLogin";
 import { envPasswordMatches } from "./services/env-password";
 import { cookieSecure, insecureHttp, parseHosts } from "./config";
 import { createHostHub } from "./hosts";
+import { schemaReady, schemaState } from "./db-schema";
 import { adminPasswordIsDefault } from "./storage";
 
 const passwordChangeSchema = z.object({
@@ -188,10 +189,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // (Secure cookie over plain HTTP) and warn in PIDECK_INSECURE_HTTP mode.
   app.get("/api/auth/me", (req, res) => {
     const transport = { secureCookie: cookieSecure(), insecureHttp: insecureHttp() };
+    // Pending schema migrations (M0): a banner tells the operator to run --update.
+    const maintenance = { dbMigrationsPending: schemaState().checked && !schemaReady() };
     if ((req.session as any)?.authenticated) {
-      res.json({ authenticated: true, userId: (req.session as any).userId, transport, defaultPassword: adminPasswordIsDefault() });
+      res.json({ authenticated: true, userId: (req.session as any).userId, transport, maintenance, defaultPassword: adminPasswordIsDefault() });
     } else {
-      res.json({ authenticated: false, transport });
+      res.json({ authenticated: false, transport, maintenance });
     }
   });
 

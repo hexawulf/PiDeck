@@ -3,7 +3,9 @@
 // Needs PIDECK_TEST_PG_URL (see tests/db/pg-helpers.ts); skipped otherwise.
 import { afterAll, describe, expect, it } from "vitest";
 import type pg from "pg";
+import pgLib from "pg";
 import { migrate, migrationStatus, MIGRATIONS_TABLE, readMigrations } from "../../scripts/migrate-core.mjs";
+import { checkSchema, resetSchemaState, schemaReady } from "../../server/db-schema";
 import {
   catalog, connect, dataFingerprint, dbUrl, dropDb, hasPg, loadProdShape, migrationsSubset, quiet, scratchDb,
   userSessionsFingerprint,
@@ -126,6 +128,27 @@ describe.skipIf(!hasPg)("migrations on a real Postgres", () => {
     await client.query(`CREATE TABLE users (id serial PRIMARY KEY)`);
     await expect(migrate(client, { log: quiet })).rejects.toThrow(/some PiDeck tables but not all/);
     expect((await catalog(client)).some((l) => l.includes(MIGRATIONS_TABLE))).toBe(false);
+  });
+
+  it("hub startup check: pending on a 2.4 database (logged, not thrown), ready after db:migrate", async () => {
+    const { name, client } = await db();
+    await loadProdShape(client);
+    const pool = new pgLib.Pool({ connectionString: dbUrl(name), options: "-c TimeZone=Asia/Taipei" });
+    const errors: string[] = [];
+    const log = { info: () => {}, error: (m: string) => errors.push(m) };
+    try {
+      resetSchemaState();
+      const s = await checkSchema(pool, log);
+      expect(s.baseline).toBe("needed");
+      expect(schemaReady()).toBe(false);
+      expect(errors.join()).toMatch(/DATABASE NEEDS MIGRATING .*scripts\/install\.sh --update/);
+      await migrate(client, { log: quiet });
+      await checkSchema(pool, log);
+      expect(schemaReady()).toBe(true);
+    } finally {
+      resetSchemaState();
+      await pool.end();
+    }
   });
 
   it("status is read-only and reports pending work", async () => {

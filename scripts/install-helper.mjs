@@ -13,7 +13,10 @@
 //                                   replaces a missing admin or the seeded "admin")
 //   strength <pwfile>            → ok | the first failed rule (same rules as the UI)
 //   login-body <pwfile> <out>    → writes {"password":…} to <out> with mode 0600
+//   db-dump <out>                → pg_dump -Fc of DATABASE_URL into <out> (mode 0600);
+//                                   the password goes to pg_dump in PGPASSWORD, never argv
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -121,6 +124,29 @@ switch (cmd) {
     if (!out) fail("usage: login-body <pwfile> <out>");
     fs.writeFileSync(out, JSON.stringify({ password: readSecret(pwFile) }), { mode: 0o600 });
     fs.chmodSync(out, 0o600);
+    break;
+  }
+  case "db-dump": {
+    const out = args[0];
+    if (!out) fail("usage: db-dump <out>");
+    if (!process.env.DATABASE_URL) fail("DATABASE_URL is not set");
+    const u = new URL(process.env.DATABASE_URL);
+    const env = {
+      ...process.env,
+      PGHOST: u.hostname || "localhost",
+      PGPORT: u.port || "5432",
+      PGUSER: decodeURIComponent(u.username),
+      PGPASSWORD: decodeURIComponent(u.password),
+      PGDATABASE: decodeURIComponent(u.pathname.replace(/^\//, "")),
+    };
+    delete env.DATABASE_URL;
+    const fd = fs.openSync(out, "w", 0o600);
+    fs.closeSync(fd);
+    const r = spawnSync("pg_dump", ["-Fc", "--no-owner", "-f", out], { env, stdio: ["ignore", "inherit", "pipe"] });
+    if (r.error) fail(`pg_dump: ${r.error.message} (install postgresql-client)`);
+    if (r.status !== 0) fail(`pg_dump failed: ${String(r.stderr).trim().split("\n").pop()}`);
+    fs.chmodSync(out, 0o600);
+    console.log(`${fs.statSync(out).size}`);
     break;
   }
   default:

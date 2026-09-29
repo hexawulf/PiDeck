@@ -33,6 +33,7 @@ new_sandbox() {
     mkdir -p scripts deploy
     cp "$ROOT/scripts/install.sh" "$ROOT/scripts/uninstall.sh" scripts/
     cp "$ROOT/tests/install/fake-helper.mjs" scripts/install-helper.mjs
+    cp "$ROOT/tests/install/fake-migrate.mjs" scripts/migrate.mjs
     cp -r "$ROOT/deploy/." deploy/
     cp "$ROOT/.env.example" "$ROOT/ecosystem.config.cjs" "$ROOT/package.json" .
     printf '.env\nnode_modules/\ndist/\n' > .gitignore
@@ -153,6 +154,10 @@ case "\$url" in
   */api/auth/me) printf '{"authenticated":true}' ;;
 esac
 EOF
+  stub pg_dump <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
   stub smartctl <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -225,7 +230,7 @@ check ".env keeps the example as comments only" bash -c "! grep -q CHANGE_ME '$A
 check "DATABASE_URL points at the created role/db" grep -qE '^DATABASE_URL=postgresql://pideck:[0-9a-f]{48}@localhost:5432/pideck$' "$APP/.env"
 check "role + db created through sudo -u postgres psql" grep -q '^sudo -u postgres psql' "$W/state/calls"
 check "install-db marker records role+db as created (0600)" bash -c "test \"\$(stat -c %a '$W/home/.config/pideck/install-db')\" = 600 && grep -qx CREATED_ROLE=1 '$W/home/.config/pideck/install-db' && grep -qx CREATED_DB=1 '$W/home/.config/pideck/install-db'"
-check "schema pushed once" test "$(grep -c '^npx drizzle-kit push' "$W/state/calls")" = 1
+check "schema via db:migrate (once), never drizzle-kit push" bash -c "test \"\$(grep -cx migrate '$W/state/calls')\" = 1 && ! grep -q '^npx drizzle-kit' '$W/state/calls'"
 check "admin no longer on the seeded password" test "$(cat "$W/state/admin")" != default
 check "one pm2 app" test "$(grep -cx pideck "$W/state/pm2")" = 1
 check "sudoers installed 0440" test "$(mode "$W/etc/sudoers.d/pideck")" = 440
@@ -245,7 +250,7 @@ inst "${STD[@]}" --sudoers --nvme-device /dev/nvme0 || bad "re-run exit $?"
 check "re-run: .env, password, sudoers, DB admin unchanged" test "$sums" = "$(sha256sum "$APP/.env" "$W/home/.config/pideck/admin-password" "$W/etc/sudoers.d/pideck" "$W/state/admin")"
 check "re-run: no backups made" bash -c "! ls '$APP'/.env.bak.* '$W'/etc/sudoers.d/*.bak.* 2>/dev/null | grep -q ."
 check "re-run: still one pm2 app (restarted, not started)" bash -c "test \"\$(grep -cx pideck '$W/state/pm2')\" = 1 && grep -q '^pm2 restart pideck' '$W/state/calls' && ! grep -q '^pm2 start' '$W/state/calls'"
-check "re-run: no psql, no schema push" bash -c "! grep -qE '^(psql|npx)' '$W/state/calls'"
+check "re-run: no psql; db:migrate is a no-op (up to date)" bash -c "! grep -qE '^(psql|npx)' '$W/state/calls' && grep -q 'up to date' '$W/out'"
 check "re-run: no password printed" bash -c "! grep -q 'shown once' '$W/out'"
 check "re-run with --service systemd refuses (single instance)" bash -c "! (cd '$APP' && env -i PATH='$W/bin:$PATH' HOME='$W/home' TMPDIR='$W/tmp' PIDECK_ETC_DIR='$W/etc' PIDECK_TEST_STATE='$W/state' '$APP/scripts/install.sh' --yes --service systemd </dev/null >/dev/null 2>&1)"
 # UI password change → kept; --reset-password replaces it.
@@ -326,6 +331,17 @@ check "pulled the new commit" grep -q '// v2' "$APP/ecosystem.config.cjs"
 check "dist backed up to ~/backups/pideck-dist-<ts>" bash -c "ls '$W'/home/backups/pideck-dist-*/dist/index.js >/dev/null"
 check "npm ci + build + pm2 restart" bash -c "grep -q '^npm ci' '$W/state/calls' && grep -q '^npm run build' '$W/state/calls' && grep -q '^pm2 restart pideck' '$W/state/calls'"
 check "prints the rollback command" grep -q 'git reset --keep' "$W/out"
+line() { grep -nx "$1" "$W/state/calls" | head -n 1 | cut -d: -f1; }
+check "order: npm ci → pg_dump → db:migrate → build → restart" bash -c "a=\$(grep -n '^npm ci' '$W/state/calls' | cut -d: -f1); b=\$(grep -nx 'helper db-dump' '$W/state/calls' | cut -d: -f1); c=\$(grep -nx migrate '$W/state/calls' | cut -d: -f1); d=\$(grep -n '^npm run build' '$W/state/calls' | cut -d: -f1); e=\$(grep -n '^pm2 restart pideck' '$W/state/calls' | cut -d: -f1); [ -n \"\$a\" ] && [ \"\$a\" -lt \"\$b\" ] && [ \"\$b\" -lt \"\$c\" ] && [ \"\$c\" -lt \"\$d\" ] && [ \"\$d\" -lt \"\$e\" ]"
+check "database dump in ~/backups (0600) and the restore command printed" bash -c "f=\$(ls '$W'/home/backups/pideck-db-*.dump) && test \"\$(stat -c %a \"\$f\")\" = 600 && grep -q 'pg_restore --clean --if-exists' '$W/out'"
+( cd "$W/src" && echo "// v3" >> ecosystem.config.cjs && git -c user.name=t -c user.email=t@t commit -qam v3 )
+touch "$W/state/migrate-fail"; : > "$W/state/calls"
+if inst --update; then bad "a failing migration was accepted"; else ok "a failing migration stops the update"; fi
+check "…before the build and without any restart (old build keeps running)" bash -c "grep -qx migrate '$W/state/calls' && ! grep -q '^npm run build' '$W/state/calls' && ! grep -qE '^(pm2 (restart|start)|systemctl)' '$W/state/calls'"
+check "…and says how to restore / go back" bash -c "grep -q 'keeps running its current build' '$W/out' && grep -q 'pg_restore' '$W/out' && grep -q 'git reset --keep' '$W/out'"
+rm -f "$W/state/migrate-fail"; : > "$W/state/calls"
+inst --update --no-db-backup || bad "update --no-db-backup exit $?"
+check "--no-db-backup: migrates without a dump" bash -c "grep -qx migrate '$W/state/calls' && ! grep -qx 'helper db-dump' '$W/state/calls'"
 echo "local edit" >> "$APP/package.json"
 if inst --update; then bad "dirty tree accepted"; else ok "refuses a checkout with local changes"; fi
 cleanup
@@ -347,7 +363,7 @@ cleanup
 
 new_sandbox "--agent install, re-run, rotate, update, uninstall"
 inst "${AGENT[@]}" --sudoers --nvme-device /dev/nvme0 || { bad "install exit $?"; tail -n 25 "$W/out"; }
-check "no Postgres at all (no psql, no schema push, no admin password)" bash -c "! grep -qE '^(psql|npx|sudo -u postgres)' '$W/state/calls' && test ! -e '$W/home/.config/pideck/admin-password'"
+check "no Postgres at all (no psql, no migrate, no admin password)" bash -c "! grep -qE '^(psql|npx|sudo -u postgres|migrate|helper db-dump)' '$W/state/calls' && test ! -e '$W/home/.config/pideck/admin-password'"
 check ".env is 0600 and says agent mode" bash -c "test \"\$(stat -c %a '$APP/.env')\" = 600 && grep -qx PIDECK_MODE=agent '$APP/.env'"
 check ".env binds the LAN address, port 5016" bash -c "grep -qx PIDECK_AGENT_BIND=192.0.2.10 '$APP/.env' && grep -qx PIDECK_AGENT_PORT=5016 '$APP/.env'"
 check ".env has no hub secrets" bash -c "! grep -qE '^(SESSION_SECRET|DATABASE_URL)=' '$APP/.env'"

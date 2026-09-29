@@ -8,6 +8,7 @@ import { Server, Eye, EyeOff } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { DbMigrationBanner } from "@/components/db-migration-banner";
 import { TransportNotice } from "@/components/transport-notice";
 
 export default function Login() {
@@ -70,6 +71,7 @@ export default function Login() {
             </div>
             
             <TransportNotice transport={user?.transport} />
+            {user?.maintenance?.dbMigrationsPending && <DbMigrationBanner />}
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <Label className="block text-sm font-medium pi-text-muted mb-2">
