@@ -136,14 +136,17 @@ Detailed plan: [multi-host-h2.md](./multi-host-h2.md).
 - "All hosts" overview page: a tile per host (status, CPU, temp, RAM, disk,
   open alerts), click-through to that host.
 
-### H3 — 2.6.0: WireGuard + piapps3 / piapps4
+### H3 — 2.6.0: remote logs, DS920+, WireGuard + piapps3 / piapps4
+Detailed plan: [multi-host-h3.md](./multi-host-h3.md) (2026-09-29). Scope
+changed: read-only remote logs pulled forward from H4; DS920+ added as a host.
+
 - WireGuard between the hub and the VPSes (separate subnet from the existing
   brixhouse tunnel on piapps4); agents bind to their wg0 address only; no
   public port. Optionally move piapps2 onto it too.
 - `install.sh --agent` on x86_64 VPSes (2 GB RAM on piapps3: measure agent RSS).
 - Runbook in the Obsidian vault.
 
-### H4 — later: opt-in remote actions and logs
+### H4 — later: opt-in remote actions (logs moved to H3)
 - Per-host capability flags (`actions`, `logs`) enabled on the agent side;
   POST forwarding with CSRF and the existing ConfirmDialog; audit log line
   on the hub for every remote action.
