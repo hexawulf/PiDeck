@@ -156,7 +156,7 @@ test.describe("multi-host", () => {
     await expect(page.getByText("Raspberry Pi Admin")).toHaveCount(0); // the switcher names the host
     for (const width of [1440, 1280, 1024]) {
       await page.setViewportSize({ width, height: 900 });
-      const wrapped = await page.locator("header").evaluate((h) =>
+      const wrapped = await page.getByRole("banner").evaluate((h) =>
         [...h.querySelectorAll("p, span, kbd, div")]
           .filter((e) => e.children.length === 0 && e.textContent?.trim() && e.getBoundingClientRect().height > 24)
           .map((e) => e.textContent!.trim()));
