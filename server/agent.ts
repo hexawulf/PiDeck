@@ -20,23 +20,34 @@ import pm2Router from "./routes/pm2";
 import nvmeRouter from "./routes/nvme";
 import thermalZonesRouter from "./routes/thermalZones";
 import powerStatusRouter from "./routes/powerStatus";
+import { LogFilterError } from "./services/log-filter";
+import { agentLogConfig, listSources, parseTailQuery, readSource, SourceError, type AgentLogConfig } from "./services/agent-logs/sources";
 
 export type AgentInfo = {
   version: string;
   hostname: string;
-  /** sample: serves /api/agent/sample, so the hub records history for it (2.5+). */
-  capabilities: { read: true; sample: true; actions: false; logs: false; paths: readonly string[] };
+  /**
+   * sample: serves /api/agent/sample, so the hub records history for it (2.5+).
+   * logs: serves /api/agent/logs (PIDECK_AGENT_LOGS=on, 2.6+).
+   */
+  capabilities: { read: true; sample: true; actions: false; logs: boolean; paths: readonly string[] };
 };
 
-export function agentInfo(): AgentInfo {
+export function agentInfo(logs = agentLogConfig(process.env, () => {}).enabled): AgentInfo {
   return {
     version: PIDECK_VERSION,
     hostname: os.hostname(),
-    capabilities: { read: true, sample: true, actions: false, logs: false, paths: AGENT_PATHS },
+    capabilities: { read: true, sample: true, actions: false, logs, paths: AGENT_PATHS },
   };
 }
 
-export function createAgentApp(opts: { tokenSha256: string; limiter?: ReturnType<typeof createFailureLimiter> }) {
+export function createAgentApp(opts: {
+  tokenSha256: string;
+  limiter?: ReturnType<typeof createFailureLimiter>;
+  /** Remote logs (default: from the environment). */
+  logs?: AgentLogConfig;
+}) {
+  const logs = opts.logs ?? agentLogConfig();
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", false); // nothing sits in front of the agent; req.ip is the peer
@@ -51,7 +62,26 @@ export function createAgentApp(opts: { tokenSha256: string; limiter?: ReturnType
   app.use(agentAuth(opts.tokenSha256, opts.limiter));
   app.use((req, res, next) => (agentAllows(req.method, req.path) ? next() : res.status(404).json({ message: "Not found" })));
 
-  app.get("/api/agent/info", (_req, res) => res.json(agentInfo()));
+  app.get("/api/agent/info", (_req, res) => res.json(agentInfo(logs.enabled)));
+
+  // Remote logs (read-only, opt-in): ids map to configured sources only.
+  const logsOff = (_req: Request, res: Response, next: NextFunction) => (logs.enabled ? next() : res.status(404).json({ message: "Not found" }));
+  app.get("/api/agent/logs", logsOff, async (_req, res, next) => {
+    try {
+      res.json(await listSources(logs));
+    } catch (err) {
+      next(err);
+    }
+  });
+  app.get("/api/agent/logs/:id", logsOff, async (req, res, next) => {
+    try {
+      const { lines, filter } = parseTailQuery(req.query as Record<string, unknown>);
+      res.json(await readSource(logs, req.params.id, lines, filter));
+    } catch (err) {
+      if (err instanceof SourceError || err instanceof LogFilterError) return res.status(err.status).json({ message: err.message });
+      next(err);
+    }
+  });
   // Raw counters only (no state kept here): the hub computes the rates.
   app.get("/api/agent/sample", async (_req, res, next) => {
     try {
@@ -79,6 +109,10 @@ export function startAgent(cfg: { port: number; bind: string; tokenSha256: strin
   const app = createAgentApp({ tokenSha256: cfg.tokenSha256 });
   const server = app.listen(cfg.port, cfg.bind, () => {
     console.log(`[agent] PiDeck ${PIDECK_VERSION} agent (read-only) on ${cfg.bind}:${cfg.port}`);
+    const logs = agentLogConfig();
+    if (logs.enabled) {
+      console.log(`[agent] remote logs on: ${logs.files.length} file(s), ${logs.journal.length} journal unit(s), docker ${logs.docker.enabled ? "on" : "off"}`);
+    }
   });
   server.on("error", (err) => {
     console.error("[agent] failed to listen:", err.message);
