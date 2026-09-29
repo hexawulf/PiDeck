@@ -4,6 +4,7 @@
 /** Every GET the agent answers and the hub forwards. Nothing else, ever. */
 export const AGENT_PATHS: readonly string[] = [
   "/api/agent/info",
+  "/api/agent/sample", // raw counters for the hub's sampler (2.5+)
   "/api/system/info",
   "/api/metrics/ram",
   "/api/metrics/swap",

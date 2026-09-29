@@ -18,6 +18,8 @@ export const hostSummarySchema = z
     status: z.enum(["online", "offline", "auth-error", "version-mismatch"]),
     version: z.string().nullable(),
     lastSeen: z.string().nullable(),
+    /** "unsupported" = agent < 2.5: no history until it's updated (amber). Optional: a 2.4 hub doesn't send it. */
+    history: z.enum(["ok", "unsupported", "unknown"]).optional(),
   })
   .strict();
 export const hostsSchema = z.array(hostSummarySchema);

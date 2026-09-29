@@ -11,6 +11,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { agentAllows, AGENT_PATHS } from "./agent-api";
 import { agentAuth, createFailureLimiter } from "./middleware/agentAuth";
 import { PIDECK_VERSION } from "./version";
+import { readCounters } from "./services/counters";
 import systemRouter, { rebootCheckHandler } from "./routes/system";
 import metricsRouter from "./routes/metrics";
 import networkRouter from "./routes/network";
@@ -23,14 +24,15 @@ import powerStatusRouter from "./routes/powerStatus";
 export type AgentInfo = {
   version: string;
   hostname: string;
-  capabilities: { read: true; actions: false; logs: false; paths: readonly string[] };
+  /** sample: serves /api/agent/sample, so the hub records history for it (2.5+). */
+  capabilities: { read: true; sample: true; actions: false; logs: false; paths: readonly string[] };
 };
 
 export function agentInfo(): AgentInfo {
   return {
     version: PIDECK_VERSION,
     hostname: os.hostname(),
-    capabilities: { read: true, actions: false, logs: false, paths: AGENT_PATHS },
+    capabilities: { read: true, sample: true, actions: false, logs: false, paths: AGENT_PATHS },
   };
 }
 
@@ -50,6 +52,14 @@ export function createAgentApp(opts: { tokenSha256: string; limiter?: ReturnType
   app.use((req, res, next) => (agentAllows(req.method, req.path) ? next() : res.status(404).json({ message: "Not found" })));
 
   app.get("/api/agent/info", (_req, res) => res.json(agentInfo()));
+  // Raw counters only (no state kept here): the hub computes the rates.
+  app.get("/api/agent/sample", async (_req, res, next) => {
+    try {
+      res.json(await readCounters());
+    } catch (err) {
+      next(err);
+    }
+  });
   // The same handlers the hub serves locally (only the allowlisted paths reach them).
   app.use("/api", systemRouter, metricsRouter, networkRouter, dockerRouter, pm2Router);
   app.get("/api/metrics/nvme", nvmeRouter);
