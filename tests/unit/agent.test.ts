@@ -17,6 +17,11 @@ import { agentAllows, agentPathFromHubUrl, AGENT_PATHS } from "../../server/agen
 import { bearerToken, createFailureLimiter, sha256Hex, tokenMatches } from "../../server/middleware/agentAuth";
 import { agentConfig } from "../../server/config";
 import { PIDECK_VERSION } from "../../server/version";
+import { isRawCounters } from "../../server/services/counters";
+import { createHostHub } from "../../server/hosts";
+import { createAlertManager, memoryAlertStore } from "../../server/services/alerts";
+import { createSampleTick } from "../../server/services/sampler";
+import type { HistoryPoint } from "../../server/services/history";
 
 const TOKEN = "t".repeat(20) + "-agent-test-token";
 const HASH = sha256Hex(TOKEN);
@@ -81,6 +86,20 @@ describe("agent HTTP", () => {
     expect(typeof body.hostname).toBe("string");
     expect(body.capabilities).toMatchObject({ read: true, actions: false, logs: false });
   });
+  it("advertises capabilities.sample (2.5 agents feed the hub's history)", async () => {
+    expect((await (await get("/api/agent/info")).json()).capabilities.sample).toBe(true);
+  });
+  it("/api/agent/sample: token-protected, returns raw counters only", async () => {
+    expect((await get("/api/agent/sample", null)).status).toBe(401);
+    expect((await get("/api/agent/sample", "wrong-token-but-long-enough")).status).toBe(401);
+    const res = await get("/api/agent/sample");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const body = await res.json();
+    expect(isRawCounters(body)).toBe(true);
+    expect(Object.keys(body).sort()).toEqual(["bootId", "cpu", "disk", "diskUsage", "hostname", "memory", "net", "sampledAt", "temperature"]);
+    expect((await get("/api/agent/sample", TOKEN, { method: "POST" })).status).toBe(404);
+  });
   it("serves an allowlisted metric with the hub's handler", async () => {
     const res = await get("/api/metrics/ram");
     expect(res.status).toBe(200);
@@ -142,6 +161,8 @@ describe("failure limiter", () => {
 describe("allowlist and hub path normalisation", () => {
   it("allows exactly the plan's GET paths", () => {
     expect(AGENT_PATHS).toContain("/api/metrics/firewall-status");
+    expect(agentAllows("GET", "/api/agent/sample")).toBe(true);
+    expect(agentAllows("POST", "/api/agent/sample")).toBe(false);
     expect(agentAllows("GET", "/api/metrics/ram")).toBe(true);
     expect(agentAllows("POST", "/api/metrics/ram")).toBe(false);
     expect(agentAllows("HEAD", "/api/metrics/ram")).toBe(false);
@@ -179,5 +200,31 @@ describe("allowlist and hub path normalisation", () => {
   it("rejects a bad host id", () => {
     expect(agentPathFromHubUrl("/api/hosts/../metrics/ram", "..")).toBeNull();
     expect(agentPathFromHubUrl("/api/hosts/PIAPPS2/metrics/ram", "PIAPPS2")).toBeNull();
+  });
+});
+
+describe("hub sampler against a real agent", () => {
+  it("two ticks → one history row for the agent, rates from its raw counters", async () => {
+    let clock = Date.now();
+    const hostHub = createHostHub({ hosts: [{ id: "real", label: "Real", url: base, token: TOKEN }], now: () => clock, cacheMs: 0 });
+    const rows: HistoryPoint[] = [];
+    const tick = createSampleTick({
+      runtime: { hostHub, alerts: createAlertManager({ store: memoryAlertStore() }), lastSample: new Map(), historyHours: 24, offlineMinutes: 5 },
+      history: { insert: async (p) => void rows.push(...p), prune: async () => {}, latestPerHost: async () => new Map() },
+      readLocal: async () => { throw new Error("local not under test"); },
+      withLock: async (fn) => (await fn(), true),
+      isReady: () => true,
+      now: () => clock,
+      logger: { info() {}, warn() {}, error() {} },
+    });
+    await tick();
+    await new Promise((r) => setTimeout(r, 1100)); // counters need time to move forward
+    clock += 60_000;
+    await tick();
+    const mine = rows.filter((r) => r.hostId === "real");
+    expect(mine).toHaveLength(1);
+    expect(mine[0].cpuUsage).toBeGreaterThanOrEqual(0);
+    expect(mine[0].cpuUsage).toBeLessThanOrEqual(100);
+    expect(mine[0].networkRx).toBeGreaterThanOrEqual(0);
   });
 });

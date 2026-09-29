@@ -12,21 +12,8 @@ import type {
   DiskIO,
   NetworkBandwidth,
   ProcessInfo,
-  InsertHistoricalMetric,
-  HistoricalMetric,
 } from "@shared/schema";
 
-// History lives in Postgres, but only the hub touches it. Loading drizzle and
-// the schema on first use keeps them (~55 MB resident) out of agent mode,
-// which imports this service for the live metrics only.
-async function historyDb() {
-  const [{ getDb }, { historicalMetrics }, { sql }] = await Promise.all([
-    import("../db"),
-    import("@shared/schema"),
-    import("drizzle-orm"),
-  ]);
-  return { db: getDb(), historicalMetrics, sql };
-}
 
 
 const execAsync = promisify(exec);
@@ -43,15 +30,6 @@ export const createRateBaseline = (): RateBaseline => ({ disk: null, net: null }
 
 const clientBaseline = createRateBaseline();
 
-// In-memory store for active alerts
-interface ActiveAlert {
-  id: string;
-  message: string;
-  timestamp: string;
-  type: 'temperature'; // Can be expanded later
-}
-let activeAlerts: ActiveAlert[] = [];
-const TEMPERATURE_THRESHOLD = 70; // Celsius
 let temperatureWarned = false;
 
 export class SystemService {
@@ -78,7 +56,7 @@ export class SystemService {
       this.getUptime(),
       this.getCPUUsage(),
       this.getMemoryUsage(),
-      this.getTemperature(),
+      this.readTemperature(),
       this.getIPAddress(),
       this.getDiskIO(baseline),
       this.getNetworkBandwidth(baseline),
@@ -104,35 +82,6 @@ export class SystemService {
     };
 
     return systemData;
-  }
-
-  static checkTemperatureAlert(currentTemperature: number | null): void {
-    const existingAlert = activeAlerts.find(alert => alert.type === 'temperature');
-    if (currentTemperature !== null && currentTemperature > TEMPERATURE_THRESHOLD) {
-      if (!existingAlert) {
-        const newAlert: ActiveAlert = {
-          id: `temp-${Date.now()}`,
-          message: `Temperature exceeded ${TEMPERATURE_THRESHOLD}°C: Currently ${currentTemperature.toFixed(1)}°C`,
-          timestamp: new Date().toISOString(),
-          type: 'temperature',
-        };
-        activeAlerts.push(newAlert);
-        // Here you could also emit an event if using a more complex event system
-      } else {
-        // Optionally update the existing alert message or timestamp if it's still active
-        existingAlert.message = `Temperature remains above ${TEMPERATURE_THRESHOLD}°C: Currently ${currentTemperature.toFixed(1)}°C`;
-        existingAlert.timestamp = new Date().toISOString();
-      }
-    } else {
-      if (existingAlert) {
-        // Temperature is back to normal, remove the alert
-        activeAlerts = activeAlerts.filter(alert => alert.type !== 'temperature');
-      }
-    }
-  }
-
-  static getActiveAlerts(): ActiveAlert[] {
-    return activeAlerts;
   }
 
 private static async getDiskIO(baseline: RateBaseline): Promise<DiskIO> {
@@ -258,43 +207,6 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
     }
   }
 
-  /** Insert one history row. Throws on failure so the sampler can report it. */
-  static async logHistoricalData(data: SystemInfo): Promise<void> {
-    const metricRecord: InsertHistoricalMetric = {
-      timestamp: new Date().toISOString(),
-      cpuUsage: Math.round(data.cpu ?? 0),
-      memoryUsage: Math.round(data.memory?.percentage ?? 0),
-      temperature: data.temperature === null ? null : Math.round(data.temperature),
-      diskReadSpeed: Math.round(data.diskIO?.readSpeed ?? 0),
-      diskWriteSpeed: Math.round(data.diskIO?.writeSpeed ?? 0),
-      networkRx: Math.round(data.networkBandwidth?.rx ?? 0),
-      networkTx: Math.round(data.networkBandwidth?.tx ?? 0),
-    };
-    const { db, historicalMetrics } = await historyDb();
-    await db.insert(historicalMetrics).values(metricRecord);
-  }
-
-  /** Drop history older than 24 hours (the window /api/system/history serves). */
-  static async pruneHistory(): Promise<void> {
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { db, historicalMetrics, sql } = await historyDb();
-    await db.delete(historicalMetrics).where(sql`${historicalMetrics.timestamp} < ${twentyFourHoursAgo}`);
-  }
-
-  static async getHistoricalData(): Promise<HistoricalMetric[]> {
-    try {
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { db, historicalMetrics, sql } = await historyDb();
-      return await db.select().from(historicalMetrics)
-        .where(sql`${historicalMetrics.timestamp} >= ${twentyFourHoursAgo}`)
-        .orderBy(historicalMetrics.timestamp);
-    } catch (error) {
-      console.error("Error retrieving historical data:", error);
-      return [];
-    }
-  }
-
-
   private static async getHostname(): Promise<string> {
     try {
       const { stdout } = await execAsync("hostname");
@@ -363,7 +275,8 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
     }
   }
 
-  private static async getTemperature(): Promise<number | null> {
+  /** CPU temperature in °C, or null when this host has no sensor. */
+  static async readTemperature(): Promise<number | null> {
     try {
       // Method 1: Linux thermal zone (most reliable on all Linux distros)
       // fs is already imported at the top of the file
