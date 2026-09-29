@@ -472,7 +472,10 @@ release; a different major version shows the amber dot.
 On the hub: `PIDECK_HOSTS=id=http://ip:port,…`,
 `PIDECK_HOST_TOKEN_<ID>` (id upper-cased, `-` → `_`), and optionally
 `PIDECK_HOST_LABELS=id=Label,…`. Ids are `[a-z0-9-]{1,32}`; `local` is the
-hub itself.
+hub itself. A slow host can get more time per request with
+`PIDECK_HOST_TIMEOUT_<ID>` (seconds, 1–9, default 5; it stays under the
+sampler's 10 s tick), e.g. `PIDECK_HOST_TIMEOUT_DS920=9` for a NAS that
+answers late during a media library scan.
 
 | Key (agent) | Default | Purpose |
 |---|---|---|

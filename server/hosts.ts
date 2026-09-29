@@ -230,7 +230,7 @@ export function createHostHub({
       if (s.status === "offline" && now() - s.checkedAt < 1_000) return { kind: "offline" }; // info just failed
       if (s.status === "auth-error" && now() - s.checkedAt < 1_000) return { kind: "auth" };
       if (s.history === "unsupported") return { kind: "unsupported" };
-      const out = await agentGet(host, "/api/agent/sample", sampleTimeoutMs);
+      const out = await agentGet(host, "/api/agent/sample", host.timeoutMs ?? sampleTimeoutMs);
       if (out.kind === "ok") seen(id);
       else if (out.kind === "offline") s.status = "offline";
       else if (out.kind === "auth") s.status = "auth-error";
@@ -246,7 +246,7 @@ export function createHostHub({
       if (logs && "error" in logs) return { status: 400, body: { message: logs.error } };
       const path = logs ? logs.path : agentPathFromHubUrl(rawUrl, id);
       if (!path) return { status: 400, body: { message: "Not an allowed agent path" } };
-      const out = await agentGet(host, path, proxyTimeoutMs, { passStatus: logs !== null });
+      const out = await agentGet(host, path, host.timeoutMs ?? proxyTimeoutMs, { passStatus: logs !== null });
       const s = state.get(id)!;
       const tag = logs ? { logSource: logs.sourceId } : {};
       if (out.kind === "status") {

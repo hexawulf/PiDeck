@@ -28,9 +28,9 @@ const counters = (n: number, over: Partial<RawCounters> = {}): RawCounters => ({
   ...over,
 });
 
-type Fleet = Record<string, "good" | "old" | "badtoken" | "down" | "slow">;
+type Fleet = Record<string, "good" | "old" | "badtoken" | "down" | "slow" | "sluggish">;
 
-function setup(fleet: Fleet, { offlineMinutes = 5, store = memoryAlertStore(), latest = new Map<string, HistoryPoint>(), agentTimeoutMs = 40 } = {}) {
+function setup(fleet: Fleet, { offlineMinutes = 5, store = memoryAlertStore(), latest = new Map<string, HistoryPoint>(), agentTimeoutMs = 40, timeouts = {} as Record<string, number> } = {}) {
   let clock = T0;
   let tickNo = 0;
   const agentTemp: Record<string, number> = {};
@@ -40,6 +40,7 @@ function setup(fleet: Fleet, { offlineMinutes = 5, store = memoryAlertStore(), l
     const kind = fleet[host];
     if (kind === "down") throw new TypeError("connect ECONNREFUSED");
     if (kind === "slow") return new Promise<Response>((_r, rej) => init.signal!.addEventListener("abort", () => rej(new Error("aborted"))));
+    if (kind === "sluggish" && url.endsWith("/api/agent/sample")) await new Promise((r) => setTimeout(r, 100)); // e.g. a NAS during a Plex scan
     if (kind === "badtoken") return new Response('{"message":"Unauthorized"}', { status: 401 });
     const json = (b: unknown) => new Response(JSON.stringify(b), { headers: { "content-type": "application/json" } });
     if (url.endsWith("/api/agent/info")) {
@@ -50,7 +51,7 @@ function setup(fleet: Fleet, { offlineMinutes = 5, store = memoryAlertStore(), l
     }
     return new Response("", { status: 404 });
   });
-  const hosts = Object.keys(fleet).map((id) => ({ id, label: id.toUpperCase(), url: `http://${id}:5016`, token: TOKEN }));
+  const hosts = Object.keys(fleet).map((id) => ({ id, label: id.toUpperCase(), url: `http://${id}:5016`, token: TOKEN, ...(timeouts[id] ? { timeoutMs: timeouts[id] } : {}) }));
   const hostHub = createHostHub({ hosts, fetchImpl: fetchImpl as unknown as typeof fetch, now: () => clock, infoTimeoutMs: agentTimeoutMs, sampleTimeoutMs: agentTimeoutMs, cacheMs: 0 });
   const alerts = createAlertManager({ store, now: () => new Date(clock) });
   const rows: HistoryPoint[] = [];
@@ -134,6 +135,18 @@ describe("hub sampler: history for every host", () => {
     expect(Date.now() - started).toBeLessThan(1000);
     expect(s.rows.map((r) => r.hostId)).toEqual(["local", "good"]);
     expect(s.logger.warn).toHaveBeenCalledWith(expect.stringMatching(/skipped .*: slow/));
+  });
+
+  it("PIDECK_HOST_TIMEOUT_<ID> gives one slow host more time (2.6.1)", async () => {
+    // 100 ms answers: over the default per-host budget (60 ms here), under its own 150 ms.
+    const without = setup({ good: "good", nas: "sluggish" }, { agentTimeoutMs: 500 });
+    await without.run(2);
+    expect(without.rows.map((r) => r.hostId)).toEqual(["local", "good"]);
+    expect(without.logger.warn).toHaveBeenCalledWith(expect.stringMatching(/skipped .*: nas \(0\.06 s\)/));
+    const withIt = setup({ good: "good", nas: "sluggish" }, { agentTimeoutMs: 40, timeouts: { nas: 150 } });
+    await withIt.run(2);
+    expect(withIt.rows.map((r) => r.hostId).sort()).toEqual(["good", "local", "nas"]);
+    expect(withIt.logger.warn).not.toHaveBeenCalledWith(expect.stringMatching(/skipped/));
   });
 
   it("no lock → no writes and no alert changes (another instance does them)", async () => {

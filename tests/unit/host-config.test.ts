@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { cookieSecure, corsOrigins, defaultHostLogs, hostLogs, insecureHttp, parseHostLogs, trustProxy } from "../../server/config";
+import { cookieSecure, corsOrigins, defaultHostLogs, hostLogs, insecureHttp, parseHostLogs, parseHosts, trustProxy } from "../../server/config";
 import { transportWarning } from "@/components/transport-notice";
 
 const PM2 = "/home/op/.pm2/logs";
@@ -89,5 +89,22 @@ describe("transportWarning (login page)", () => {
     expect(transportWarning({ secureCookie: false, insecureHttp: true }, "https:")).toBeNull();
     expect(transportWarning(undefined, "http:")).toBeNull();
     expect(transportWarning({ secureCookie: false, insecureHttp: false }, "http:")).toBeNull(); // dev server
+  });
+});
+
+describe("PIDECK_HOST_TIMEOUT_<ID> (2.6.1)", () => {
+  const TOKEN = "t".repeat(64);
+  const env = (extra: Record<string, string>) => ({ PIDECK_HOSTS: "ds920=http://192.168.50.147:5016,my-pi=http://10.0.0.2:5016", PIDECK_HOST_TOKEN_DS920: TOKEN, PIDECK_HOST_TOKEN_MY_PI: TOKEN, ...extra });
+  it("whole seconds 1–9 per host; unset = the default", () => {
+    const hosts = parseHosts(env({ PIDECK_HOST_TIMEOUT_DS920: "9", PIDECK_HOST_TIMEOUT_MY_PI: "1" }), () => {});
+    expect(hosts.map((h) => [h.id, h.timeoutMs])).toEqual([["ds920", 9000], ["my-pi", 1000]]);
+    expect(parseHosts(env({}), () => {})[0].timeoutMs).toBeUndefined();
+  });
+  it("anything else keeps the default, with a warning", () => {
+    for (const bad of ["0", "10", "2.5", "5s", "-1", "abc"]) {
+      const warn = vi.fn();
+      expect(parseHosts(env({ PIDECK_HOST_TIMEOUT_DS920: bad }), warn)[0].timeoutMs).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("PIDECK_HOST_TIMEOUT_DS920"));
+    }
   });
 });

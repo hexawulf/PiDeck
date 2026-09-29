@@ -198,17 +198,18 @@ export function createSampleTick({
 
     // Poll everyone in parallel; one slow host never delays the others.
     const ids = ["local", ...hostHub.entries().map((h) => h.id)];
+    const timeoutOf = (id: string) => hostHub.entries().find((h) => h.id === id)?.timeoutMs ?? hostTimeoutMs; // PIDECK_HOST_TIMEOUT_<ID>
     const settled = new Map<string, Poll>();
     await withTimeout(
       Promise.all(ids.map((id) =>
-        withTimeout(pollOne(id), hostTimeoutMs, { id, outcome: "timeout", counters: null } as Poll).then((p) => settled.set(id, p)),
+        withTimeout(pollOne(id), timeoutOf(id), { id, outcome: "timeout", counters: null } as Poll).then((p) => settled.set(id, p)),
       )),
       tickBudgetMs,
       undefined,
     );
     const polls = ids.map((id) => settled.get(id) ?? ({ id, outcome: "timeout", counters: null } as Poll));
     const slow = polls.filter((p) => p.outcome === "timeout").map((p) => p.id);
-    if (slow.length) logger.warn(`[sampler] skipped (no answer within ${hostTimeoutMs / 1000} s): ${slow.join(", ")}`);
+    if (slow.length) logger.warn(`[sampler] skipped (no answer in time): ${slow.map((id) => `${id} (${timeoutOf(id) / 1000} s)`).join(", ")}`);
 
     const t = now();
     const at = new Date(t).toISOString();

@@ -157,10 +157,14 @@ export function agentConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig |
   return { port, bind, tokenSha256 };
 }
 
-export type HostEntry = { id: string; label: string; url: string; token: string };
+/** `timeoutMs`: PIDECK_HOST_TIMEOUT_<ID> (2.6.1), else the hub's default (5 s). */
+export type HostEntry = { id: string; label: string; url: string; token: string; timeoutMs?: number };
 
 /** PIDECK_HOST_TOKEN_<ID>: the id upper-cased, "-" → "_". */
 export const hostTokenKey = (id: string) => `PIDECK_HOST_TOKEN_${id.toUpperCase().replace(/-/g, "_")}`;
+/** PIDECK_HOST_TIMEOUT_<ID>: seconds (1–9, below the sampler's 10 s tick budget) for a slow host. */
+export const hostTimeoutKey = (id: string) => `PIDECK_HOST_TIMEOUT_${id.toUpperCase().replace(/-/g, "_")}`;
+export const HOST_TIMEOUT_MAX_S = 9;
 
 const HOST_ID = /^[a-z0-9-]{1,32}$/;
 
@@ -217,7 +221,14 @@ export function parseHosts(
       warn(`[config] PIDECK_HOSTS: ignoring host "${id}" (${hostTokenKey(id)} is missing or not a valid token)`);
       continue;
     }
-    hosts.push({ id, label: id, url: url.origin, token });
+    const entry: HostEntry = { id, label: id, url: url.origin, token };
+    const rawTimeout = env[hostTimeoutKey(id)]?.trim();
+    if (rawTimeout) {
+      const s = Number(rawTimeout);
+      if (/^\d+$/.test(rawTimeout) && s >= 1 && s <= HOST_TIMEOUT_MAX_S) entry.timeoutMs = s * 1000;
+      else warn(`[config] ${hostTimeoutKey(id)}="${rawTimeout.slice(0, 20)}" must be 1–${HOST_TIMEOUT_MAX_S} seconds; using the default`);
+    }
+    hosts.push(entry);
   }
   for (const [id, label] of pairs(env.PIDECK_HOST_LABELS, "PIDECK_HOST_LABELS", warn)) {
     const host = hosts.find((h) => h.id === id);
