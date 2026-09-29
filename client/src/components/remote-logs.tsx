@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { AlertCircle, Box, FileText, Pin, PinOff, RefreshCw, ScrollText, Search, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DownloadLogButton } from "@/components/logview/download-log-button";
 import { Input } from "@/components/ui/input";
 import { getQueryFn } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -289,6 +290,7 @@ export default function RemoteLogs() {
                   <ShieldAlert className="h-3 w-3" aria-hidden /> {tail.data.redacted} redacted
                 </span>
               )}
+              <DownloadLogButton lines={tail.data?.lines ?? []} host={host.id} source={current.id} />
               <Button size="sm" variant="outline" aria-pressed={pinned} aria-label={pinned ? "Unpin" : "Pin"} title={pinned ? "Unpin" : "Pin (with this filter)"}
                 onClick={() => (pinned ? pins.unpin(current.id, grep) : pins.pin(current.id, `${label}: ${current.label}`, grep))}>
                 {pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}

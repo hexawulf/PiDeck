@@ -104,6 +104,18 @@ describe("RemoteLogs", () => {
     expect(screen.getByTestId("redacted-count").textContent).toContain("1 redacted");
     expect(screen.getByTestId("truncated")).toBeTruthy();
     expect(seen).toContain("/api/hosts/p2/agent/logs/file_syslog?lines=200");
+    // 2.6.1: download sits directly left of the pin and saves the (redacted) lines shown
+    const download = screen.getByRole("button", { name: "Download the 2 lines shown" });
+    expect(download.nextElementSibling).toBe(screen.getByRole("button", { name: "Pin" }));
+    const blobs: Blob[] = [];
+    vi.spyOn(URL, "createObjectURL").mockImplementation((b) => (blobs.push(b as Blob), "blob:x"));
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const names: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { names.push(this.download); });
+    fireEvent.click(download);
+    expect(names[0]).toMatch(/^p2-file_syslog-\d{8}-\d{4}\.log$/);
+    expect(await blobs[0].text()).toBe("boot ok\ncurl -H Authorization: [REDACTED]\n");
+    vi.restoreAllMocks();
     fireEvent.click(screen.getByRole("button", { name: "Pin" }));
     await waitFor(() => expect(screen.getByTestId("remote-pins").textContent).toContain("piapps2: Syslog"));
     fireEvent.click(auth);

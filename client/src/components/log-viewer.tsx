@@ -3,6 +3,9 @@ import { useLocation, useSearch } from "wouter";
 import { useHostLogs, type LogEntry } from "@/hooks/use-host-logs";
 import { LogListItem } from "@/components/logview/log-list-item";
 import { PinnedLogs } from "@/components/logview/pinned-logs";
+import { DownloadLogButton } from "@/components/logview/download-log-button";
+import { useHostSummary } from "@/hosts/HostProvider";
+import { LOCAL_HOST } from "@/hosts/host-path";
 import { markLogMissing, markLogPresent, useLogPins } from "@/hooks/use-log-pins";
 import type { Pin as LogPin } from "@/prefs/prefs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +14,6 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   FileText,
-  Download,
   RefreshCw,
   Search,
   AlertCircle,
@@ -90,6 +92,7 @@ export default function LogViewer() {
   const search = useSearch();
   const [, navigate] = useLocation();
   const { isPinned, pin, unpin } = useLogPins();
+  const hubLabel = useHostSummary(LOCAL_HOST)?.label ?? LOCAL_HOST; // download file names
   // A log id that isn't in the list (stale pin, old link): open it anyway so the 404 shows.
   const entryFor = (id: string): LogEntry =>
     logs.find((l) => l.id === id) ?? { id, name: id, label: id, path: "", size: 0, mtime: "", source: "home" };
@@ -263,17 +266,6 @@ export default function LogViewer() {
       setLogContent([]);
       fetchLogContent(selectedLog.id, false);
     }
-  };
-
-  const handleDownload = () => {
-    if (!selectedLog || logContent.length === 0) return;
-    const blob = new Blob([logContent.join("\n")], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${selectedLog.id}_${new Date().toISOString()}.log`;
-    link.click();
-    URL.revokeObjectURL(url);
   };
 
   const handleApplyFilters = () => {
@@ -489,6 +481,7 @@ export default function LogViewer() {
                 </CardTitle>
                 {selectedLog && (
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <DownloadLogButton lines={logContent} host={hubLabel} source={selectedLog.id} />
                     {(() => {
                       const grep = searchFilter.trim() || undefined; // pins the log with the filter typed right now
                       const pinned = isPinned(selectedLog.id, grep);
@@ -515,14 +508,6 @@ export default function LogViewer() {
                       disabled={isLoading || isFollowing}
                     >
                       <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleDownload}
-                      disabled={logContent.length === 0}
-                    >
-                      <Download className="h-4 w-4" />
                     </Button>
                   </div>
                 )}

@@ -73,6 +73,16 @@ test("remote Logs tab: list, tail with redactions, filter, unreadable source, Do
   await expect(lines.locator("mark[data-redacted]")).toHaveCount(2);
   await expect(page.getByTestId("redacted-count")).toContainText("2 redacted");
 
+  // 2.6.1: download (left of the pin) saves the lines shown, still redacted.
+  const dl = page.getByTestId("log-download");
+  await expect(dl.locator("xpath=following-sibling::button[1]")).toHaveAccessibleName("Pin");
+  const [file] = await Promise.all([page.waitForEvent("download"), dl.click()]);
+  expect(file.suggestedFilename()).toMatch(/^e2e-agent-file_app-\d{8}-\d{4}\.log$/);
+  const saved = fs.readFileSync((await file.path())!, "utf8");
+  expect(saved).toContain("app started");
+  expect(saved).toContain("[REDACTED]");
+  for (const secret of SECRETS) expect(saved).not.toContain(secret);
+
   // Filter (applied on the agent, after redaction).
   await page.getByLabel("Filter").fill("ERROR");
   await page.getByRole("button", { name: "Apply" }).click();

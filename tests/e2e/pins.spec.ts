@@ -42,6 +42,15 @@ test("pin a log, reload, pin persists and opens the log", async ({ page }) => {
   await expect(page.getByText("Error: disk full")).toBeVisible();
 });
 
+test("download (left of the pin) saves the lines shown", async ({ page }) => {
+  await openFixture(page);
+  const dl = page.getByTestId("log-download");
+  await expect(dl.locator("xpath=following-sibling::button[1]")).toHaveAccessibleName("Pin log");
+  const [file] = await Promise.all([page.waitForEvent("download"), dl.click()]);
+  expect(file.suggestedFilename()).toMatch(new RegExp(`-${ID}-\\d{8}-\\d{4}\\.log$`.toLowerCase()));
+  expect(fs.readFileSync((await file.path())!, "utf8")).toBe("boot ok\nError: disk full\nall good\n");
+});
+
 test("pin with a filter re-applies the filter", async ({ page }) => {
   await openFixture(page);
   await page.getByPlaceholder("Filter (grep)...").fill("disk");
