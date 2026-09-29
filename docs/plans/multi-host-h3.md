@@ -66,11 +66,21 @@ can join later with the same LAN agent pattern.
 - Temperature fallback: read `/sys/class/hwmon/*/temp*_input` when the
   hwmon `name` is `coretemp`/`k10temp`/`cpu_thermal` (package or max core);
   unit tests with fixture trees. Benefits every x86 host (piapps3/4 too).
+- **Disk tile mount:** `PIDECK_DISK_MOUNT` (default `/`) for the sample's
+  `diskUsage` and the overview tile. On the DS920 `/` is DSM's 2.3 GB system
+  partition (68 %), the data is on `/volume1` (80 %): set
+  `PIDECK_DISK_MOUNT=/volume1` there.
 - DSM platform detection (`/etc.defaults/VERSION`): hide/mark widgets that
   can't work (apt Update, ufw, vcgencmd, systemd) as "not available on this
   host" instead of errors; About shows "DSM 7.4.1".
-- `deploy/dsm/`: start script + README section "Synology DSM" in
-  `docs/INSTALL.md` (manual, documented; **no** DSM mode in `install.sh`).
+- `deploy/dsm/`: `start-agent.sh` exists (added with step 1, tested live);
+  add a README section "Synology DSM" in `docs/INSTALL.md` (manual,
+  documented; **no** DSM mode in `install.sh`). DSM gotchas for that page:
+  the Node package has no `npm` command (run
+  `node …/lib/node_modules/npm/bin/npm-cli.js`), SFTP/scp is off (stream
+  files over `ssh … 'cat > file'`), no `git` (copy a `git archive` + `dist/`).
+  NVMe/SMART on DSM must say "not available on DSM", not "needs sudoers".
+  `/api/system/info` `os` is empty on DSM → "DSM 7.4.1" from the VERSION file.
 
 ## Track B — remote logs (2.6.0, cloud)
 **Agent (opt-in per host)**
@@ -202,10 +212,21 @@ From TODOS.md (added at the 2.5.0 release):
 - Defaults taken (operator didn't object; say so to change): piapps2 log
   sources as listed; redaction on by default; no WireGuard for piapps2.
 
-## Open question (non-blocking)
-- DS920 `/var/log/messages`: add `zk` to the `log` group (DSM may revert
-  group edits on updates), or leave it out and rely on Docker logs + the
-  existing DS920 report? (Plan: leave it out for 2.6.0.)
+- **DS920 `/var/log/messages` is included** (operator, 2026-09-29): at the
+  2.6.0 rollout add `zk` to the `log` group (only root is in it today; the
+  agent never runs as root). Rotation keeps `system:log 660`, so the grant
+  survives rotation; the runbook checks it after DSM updates, which may
+  reset system groups. `kern.log`/`auth.log` rotate with it: include if
+  readable the same way.
+
+## Step 1 done (2026-09-29)
+- DS920 agent 2.5.0 as `zk` in `/var/services/homes/zk/pideck-agent`
+  (`git archive` v2.5.0 + `dist/`, `npm ci --omit=dev` with DSM Node 22),
+  `.env` 0600 with the token's SHA-256, bind `192.168.50.147:5016`,
+  `deploy/dsm/start-agent.sh` (supervisor loop, logs to `~/logs/`).
+- Hub: `--add-host ds920 --label "DS920+"`, sampler "local + 2 agent(s)".
+  Token only in the hub `.env` (every transfer copy shredded).
+- Still open: DSM Task Scheduler boot task and DSM firewall (operator, GUI).
 
 ## Brief for the cloud session (paste with this file)
 > Implement Track A step 3, Track B (incl. Docker logs) and Track D of
