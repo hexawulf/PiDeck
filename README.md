@@ -2,12 +2,13 @@
 
 A sleek, full-stack web application for monitoring and managing Raspberry Pi servers. Built with modern technologies, PiDeck provides a centralized control hub for system monitoring, service management, and log analysis.
 
-**Current version: 2.5.0** — multi-host with per-host history and alerts and an "All hosts" overview, through small read-only agents, plus the one-command installer with schema migrations. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
+**Current version: 2.6.0** — multi-host with remote logs (files, journald, Docker; secrets redacted on the agent), per-host history and alerts, an "All hosts" overview and Synology DSM support, through small read-only agents, plus the one-command installer with schema migrations. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
 
 ![PiDeck 2.2 dashboard (light theme)](./docs/screenshots/dashboard.png)
 
 ## ✨ What's new in 2.0
 
+- **Remote logs and Synology DSM** (2.6): read other machines' logs in the Logs tab (files, journald units, every Docker container), opt-in per agent and redacted before they leave the host; a DS920+ runs as an agent with Docker logs, CPU temperature and `/volume1` usage. See [Remote logs](./docs/INSTALL.md) and "Synology DSM" in the install guide
 - **All hosts overview, per-host history and alerts** (2.5): `/hosts` shows one tile per machine; every machine gets 24 h history charts and temperature/offline alerts, recorded by the hub each minute. Updates apply database migrations automatically (`install.sh --update` takes a `pg_dump` first)
 - **Multi-host** (2.4): switch between machines in the header; other machines run a small read-only agent (`install.sh --agent`) that only the hub can reach. See [Add another machine](./docs/INSTALL.md#add-another-machine-agent)
 - **One-command install** (2.3): `./scripts/install.sh --dry-run`, then `./scripts/install.sh`

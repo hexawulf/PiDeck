@@ -5,6 +5,26 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-09-29
+
+Multi-host, phase H3 (plan: [docs/plans/multi-host-h3.md](./docs/plans/multi-host-h3.md)): logs from the machines at home, and the DS920+ as a host. LAN only; WireGuard and the cloud VPSes come in a later phase.
+
+### Added
+- **Remote logs** (read-only, opt-in per agent with `PIDECK_AGENT_LOGS=on`): the agent's `PIDECK_HOST_LOGS` files (now with `%Y`/`%m`/`%d` and newest-match `*` in file names), journald units (`PIDECK_AGENT_JOURNAL_UNITS`, `user:<unit>` for user units) and every Docker container (`PIDECK_AGENT_DOCKER_LOGS=on`). The hub's Logs tab shows them for any host whose agent offers logs; filters and pins per host; unreadable sources are listed with a hint
+- **Redaction on the agent**, always on, before anything leaves the host and before filtering: Authorization headers, Bearer tokens, password/token/secret/api-key values (incl. JSON), and `user:password@` in URLs; redacted spans are highlighted
+- **Docker logs** through the Engine API on the unix socket with exactly two allowed read-only calls (list containers, tail logs by id); every other request is refused before it is sent. No new dependency, no docker CLI
+- The hub proxies logs with validated parameters (up to 2,000 lines / 1 MB) and writes an audit line per remote read
+- **Synology DSM / x86**: CPU temperature from hwmon (coretemp, k10temp, …), DSM detection ("DSM 7.4.1"), "Not available on DSM" for NVMe/SMART, firewall, power and apt update, `PIDECK_DISK_MOUNT` for the disk tile (`/volume1` on a NAS), `deploy/dsm/start-agent.sh` and a "Synology DSM" section in the install guide
+- History: 3-day and 7-day chart ranges when `PIDECK_HISTORY_HOURS` keeps them (averaged into 5- and 15-minute buckets)
+- Installer: `--update` records the built commit in `dist/.build-commit` and prints it as the rollback target; `--check-login` (or `PIDECK_CHECK_LOGIN_FILE`) tests the login when the admin password was changed in the UI
+- Tests: unit 397 → 533, installer 129 → 145, E2E 117 → 121 (remote logs against a real test agent and a fake Docker socket)
+
+### Fixed
+- Installer and uninstaller prompts were invisible (written to a silenced stderr); they now go to the terminal
+
+### Upgrading
+- Update agents first, then the hub (`./scripts/install.sh --update`; no database migration in this release). To turn on logs for an agent, add `PIDECK_AGENT_LOGS=on` and its sources to the agent's `.env` and restart it. On a Synology NAS follow "Synology DSM" in docs/INSTALL.md (the agent user needs the `docker` group for Docker logs and the `log` group for `/var/log/messages`)
+
 ## [2.5.0] - 2026-09-29
 
 Multi-host, phase H2 (plan: [docs/plans/multi-host-h2.md](./docs/plans/multi-host-h2.md)). Every machine now gets what the hub already had: history charts, alerts, and data recorded even when no tab is open.
