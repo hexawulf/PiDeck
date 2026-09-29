@@ -126,6 +126,9 @@ backed up to `<file>.bak.<timestamp>`.
 | `--agent-bind IP` / `--agent-port N` | `PIDECK_AGENT_BIND` / `PIDECK_AGENT_PORT` | Agent address (default: the LAN address) and port (default 5016). |
 | `--hub-ip IP` | `PIDECK_HUB_IP` | The hub's address, for the printed firewall rule. |
 | `--ufw-allow-from IP` | | With `--agent`: add `ufw allow from IP to any port <port> proto tcp` (removed again by uninstall). |
+| `--ufw-interface IFACE` | | With `--ufw-allow-from`: only on this interface (`ufw allow in on IFACE from IP …`), e.g. `wg-pideck`. |
+| `--after UNIT` | | With `--agent`: start after (and pull in) `UNIT`, e.g. `wg-quick@wg-pideck` when the agent binds to a tunnel address. Written to a systemd drop-in, kept by re-runs and `--update`. |
+| `--memory-max SIZE` | | With `--agent`: hard memory cap (`MemoryMax=`, e.g. `160M`, at least `96M`), same drop-in. |
 | `--rotate-token` | | With `--agent`: new token; the old one stops working. |
 | `--add-host ID --url URL` | `PIDECK_ADD_HOST_TOKEN` | On the hub: add an agent (token from a hidden prompt, `--token-file`, or the env). |
 | `--label TEXT` / `--replace` / `--token-file F` | | With `--add-host`: switcher name / replace an existing host / read the token from a 0600 file. |
@@ -480,6 +483,85 @@ answers late during a media library scan.
 | Key (agent) | Default | Purpose |
 |---|---|---|
 | `PIDECK_DISK_MOUNT` | `/` | Mount whose usage the hub samples (overview tile, history). `/volume1` on a Synology. |
+
+### Agents over WireGuard (2.7)
+
+A machine outside the LAN (a cloud VPS) joins the same way, but only
+through a WireGuard tunnel. The agent listens on its tunnel address, so
+port 5016 never faces the internet; the only new public port is WireGuard's
+UDP port on the VPS, and WireGuard drops every packet without a valid key.
+
+| | Hub | Each VPS |
+|---|---|---|
+| Interface | `wg-pideck`, `10.77.0.1/24` | `wg-pideck`, `10.77.0.N/24` |
+| Who connects | dials out (behind NAT is fine) | listens on `51821/udp` |
+| Peers | one `[Peer]` per VPS: `AllowedIPs = 10.77.0.N/32`, `Endpoint = <vps>:51821`, `PersistentKeepalive = 25` | one `[Peer]` (the hub): `AllowedIPs = 10.77.0.1/32`, no endpoint |
+| Firewall | nothing inbound | `51821/udp` (from the hub's WAN address if it is static), `5016/tcp` only `in on wg-pideck from 10.77.0.1` |
+
+Use a new interface name and subnet: never reuse an existing `wg0` or its
+port. No forwarding, no NAT, never `AllowedIPs = 0.0.0.0/0`: each side
+routes exactly one /32 to the other.
+
+1. **Keys** (on each machine; the private key never leaves it):
+   ```bash
+   sudo apt-get install wireguard-tools
+   sudo sh -c 'umask 077; wg genkey > /etc/wireguard/wg-pideck.key'
+   sudo cat /etc/wireguard/wg-pideck.key | wg pubkey    # share only this public key
+   ```
+2. **VPS** `/etc/wireguard/wg-pideck.conf` (0600, root):
+   ```ini
+   [Interface]
+   Address = 10.77.0.4/24
+   ListenPort = 51821
+   PrivateKey = <this VPS's private key: sudo cat /etc/wireguard/wg-pideck.key>
+
+   [Peer]
+   # hub
+   PublicKey = <hub public key>
+   AllowedIPs = 10.77.0.1/32
+   ```
+   `sudo ufw allow from <hub WAN IP> to any port 51821 proto udp`, then
+   `sudo systemctl enable --now wg-quick@wg-pideck`. A cloud firewall in
+   front of the VPS (DigitalOcean, Hetzner, Linode) needs the same UDP rule.
+3. **Hub** `/etc/wireguard/wg-pideck.conf`, one `[Peer]` per VPS:
+   ```ini
+   [Interface]
+   Address = 10.77.0.1/24
+   PrivateKey = <the hub's private key>
+
+   [Peer]
+   # piapps4
+   PublicKey = <vps public key>
+   AllowedIPs = 10.77.0.4/32
+   Endpoint = <vps public IP>:51821
+   PersistentKeepalive = 25
+   ```
+   `sudo systemctl enable --now wg-quick@wg-pideck`, then `sudo wg show
+   wg-pideck` (a recent handshake) and `ping -c 3 10.77.0.4`. Adding a peer
+   later: edit the file, then `sudo systemctl reload wg-quick@wg-pideck`
+   (`wg syncconf`, no tunnel restart).
+4. **Agent** on the VPS, bound to its tunnel address (dry run first):
+   ```bash
+   ./scripts/install.sh --agent --dry-run --agent-bind 10.77.0.4 \
+     --after wg-quick@wg-pideck --memory-max 160M \
+     --ufw-allow-from 10.77.0.1 --ufw-interface wg-pideck
+   ```
+   The installer refuses a bind address the machine doesn't have, so the
+   tunnel must be up first. `--after` makes the agent wait for the tunnel
+   at boot; `--memory-max` keeps it from crowding out the machine's real job
+   on a small VPS (the agent itself needs about 90 MB). Both land in
+   `/etc/systemd/system/pideck-agent.service.d/10-install.conf`; a re-run
+   without them keeps them, a re-run with a new value changes just that one.
+5. **Hub**: `./scripts/install.sh --add-host piapps4 --url http://10.77.0.4:5016 --label piapps4`,
+   paste the token, restart the hub. Far-away hosts may want
+   `PIDECK_HOST_TIMEOUT_<ID>` (the default 5 s covers ~250 ms round trips).
+6. **Check** from outside the tunnel (the VPS's public address, another LAN
+   machine): port 5016 must not answer.
+
+**Remove a VPS**: on the hub, remove the host (see above) and its `[Peer]`
+(`systemctl reload wg-quick@wg-pideck`). On the VPS: `scripts/uninstall.sh`
+(agent, drop-in, the `wg-pideck` ufw rule), `sudo systemctl disable --now
+wg-quick@wg-pideck`, and delete the `51821/udp` rule.
 
 ### Remote logs (2.6)
 

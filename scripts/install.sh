@@ -6,7 +6,7 @@
 #              PiDeck (not root); sudo is used only for the steps it lists
 #              up front. Start with --dry-run: it prints every action and
 #              changes nothing.
-# Modified:    2026-09-28
+# Modified:    2026-09-30
 # Usage:       scripts/install.sh --dry-run            # see what would happen
 #              scripts/install.sh                      # interactive install
 #              scripts/install.sh --yes --lan-http     # unattended, plain-HTTP LAN
@@ -46,6 +46,9 @@ AGENT_BIND="${PIDECK_AGENT_BIND:-}"
 AGENT_PORT="${PIDECK_AGENT_PORT:-}"
 HUB_IP="${PIDECK_HUB_IP:-}"
 UFW_FROM=""
+UFW_IFACE=""
+AGENT_AFTER=""
+AGENT_MEMORY_MAX=""
 ROTATE_TOKEN=0
 ADD_HOST=""
 ADD_URL=""
@@ -93,6 +96,12 @@ Multi-host (docs/INSTALL.md › Add another machine):
   --agent-port N            agent port (default 5016)
   --hub-ip IP               the hub's address (for the printed firewall rule)
   --ufw-allow-from IP       also run: ufw allow from IP to any port <port> proto tcp
+  --ufw-interface IFACE     with --ufw-allow-from: only on this interface
+                            (ufw allow in on IFACE from IP …; e.g. wg-pideck)
+  --after UNIT              start the agent after UNIT (and pull it in), e.g.
+                            wg-quick@wg-pideck when it binds to a tunnel address
+  --memory-max SIZE         hard memory cap for the agent (systemd MemoryMax=,
+                            e.g. 160M; at least 96M)
   --rotate-token            with --agent: make a new token (the old one stops working)
   --add-host ID --url URL   on the hub: add an agent (id [a-z0-9-]{1,32}); the
                             token is read from a hidden prompt, --token-file F
@@ -134,6 +143,9 @@ while [ $# -gt 0 ]; do
     --agent-port) AGENT_PORT="${2:?--agent-port needs a port}"; shift ;;
     --hub-ip) HUB_IP="${2:?--hub-ip needs an IP}"; shift ;;
     --ufw-allow-from) UFW_FROM="${2:?--ufw-allow-from needs an IP}"; shift ;;
+    --ufw-interface) UFW_IFACE="${2:?--ufw-interface needs an interface}"; shift ;;
+    --after) AGENT_AFTER="${2:?--after needs a systemd unit}"; shift ;;
+    --memory-max) AGENT_MEMORY_MAX="${2:?--memory-max needs a size}"; shift ;;
     --rotate-token) ROTATE_TOKEN=1 ;;
     --add-host) MODE=add-host; ADD_HOST="${2:?--add-host needs an id}"; shift ;;
     --url) ADD_URL="${2:?--url needs a URL}"; shift ;;
@@ -174,8 +186,29 @@ if [ "$MODE" = add-host ]; then
     echo "--label: up to 64 printable characters, no , or =" >&2; exit 64
   fi
 fi
-if [ "$MODE" != agent ] && { [ -n "$UFW_FROM" ] || [ "$ROTATE_TOKEN" = 1 ]; }; then
-  echo "--ufw-allow-from and --rotate-token go with --agent" >&2; exit 64
+if [ "$MODE" != agent ] && { [ -n "$UFW_FROM$UFW_IFACE$AGENT_AFTER$AGENT_MEMORY_MAX" ] || [ "$ROTATE_TOKEN" = 1 ]; }; then
+  echo "--ufw-allow-from, --ufw-interface, --after, --memory-max and --rotate-token go with --agent" >&2; exit 64
+fi
+if [ -n "$UFW_IFACE" ]; then
+  [ -n "$UFW_FROM" ] || { echo "--ufw-interface goes with --ufw-allow-from" >&2; exit 64; }
+  [[ "$UFW_IFACE" =~ ^[A-Za-z0-9_.-]{1,15}$ ]] || { echo "--ufw-interface must be an interface name (1-15 of A-Z a-z 0-9 _ . -)" >&2; exit 64; }
+fi
+# A unit name, optionally without ".service": wg-quick@wg-pideck, network-online.target.
+if [ -n "$AGENT_AFTER" ]; then
+  [[ "$AGENT_AFTER" == *.* ]] || AGENT_AFTER="$AGENT_AFTER.service"
+  if ! [[ "$AGENT_AFTER" =~ ^[A-Za-z0-9:_.@-]{1,200}\.(service|target|mount|device|socket)$ ]] || [[ "$AGENT_AFTER" == pideck-agent.* ]]; then
+    echo "--after must be a systemd unit name such as wg-quick@wg-pideck(.service)" >&2; exit 64
+  fi
+fi
+# Plain systemd sizes only (K/M/G, no percentages, no "infinity"); at least
+# 96M, since the agent itself needs ~90 MB and would be OOM-killed in a loop.
+if [ -n "$AGENT_MEMORY_MAX" ]; then
+  if ! [[ "$AGENT_MEMORY_MAX" =~ ^([0-9]{1,6})([KMG])$ ]]; then
+    echo "--memory-max must be a size like 160M or 1G" >&2; exit 64
+  fi
+  n=$((10#${BASH_REMATCH[1]}))   # 10#: "0160M" is not octal
+  case "${BASH_REMATCH[2]}" in K) mem_mb=$(( n / 1024 )) ;; M) mem_mb=$n ;; G) mem_mb=$(( n * 1024 )) ;; esac
+  [ "$mem_mb" -ge 96 ] || { echo "--memory-max must be at least 96M (the agent needs ~90 MB)" >&2; exit 64; }
 fi
 
 # Refuse root before touching anything (not even the log directory).
@@ -334,6 +367,10 @@ preflight() {
   os="$(osr PRETTY_NAME)"
   arch="$(uname -m)"
   info "OS: ${os:-unknown} · arch: $arch"
+  case "$arch" in
+    aarch64|arm64|x86_64|amd64) ;;
+    *) warn "arch $arch is untested (PiDeck runs on aarch64 and x86_64)" ;;
+  esac
   case "$(osr ID) $(osr ID_LIKE)" in
     *debian*|*ubuntu*) ;;
     *) warn "not Debian/Ubuntu: package names and paths may differ" ;;
@@ -804,6 +841,9 @@ summary() {
 # the terminal (never logged), and only its SHA-256 is kept in .env.
 AGENT_UNIT_NAME=pideck-agent
 AGENT_MARKER="$CONFIG_DIR/install-agent"
+# --after / --memory-max live in a drop-in, so --update (which re-renders the
+# unit from the template) keeps them.
+AGENT_DROPIN="$ETC/systemd/system/$AGENT_UNIT_NAME.service.d/10-install.conf"
 AGENT_TOKEN=""          # set only when this run made a (new) token
 AGENT_TOKEN_FILE=""
 
@@ -820,12 +860,59 @@ bearer_header_file() {
   ( umask 077; printf 'Authorization: Bearer %s\n' "$token" > "$out" )
 }
 
+dropin_summary() {
+  local parts=()
+  [ -n "$AGENT_AFTER" ] && parts+=("after $AGENT_AFTER")
+  [ -n "$AGENT_MEMORY_MAX" ] && parts+=("MemoryMax=$AGENT_MEMORY_MAX")
+  local IFS=,; printf '%s' "${parts[*]}" | sed 's/,/, /g'
+}
+
+# Values from an existing drop-in fill in what this run doesn't set, so a
+# re-run without the flags keeps them (a re-run never drops a setting).
+dropin_merge() {
+  [ -f "$AGENT_DROPIN" ] || return 0
+  local v
+  if [ -z "$AGENT_AFTER" ]; then v="$(sed -n 's/^After=//p' "$AGENT_DROPIN" | head -n 1)"; AGENT_AFTER="$v"; fi
+  if [ -z "$AGENT_MEMORY_MAX" ]; then v="$(sed -n 's/^MemoryMax=//p' "$AGENT_DROPIN" | head -n 1)"; AGENT_MEMORY_MAX="$v"; fi
+}
+
+dropin_render() { # dropin_render OUT
+  {
+    printf '# Written by scripts/install.sh --agent (%s); re-run it to change these.\n' "$TS"
+    if [ -n "$AGENT_AFTER" ]; then
+      printf '# Start after (and pull in) %s, e.g. the tunnel whose address the agent binds.\n' "$AGENT_AFTER"
+      printf '[Unit]\nAfter=%s\nWants=%s\n' "$AGENT_AFTER" "$AGENT_AFTER"
+    fi
+    if [ -n "$AGENT_MEMORY_MAX" ]; then
+      printf '# Hard memory cap: on a small host the other services always win.\n'
+      printf '[Service]\nMemoryMax=%s\n' "$AGENT_MEMORY_MAX"
+    fi
+  } > "$1"
+}
+
+# Install or refresh the drop-in; returns 0 when it changed (daemon-reload needed).
+agent_dropin() {
+  [ -n "$AGENT_AFTER$AGENT_MEMORY_MAX" ] || return 1
+  local tmp="$TMP_DIR/dropin.conf"
+  dropin_render "$tmp"
+  # Same settings = no rewrite (the header's timestamp alone doesn't count).
+  if [ -f "$AGENT_DROPIN" ] && diff -q <(grep -v '^#' "$tmp") <(grep -v '^#' "$AGENT_DROPIN") >/dev/null 2>&1; then
+    ok "drop-in unchanged ($(dropin_summary))"; return 1
+  fi
+  if [ "$DRY_RUN" = 1 ]; then dry "install $AGENT_DROPIN (0644): $(dropin_summary)"; return 0; fi
+  srun "create $(dirname "$AGENT_DROPIN")" install -d -m 755 "$(dirname "$AGENT_DROPIN")"
+  install_file "$tmp" "$AGENT_DROPIN" 644 sudo
+  ok "drop-in: $(dropin_summary)"
+  return 0
+}
+
 agent_plan() {
   local steps=()
   [ "$NO_APT" != 1 ] && [ ${#APT_PKGS[@]} -gt 0 ] && steps+=("apt-get install ${APT_PKGS[*]}")
   steps+=("install $ETC/systemd/system/$AGENT_UNIT_NAME.service, systemctl enable --now")
+  [ -n "$AGENT_AFTER$AGENT_MEMORY_MAX" ] && steps+=("install $AGENT_DROPIN ($(dropin_summary))")
   [ "$SUDOERS" = 1 ] && steps+=("install /etc/sudoers.d/pideck (visudo-checked, 0440; no apt-get rules on an agent)")
-  [ -n "$UFW_FROM" ] && steps+=("ufw allow from $UFW_FROM to any port $AGENT_PORT proto tcp")
+  [ -n "$UFW_FROM" ] && steps+=("ufw $(ufw_rule_args "$UFW_FROM" "$AGENT_PORT" "$UFW_IFACE" | tr '\n' ' ' | sed 's/ $//')")
   step "Plan (agent)"
   info "read-only agent on $AGENT_BIND:$AGENT_PORT · no database, no login, no UI"
   info "These steps use sudo:"; local s; for s in "${steps[@]}"; do info "  • $s"; done
@@ -904,14 +991,18 @@ agent_service() {
     local verr; verr="$(systemd-analyze verify "$tmp" 2>&1)" || die "systemd-analyze verify rejected the unit; nothing installed: $(printf '%s' "$verr" | head -n 3 | tr '\n' ' ')"
     ok "systemd-analyze verify: unit OK"
   else warn "systemd-analyze not found: unit not verified"; fi
-  if [ "$DRY_RUN" = 1 ]; then dry "install $unit (0644), systemctl daemon-reload, enable --now (restart if running)"; return; fi
+  if [ "$DRY_RUN" = 1 ]; then agent_dropin || true; dry "install $unit (0644), systemctl daemon-reload, enable --now (restart if running)"; return; fi
   install_file "$tmp" "$unit" 644 sudo
+  agent_dropin || true
   srun "systemctl daemon-reload" systemctl daemon-reload
   if systemctl is-active --quiet "$AGENT_UNIT_NAME"; then srun "restart $AGENT_UNIT_NAME" systemctl restart "$AGENT_UNIT_NAME"
   else srun "enable and start $AGENT_UNIT_NAME" systemctl enable --now "$AGENT_UNIT_NAME"; fi
 }
 
-ufw_rule_args() { printf '%s\n' allow from "$1" to any port "$2" proto tcp; }
+ufw_rule_args() { # ufw_rule_args FROM PORT [IFACE]
+  if [ -n "${3:-}" ]; then printf '%s\n' allow in on "$3" from "$1" to any port "$2" proto tcp
+  else printf '%s\n' allow from "$1" to any port "$2" proto tcp; fi
+}
 
 agent_firewall() {
   step "Firewall"
@@ -924,13 +1015,14 @@ agent_firewall() {
   fi
   local ufw; ufw="$(tool_path ufw)"
   if [ -z "$ufw" ]; then warn "ufw isn't installed: rule not added. Allow only $UFW_FROM → port $AGENT_PORT in your firewall."; return; fi
-  local args; mapfile -t args < <(ufw_rule_args "$UFW_FROM" "$AGENT_PORT")
+  local args; mapfile -t args < <(ufw_rule_args "$UFW_FROM" "$AGENT_PORT" "$UFW_IFACE")
   srun "ufw ${args[*]}" "$ufw" "${args[@]}" comment pideck-agent
   if [ "$DRY_RUN" = 1 ]; then dry "record the rule in $AGENT_MARKER (uninstall removes only that rule)"; return; fi
   # Recorded so uninstall.sh removes exactly this rule, and only if we added it.
   install -d -m 700 "$CONFIG_DIR"
   local tmp="$TMP_DIR/agent-marker"
   printf 'UFW_FROM=%s\nUFW_PORT=%s\n' "$UFW_FROM" "$AGENT_PORT" > "$tmp"
+  [ -n "$UFW_IFACE" ] && printf 'UFW_IFACE=%s\n' "$UFW_IFACE" >> "$tmp"
   install -m 600 "$tmp" "$AGENT_MARKER"
   ok "recorded in $AGENT_MARKER"
 }
@@ -977,6 +1069,18 @@ agent_summary() {
   fi
 }
 
+# The agent can only listen on an address this host has. A tunnel address
+# (wg-pideck) exists only while the tunnel is up: bring it up first.
+bind_check() {
+  case "$AGENT_BIND" in 127.0.0.1|::1|0.0.0.0|::) return 0 ;; esac
+  local a
+  for a in $(hostname -I 2>/dev/null); do [ "$a" = "$AGENT_BIND" ] && { ok "bind address $AGENT_BIND is up on this host"; return 0; }; done
+  local hint="bring its interface up first"
+  [ -n "$AGENT_AFTER" ] && hint="start $AGENT_AFTER first (sudo systemctl enable --now $AGENT_AFTER)"
+  if [ "$DRY_RUN" = 1 ]; then warn "$AGENT_BIND is not an address of this host yet: $hint"; return 0; fi
+  die "$AGENT_BIND is not an address of this host: $hint"
+}
+
 agent_install() {
   AGENT_PORT="${AGENT_PORT:-$(env_get PIDECK_AGENT_PORT)}"; AGENT_PORT="${AGENT_PORT:-5016}"
   AGENT_BIND="${AGENT_BIND:-$(env_get PIDECK_AGENT_BIND)}"
@@ -984,7 +1088,9 @@ agent_install() {
     AGENT_BIND="$(lan_ip)"
     [ -n "$AGENT_BIND" ] || { AGENT_BIND=127.0.0.1; warn "no LAN address found; binding to 127.0.0.1 (pass --agent-bind)"; }
   fi
+  dropin_merge
   preflight
+  bind_check
   agent_plan
   packages
   agent_env

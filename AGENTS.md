@@ -64,6 +64,7 @@ PIDECK_TEST_PG_URL=postgres://postgres@127.0.0.1:5432/postgres npx vitest run
 - **Sampler**: `PIDECK_SAMPLER=off` disables the 60s history/alert sampler for every host (see [server/AGENTS.md](server/AGENTS.md)); it is also off when `NODE_ENV=test`. `PIDECK_HISTORY_HOURS` (24, 1–168) and `PIDECK_OFFLINE_ALERT_MINUTES` (5, 1–1440). Plan: `docs/plans/multi-host-h2.md`
 - **Remote logs (2.6)**: agent-side, opt-in: `PIDECK_AGENT_LOGS=on`, sources from the agent's `PIDECK_HOST_LOGS` (`%Y/%m/%d`, newest-match glob), `PIDECK_AGENT_JOURNAL_UNITS`, `PIDECK_AGENT_DOCKER_LOGS=on` (+ `PIDECK_AGENT_DOCKER_SOCKET`); redacted on the agent. Plan: `docs/plans/multi-host-h3.md`
 - **x86 / DSM**: `PIDECK_DISK_MOUNT` (default `/`) for the sampled disk usage; DSM detected from `/etc.defaults/VERSION` (`server/services/platform.ts`)
+- **Agents over WireGuard (2.7)**: `install.sh --agent --after wg-quick@wg-pideck --memory-max 160M --ufw-interface wg-pideck` → drop-in `pideck-agent.service.d/10-install.conf` (never in the template, so `--update` keeps it). Plan: `docs/plans/multi-host-2.7.0.md`
 - **Installer checks**: `--check-login` (or `PIDECK_CHECK_LOGIN_FILE`) tests the login when the admin password was changed in the UI; rollback target = `dist/.build-commit`
 - **Installer DB backup**: `install.sh --update` takes a `pg_dump -Fc` to `~/backups/` before migrating; `--no-db-backup` / `PIDECK_NO_DB_BACKUP=1` skips it
 

@@ -24,9 +24,9 @@ per the homelab standard. No cloud session needed.
 2. **Logs for cloud hosts in 2.7.0?** Plan: metrics/history/alerts first;
    remote logs opt-in per host afterwards (lower priority, decided
    2026-09-29). Which sources, if any (auth.log, RELAY/BUILD logs)?
-3. **WireGuard port 51821/udp open to any address** on the VPSes (the Taipei
-   WAN IP is dynamic; WireGuard ignores packets without a valid key) or
-   pinned to the current WAN IP with a DDNS-driven update? Plan: any.
+3. ~~51821/udp open to any address?~~ **Decided 2026-09-30: pinned.** The
+   Taipei WAN IP is a static Chunghwa Telecom address, `122.116.150.249`:
+   VPS ufw (and any provider firewall) allows `51821/udp` from it only.
 4. piapps2 and the DS920+ stay on the LAN (decided 2026-09-29).
 
 ## Facts (read-only recon 2026-09-29)
@@ -65,12 +65,17 @@ per the homelab standard. No cloud session needed.
 - [ ] Snapshot before/after state: `wg show`, `ip -br addr`, `ufw status numbered`
       on all hosts; piapps4 `wg0` handshake + brixhouse monitor status.
 
-### 1. Code (small, on a branch, CLI)
-- [ ] `install.sh --agent --after <unit>`: systemd drop-in so the agent
-      starts after `wg-quick@wg-pideck` (bind address must exist).
-- [ ] `install.sh --agent --memory-max <size>` → `MemoryMax=` in the unit.
-- [ ] Installer harness: both flags, plus an x86_64 preflight path.
-- [ ] docs/INSTALL.md: "Agents over WireGuard" (keys, configs, ufw, order).
+### 1. Code (small, on a branch, CLI) — done on `feat/2.7.0`
+- [x] `install.sh --agent --after <unit>`: drop-in
+      `pideck-agent.service.d/10-install.conf` (`After=` + `Wants=`), kept by
+      re-runs and `--update`, removed by uninstall; the installer refuses a
+      bind address the host doesn't have (dry run: warning).
+- [x] `install.sh --agent --memory-max <size>` → `MemoryMax=` in the same
+      drop-in (K/M/G, ≥ 96M).
+- [x] `--ufw-interface wg-pideck` → `ufw allow in on wg-pideck from 10.77.0.1 …`
+      (recorded; uninstall deletes exactly that rule).
+- [x] Installer harness: flags, validation, x86_64 + unknown-arch preflight.
+- [x] docs/INSTALL.md: "Agents over WireGuard (2.7)".
 - [ ] Release notes / version 2.7.0 (after the rollout).
 
 ### 2. Hub (piapps) — approval gate: apt, network

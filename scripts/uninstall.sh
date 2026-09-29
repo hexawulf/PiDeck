@@ -8,7 +8,7 @@
 #              install.sh recorded as created by it. Backups are deleted only
 #              with --purge-backups. Never deletes the checkout itself. Run as
 #              the owning user (not root); start with --dry-run.
-# Modified:    2026-09-28
+# Modified:    2026-09-30
 # Usage:       scripts/uninstall.sh --dry-run          # see what would be removed
 #              scripts/uninstall.sh                    # remove service + sudoers
 #              scripts/uninstall.sh --purge            # also installer-created DB, .env, password
@@ -110,6 +110,8 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pideck"
 DB_MARKER="$CONFIG_DIR/install-db"
 UNIT="$ETC/systemd/system/pideck.service"
 AGENT_UNIT="$ETC/systemd/system/pideck-agent.service"
+AGENT_DROPIN_DIR="$ETC/systemd/system/pideck-agent.service.d"
+AGENT_DROPIN="$AGENT_DROPIN_DIR/10-install.conf"
 AGENT_MARKER="$CONFIG_DIR/install-agent"
 SUDOERS="$ETC/sudoers.d/pideck"
 BACKUP="$HOME/backups/pideck-uninstall-$TS"
@@ -124,17 +126,22 @@ HAS_UNIT=0; [ -f "$UNIT" ] && HAS_UNIT=1
 HAS_SUDOERS=0; path_exists "$SUDOERS" && HAS_SUDOERS=1
 HAS_AGENT=0; [ -f "$AGENT_UNIT" ] && HAS_AGENT=1
 # The ufw rule is removed only when install.sh --agent recorded adding it.
-UFW_FROM=""; UFW_PORT=""
+UFW_FROM=""; UFW_PORT=""; UFW_IFACE=""
 if [ -f "$AGENT_MARKER" ]; then
   UFW_FROM="$(sed -n 's/^UFW_FROM=//p' "$AGENT_MARKER")"; UFW_PORT="$(sed -n 's/^UFW_PORT=//p' "$AGENT_MARKER")"
+  UFW_IFACE="$(sed -n 's/^UFW_IFACE=//p' "$AGENT_MARKER")"
   [[ "$UFW_FROM" =~ ^[0-9a-fA-F.:]+$ && "$UFW_PORT" =~ ^[0-9]+$ ]] || { UFW_FROM=""; UFW_PORT=""; }
+  [[ "$UFW_IFACE" =~ ^[A-Za-z0-9_.-]{0,15}$ ]] || { UFW_FROM=""; UFW_PORT=""; UFW_IFACE=""; }
 fi
+# Only the drop-in install.sh writes (--after / --memory-max); others stay.
+HAS_DROPIN=0; [ -f "$AGENT_DROPIN" ] && HAS_DROPIN=1
 HAS_UFW=0; [ -n "$UFW_FROM" ] && HAS_UFW=1
 
 step "Plan"
 [ "$HAS_PM2" = 1 ] && info "- pm2: delete app 'pideck', pm2 save"
 [ "$HAS_UNIT" = 1 ] && info "- systemd: stop + disable pideck, copy the unit to $BACKUP, remove $UNIT (sudo)"
 [ "$HAS_AGENT" = 1 ] && info "- agent: stop + disable pideck-agent, copy the unit to $BACKUP, remove $AGENT_UNIT (sudo)"
+[ "$HAS_DROPIN" = 1 ] && info "- agent: copy $AGENT_DROPIN to $BACKUP and remove it (sudo)"
 [ "$HAS_UFW" = 1 ] && info "- ufw: delete the rule install.sh added (allow from $UFW_FROM to any port $UFW_PORT proto tcp)"
 [ "$HAS_SUDOERS" = 1 ] && info "- remove $SUDOERS (sudo)"
 if [ "$PURGE" = 1 ]; then
@@ -172,6 +179,12 @@ if [ "$HAS_AGENT" = 1 ]; then
   run "create $BACKUP" mkdir -p "$BACKUP"
   run "keep a copy of the agent unit" cp -p "$AGENT_UNIT" "$BACKUP/"
   run "remove $AGENT_UNIT" sudo rm -f "$AGENT_UNIT"
+  if [ "$HAS_DROPIN" = 1 ]; then
+    run "keep a copy of the agent drop-in" cp -p "$AGENT_DROPIN" "$BACKUP/pideck-agent-10-install.conf"
+    run "remove $AGENT_DROPIN" sudo rm -f "$AGENT_DROPIN"
+    # rmdir only succeeds when nothing else (a drop-in of your own, .bak files) is left.
+    run "remove $AGENT_DROPIN_DIR if empty" sudo rmdir --ignore-fail-on-non-empty "$AGENT_DROPIN_DIR"
+  fi
   run "systemctl daemon-reload" sudo systemctl daemon-reload
 fi
 [ "$HAS_PM2$HAS_UNIT$HAS_AGENT" = 000 ] && ok "no pm2 app or systemd unit"
@@ -183,7 +196,11 @@ if [ "$HAS_UFW" = 1 ]; then
   if [ -z "$UFW" ]; then
     warn "ufw is no longer installed; nothing to remove"
   else
-    run "delete ufw rule: allow from $UFW_FROM to any port $UFW_PORT proto tcp" sudo "$UFW" delete allow from "$UFW_FROM" to any port "$UFW_PORT" proto tcp
+    if [ -n "$UFW_IFACE" ]; then
+      run "delete ufw rule: allow in on $UFW_IFACE from $UFW_FROM to any port $UFW_PORT proto tcp" sudo "$UFW" delete allow in on "$UFW_IFACE" from "$UFW_FROM" to any port "$UFW_PORT" proto tcp
+    else
+      run "delete ufw rule: allow from $UFW_FROM to any port $UFW_PORT proto tcp" sudo "$UFW" delete allow from "$UFW_FROM" to any port "$UFW_PORT" proto tcp
+    fi
   fi
   if [ "$PURGE" != 1 ]; then run "forget the recorded rule" rm -f "$AGENT_MARKER"; fi
 fi

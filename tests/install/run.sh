@@ -4,11 +4,11 @@
 #              checkout (a git clone of the real scripts/templates), a fake
 #              $HOME, a fake /etc (PIDECK_ETC_DIR) and PATH stubs for sudo,
 #              apt-get, psql, pg_lsclusters, pm2, systemctl, systemd-analyze,
-#              visudo, npm, npx, curl, hostname, ufw and id. The database is
+#              visudo, npm, npx, curl, hostname, uname, ufw and id. The database is
 #              faked by tests/install/fake-helper.mjs; an agent's
 #              /api/agent/info by the curl stub (token checked against the
 #              agent's PIDECK_AGENT_TOKEN_SHA256 or $W/state/agent-hash).
-# Modified:    2026-09-28
+# Modified:    2026-09-30
 # Usage:       tests/install/run.sh            (or: npm run test:install)
 set -uo pipefail   # no -e: a failed check is counted, not fatal
 
@@ -166,9 +166,15 @@ EOF
 #!/usr/bin/env bash
 echo "ufw \$*" >> "$S/calls"
 EOF
-  stub hostname <<'EOF'
+  # hostname -I: the LAN address plus whatever $S/addrs holds (a tunnel address that is up).
+  stub hostname <<EOF
 #!/usr/bin/env bash
-case "${1:-}" in -I) echo "192.0.2.10 fd00::10" ;; -s) echo "Agent-Box" ;; *) echo agent-box ;; esac
+case "\${1:-}" in -I) echo "192.0.2.10 fd00::10 \$(cat "$S/addrs" 2>/dev/null)" ;; -s) echo "Agent-Box" ;; *) echo agent-box ;; esac
+EOF
+  # uname -m: the real machine unless $S/arch says otherwise (x86_64 runs on a Pi).
+  stub uname <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = -m ] && [ -s "$S/arch" ]; then cat "$S/arch"; else exec /usr/bin/uname "\$@"; fi
 EOF
 }
 
@@ -455,6 +461,69 @@ inst "${AGENT[@]}" || bad "install exit $?"
 : > "$W/state/calls"
 uninst --yes || bad "uninstall exit $?"
 check "no ufw call" bash -c "! grep -q ufw '$W/state/calls'"
+cleanup
+
+# ── multi-host: agent over WireGuard (2.7.0) ───────────────────────────
+WG=(--agent --yes --agent-bind 10.77.0.4 --after wg-quick@wg-pideck --memory-max 160M --ufw-allow-from 10.77.0.1 --ufw-interface wg-pideck)
+
+new_sandbox "--agent flags: bad values are refused before anything happens"
+for bad_args in "--memory-max 64M" "--memory-max 10%" "--memory-max infinity" "--after foo;bar" "--after pideck-agent" \
+                "--ufw-interface wg-pideck" "--ufw-allow-from 10.77.0.1 --ufw-interface bad/if"; do
+  # shellcheck disable=SC2086  # word-split on purpose
+  inst --agent --yes $bad_args; rc=$?
+  check "refused: $bad_args (exit 64)" test "$rc" = 64
+done
+inst --yes --memory-max 160M; rc=$?
+check "refused: --memory-max without --agent (exit 64)" test "$rc" = 64
+check "0160M is 160 MB, not octal" bash -c "cd '$APP' && ! env -i PATH='$W/bin:$PATH' HOME='$W/home' TMPDIR='$W/tmp' TERM=dumb PIDECK_ETC_DIR='$W/etc' scripts/install.sh --agent --dry-run --memory-max 0160M 2>&1 | grep -q 'must be'"
+check "nothing written" bash -c "test ! -e '$APP/.env' && test ! -d '$W/etc/systemd/system/pideck-agent.service.d' && ! grep -qv '^systemd-analyze' '$W/state/calls' 2>/dev/null"
+cleanup
+
+new_sandbox "--agent over WireGuard on x86_64: drop-in, interface rule, re-run, update, uninstall"
+dropin="$W/etc/systemd/system/pideck-agent.service.d/10-install.conf"
+echo x86_64 > "$W/state/arch"
+inst "${WG[@]}"; rc=$?
+check "tunnel address not up: refused with a hint, nothing installed" bash -c "test $rc != 0 && grep -q '10.77.0.4 is not an address of this host: start wg-quick@wg-pideck.service first' '$W/out' && test ! -e '$W/etc/systemd/system/pideck-agent.service' && test ! -e '$APP/.env'"
+rm -f "$W/state/calls"; before="$(tree_sum)"
+inst "${WG[@]}" --dry-run || bad "dry run exit $?"
+check "dry run: warns that the address isn't up yet" grep -q 'is not an address of this host yet' "$W/out"
+check "dry run: only systemd-analyze verify was called" bash -c "! grep -v '^systemd-analyze verify ' '$W/state/calls' | grep -q ."
+rm -f "$W/state/calls"
+check "dry run: tree unchanged" test "$before" = "$(tree_sum)"
+check "dry run: would install the drop-in and the interface rule" bash -c "grep -q 'would install .*10-install.conf (0644): after wg-quick@wg-pideck.service, MemoryMax=160M' '$W/out' && grep -q 'would ufw allow in on wg-pideck from 10.77.0.1 to any port 5016 proto tcp' '$W/out'"
+rm -f "$W/state/calls"
+echo 10.77.0.4 > "$W/state/addrs"
+inst "${WG[@]}" || { bad "install exit $?"; tail -n 25 "$W/out"; }
+check "x86_64: preflight says so, no arch warning" bash -c "grep -q 'arch: x86_64' '$W/out' && ! grep -q 'is untested' '$W/out'"
+check "bind address check passes" grep -q 'bind address 10.77.0.4 is up on this host' "$W/out"
+check ".env binds the tunnel address" grep -qx PIDECK_AGENT_BIND=10.77.0.4 "$APP/.env"
+check "drop-in 0644: After+Wants wg-quick@wg-pideck.service, MemoryMax=160M" bash -c "test \"\$(stat -c %a '$dropin')\" = 644 && grep -qx 'After=wg-quick@wg-pideck.service' '$dropin' && grep -qx 'Wants=wg-quick@wg-pideck.service' '$dropin' && grep -qx 'MemoryMax=160M' '$dropin' && test \"\$(grep -c '^\[' '$dropin')\" = 2"
+check "main unit untouched by the flags (template only)" bash -c "! grep -qE 'wg-quick|MemoryMax' '$W/etc/systemd/system/pideck-agent.service'"
+order="$(grep -oE '10-install.conf$|daemon-reload|enable --now pideck-agent' "$W/state/calls" | grep -E '^(10-install.conf|daemon-reload|enable --now pideck-agent)$' | uniq | tr '\n' ' ')"
+check "drop-in installed before daemon-reload and start ($order)" test "$order" = "10-install.conf daemon-reload enable --now pideck-agent "
+check "ufw: rule only on wg-pideck from the hub" grep -qE '^sudo .*/ufw allow in on wg-pideck from 10.77.0.1 to any port 5016 proto tcp comment pideck-agent$' "$W/state/calls"
+check "…recorded with the interface" bash -c "grep -qx UFW_IFACE=wg-pideck '$W/home/.config/pideck/install-agent' && grep -qx UFW_FROM=10.77.0.1 '$W/home/.config/pideck/install-agent'"
+check "hub command uses the tunnel address" grep -q -- '--add-host agent-box --url http://10.77.0.4:5016' "$W/out"
+sum="$(sha256sum < "$dropin")"
+: > "$W/state/calls"
+inst --agent --yes || bad "re-run exit $?"
+check "re-run without the flags keeps the drop-in as is" bash -c "test '$sum' = \"\$(sha256sum < '$dropin')\" && grep -q 'drop-in unchanged (after wg-quick@wg-pideck.service, MemoryMax=160M)' '$W/out'"
+inst --agent --yes --memory-max 128M || bad "re-run 128M exit $?"
+check "--memory-max 128M: cap changed, After kept, .bak kept" bash -c "grep -qx 'MemoryMax=128M' '$dropin' && grep -qx 'After=wg-quick@wg-pideck.service' '$dropin' && ls '$dropin'.bak.* >/dev/null"
+sum="$(sha256sum < "$dropin")"
+( cd "$W/src" && echo "// v2" >> ecosystem.config.cjs && git -c user.name=t -c user.email=t@t commit -qam v2 )
+inst --update || { bad "update exit $?"; tail -n 20 "$W/out"; }
+check "--update keeps the drop-in" bash -c "test '$sum' = \"\$(sha256sum < '$dropin')\""
+: > "$W/state/calls"
+uninst --yes || bad "uninstall exit $?"
+check "uninstall: drop-in removed, copy kept" bash -c "test ! -e '$dropin' && ls '$W'/home/backups/pideck-uninstall-*/pideck-agent-10-install.conf >/dev/null"
+check "uninstall: deletes exactly the interface rule" grep -qE '^sudo .*/ufw delete allow in on wg-pideck from 10.77.0.1 to any port 5016 proto tcp$' "$W/state/calls"
+cleanup
+
+new_sandbox "--agent on an unknown arch warns but goes on"
+echo riscv64 > "$W/state/arch"
+inst "${AGENT[@]}" --dry-run || bad "dry run exit $?"
+check "warns: arch riscv64 is untested" grep -q 'arch riscv64 is untested' "$W/out"
 cleanup
 
 new_sandbox "--agent refuses a hub checkout"
