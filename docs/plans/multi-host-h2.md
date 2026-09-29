@@ -1,6 +1,7 @@
 # PiDeck multi-host H2 — per-host history, alerts, overview (2.5.0)
 
-Status: **planned** (2026-09-28), to start 2026-09-29. Owner: 0xWulf.
+Status: **ready** — planned 2026-09-28; facts re-checked and open questions
+decided 2026-09-29 (see "Decisions"). Owner: 0xWulf.
 Base: v2.4.0 (032f015). Parent plan: [multi-host.md](./multi-host.md) (H1 shipped as 2.4.0).
 
 ## Goal
@@ -20,19 +21,22 @@ one tile per machine, click through to its dashboard.
 - New alert types beyond temperature (keep the rule, make it per host).
 - Longer retention than 24 h (make it configurable, keep the default).
 
-## Where we are (facts from prod, 2026-09-28)
+## Where we are (facts from prod, re-checked read-only 2026-09-29)
 | Item | State |
 |---|---|
-| Postgres | 18.6 on piapps (hub) and piapps2 |
-| `historical_metrics` | 1,398 rows, 352 kB, pruned to 24 h each tick; **only a PK index** (no timestamp index) |
-| `users` | admin row; plus `idx_users_username` from the old hand-written `migrations/0001_…sql`, **not declared in `shared/schema.ts`** (drift) |
-| `sessions` | declared in schema.ts, unused, 0 rows |
+| Postgres | 18.6 on piapps (hub) and piapps2; only schema `public`; tables `users`, `sessions`, `user_sessions`, `historical_metrics` |
+| `historical_metrics` | 1,437 rows, 352 kB, pruned to 24 h each tick; **only a PK index** (no timestamp index) |
+| **Timestamps** | `historical_metrics.timestamp` is `timestamp` **without time zone** (drizzle `mode: 'string'`) and holds **UTC** values written by the app as ISO strings. The DB `TimeZone` is **Asia/Taipei**. `now()`/`defaultNow()`/`localtimestamp` in SQL give **Taipei local** time → never compare this column with `now()`; see "Schema changes" |
+| `users` | 1 admin row; unique constraint `users_username_unique` (from `.unique()` in schema.ts) **and** a redundant non-unique `idx_users_username` from the old hand-written `migrations/0001_…sql`, **not declared in `shared/schema.ts`** (drift) |
+| `sessions` | declared in schema.ts, unused, 0 rows; FK `sessions_user_id_users_id_fk` → `users` |
 | `user_sessions` | created by `connect-pg-simple` (`createTableIfMissing`), **not in schema.ts**; must never be touched by migrations |
 | Migrations | none tracked; schema created with `drizzle-kit push` (installer); no `drizzle` schema/table in prod |
 | Versions | drizzle-orm ^0.45.2, drizzle-kit ^0.31.10 |
-| Alerts | in memory in `SystemService` (`activeAlerts`), temperature only, `/api/system/alerts` |
-| Sampler | `server/services/sampler.ts`: 60 s tick, advisory lock, insert row + prune > 24 h + temperature check |
-| Agent | piapps2, 2.4.0, `/api/system/info` etc.; no raw counters endpoint |
+| Alerts | in memory in `SystemService` (`activeAlerts`, `server/services/system.ts`), temperature only; served by `server/routes/system.ts` and `server/routes/compat.ts` as `/api/system/alerts`; client `use-alerts.ts` |
+| Sampler | `server/services/sampler.ts`: 60 s tick, `pg_try_advisory_xact_lock`, insert row + prune > 24 h (`SystemService.pruneHistory`, cutoff computed in JS as a UTC ISO string) + temperature check (per process, no DB) |
+| History | `/api/system/history` (`server/routes.ts`), client `use-system-info.ts` with `scope: "hub"` |
+| Agent | piapps2, 2.4.0 (systemd `pideck-agent`); allowlist in `server/agent-api.ts`; `/api/agent/info` already returns `capabilities: { read, actions, logs, paths }` → add `sample: true` there; no raw counters endpoint |
+| Hub | piapps, pm2 `pideck` 2.4.0 online; `main` = c391a8c (this plan on top of v2.4.0) |
 
 ## M0 — schema migrations (first; separate commit series)
 **Design**
@@ -76,11 +80,22 @@ one tile per machine, click through to its dashboard.
 - `historical_metrics.host_id text NOT NULL DEFAULT 'local'`; existing rows
   become `local`.
 - Index `(host_id, timestamp DESC)`; also serves the prune query.
-- Retention: `PIDECK_HISTORY_HOURS` (default 24), prune per host each tick
-  (one `DELETE … WHERE timestamp < now() - interval` is enough with the index).
-- Optional (decide in session): `alerts` table (`host_id, type, severity,
-  message, started_at, resolved_at`) so alerts survive a hub restart and the
-  overview can show "open since". Default plan: **yes**, small and useful.
+- Retention: `PIDECK_HISTORY_HOURS` (default 24, integer, clamp to a sane
+  range e.g. 1–168, invalid → 24 with a warning), one prune each tick for all
+  hosts. **Timezone trap:** the column is `timestamp without time zone`
+  holding UTC, and the DB `TimeZone` is Asia/Taipei. Keep computing the
+  cutoff in JS as a UTC ISO string (as `pruneHistory` does today), or use
+  `now() AT TIME ZONE 'UTC'` in SQL. A plain `timestamp < now() - interval`
+  would delete ~8 h too much on prod. Same rule for the history range query
+  and for any new timestamp column: always write UTC explicitly, never rely
+  on `defaultNow()`. Add a unit test that runs with a non-UTC session
+  `TimeZone`.
+- **`alerts` table (decided: yes):** `id, host_id, type, severity, message,
+  started_at, resolved_at` (UTC, `timestamptz` is fine for a new table;
+  pick one and be consistent), index on open alerts
+  (`resolved_at IS NULL`). Alerts survive a hub restart (on start, load open
+  rows into memory); the overview shows "open since". Keep resolved rows for
+  `PIDECK_HISTORY_HOURS`, pruned in the same tick.
 
 ## Hub sampler for all hosts
 ```
@@ -112,8 +127,11 @@ tick (60 s, advisory lock)
 - `/api/system/alerts` keeps working for the local host; new
   `GET /api/alerts?host=<id|all>` for the UI.
 - Toasts name the host ("piapps2: temperature above 70 °C").
-- Offline for > N minutes (e.g. 5) → an "offline" alert for that host
-  (resolves when it's back). Decide N in session.
+- Offline for > 5 minutes (decided; `PIDECK_OFFLINE_ALERT_MINUTES`, default
+  5) → an "offline" alert for that host, **with a toast** ("piapps2: offline
+  since 08:12"); resolves when it's back (resolve toast too). A wrong token
+  or an agent < 2.5 is not "offline" (it has its own status), and a hub
+  restart must not raise offline alerts for hosts it simply hasn't polled yet.
 
 ## API (hub, login required)
 - `GET /api/history?host=<id>&range=15m|1h|6h|24h` → served from the hub DB
@@ -143,7 +161,9 @@ tick (60 s, advisory lock)
 | Sampler → agent | agent < 2.5 | skip; flag | amber dot "update the agent for history" |
 | Counters | reset / wrap | drop interval | one missing point |
 | History API | unknown host | 404 | "No such host" |
-| Alerts | host offline > N min | open offline alert | toast + tile badge |
+| Alerts | host offline > 5 min | open offline alert (DB row) | toast + tile badge |
+| Alerts | hub restart | reload open rows; no offline alert before the first poll | badge stays, no false toast |
+| Retention | bad `PIDECK_HISTORY_HOURS` | fall back to 24, log a warning | nothing |
 
 ## Tests
 - **M0:** baseline mark on a DB created by `push` (fixture from a prod-like
@@ -152,7 +172,9 @@ tick (60 s, advisory lock)
   runs serialise (advisory lock); failure leaves the DB unchanged.
 - **Unit:** rate computation from counter pairs incl. resets; per-host alert
   state machine; history query by host/range; overview aggregation;
-  `/api/agent/sample` allowlisted and token-protected on the agent.
+  `/api/agent/sample` allowlisted and token-protected on the agent;
+  prune/range queries correct with a non-UTC session `TimeZone`
+  (Asia/Taipei, as on prod); `alerts` rows persist across a restart.
 - **E2E:** local agents from the H1 harness now produce history: remote
   history chart renders; overview page tiles for online / wrong token /
   unreachable; click-through; alert toast names the host (stub a hot
@@ -174,12 +196,24 @@ tick (60 s, advisory lock)
    piapps2 history filling in, overview page, alerts.
 5. Release 2.5.0; drop `pideck_migtest`.
 
-## Open questions (decide at the start of the session)
-- `alerts` table now, or keep alerts in memory one more phase? (Plan: table.)
-- Offline alert threshold N (plan: 5 minutes) and whether it toasts.
-- Keep the unused `sessions` table declared (baseline as-is) or drop it in a
-  migration after the baseline? (Plan: keep for now, drop in a later release.)
-- History retention beyond 24 h per host? (Plan: env var, default 24.)
+## Decisions (operator, 2026-09-29; were the open questions)
+- **`alerts` table: yes**, in H2 (see "Schema changes").
+- **Offline alert after 5 minutes, with a toast** (configurable via
+  `PIDECK_OFFLINE_ALERT_MINUTES`).
+- **Unused `sessions` table: keep for now.** It stays declared in schema.ts
+  and in the baseline, FK included; dropping it is a later release.
+- **History retention: 24 h default, `PIDECK_HISTORY_HOURS`**, same value for
+  all hosts. Document it in `.env.example` and the README env table.
+
+## Drift to resolve in M0 (found 2026-09-29)
+- `idx_users_username` (non-unique btree on `users.username`) exists on prod
+  but not in schema.ts, and it duplicates `users_username_unique`. Choose one
+  and say why: declare it in schema.ts so the baseline matches prod, **or**
+  drop it in migration 0001 (`DROP INDEX IF EXISTS`), which also works for
+  fresh installs. Either way, the baseline must match prod exactly.
+- Installs whose schema came only from `drizzle-kit push` (2.3/2.4 installer
+  on a new host) most likely do **not** have `idx_users_username`. Baseline marking must accept both shapes
+  (with or without that index) and must not fail on either.
 
 ## Brief for the cloud session (paste with this file)
 > Implement `docs/plans/multi-host-h2.md` on branch `feat/multi-host-h2` from
