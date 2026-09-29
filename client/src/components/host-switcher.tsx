@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHost, useHosts, type HostSummary } from "@/hosts/HostProvider";
 import { formatLastSeen, hostHref, REMOTE_TABS } from "@/hosts/host-path";
@@ -15,11 +15,14 @@ const DOT: Record<HostSummary["status"], string> = {
   "version-mismatch": "bg-pi-warning",
 };
 
+/** Online, but an agent < 2.5: the hub can't record its history (amber). */
+export const needsAgentUpdate = (h: Pick<HostSummary, "status" | "history">) => h.status === "online" && h.history === "unsupported";
+
 /** Screen-reader and tooltip text for a host's status. */
 export function hostStatusText(h: HostSummary, hubVersion?: string | null): string {
   switch (h.status) {
     case "online":
-      return "online";
+      return needsAgentUpdate(h) ? "online — update the agent for history" : "online";
     case "offline":
       return `offline, last seen ${formatLastSeen(h.lastSeen)}`;
     case "auth-error":
@@ -32,16 +35,18 @@ export function hostStatusText(h: HostSummary, hubVersion?: string | null): stri
 export function StatusDot({ host, hubVersion }: { host: HostSummary; hubVersion?: string | null }) {
   return (
     <span
-      className={cn("inline-block h-2 w-2 shrink-0 rounded-full", DOT[host.status])}
+      className={cn("inline-block h-2 w-2 shrink-0 rounded-full", needsAgentUpdate(host) ? "bg-pi-warning" : DOT[host.status])}
       title={hostStatusText(host, hubVersion)}
       aria-hidden
       data-status={host.status}
+      data-history={host.history}
     />
   );
 }
 
-/** The tab to open on another host: the same tab when it has it, else its dashboard. */
+/** The tab to open on another host: the same tab when it has it, else its dashboard (also from /hosts). */
 export function tabOnHost(currentTab: string, hostId: string): string {
+  if (currentTab === "hosts") return "dashboard";
   return hostId === "local" || (REMOTE_TABS as readonly string[]).includes(currentTab) ? currentTab : "dashboard";
 }
 
@@ -123,16 +128,16 @@ export function HostSwitcher({ tab, variant = "header" }: { tab: string; variant
         type="button"
         aria-expanded={open}
         aria-controls={listId}
-        aria-label={`Host: ${current?.label ?? host.id}, ${current ? hostStatusText(current, hubVersion) : "unknown"}. Switch host`}
+        aria-label={tab === "hosts" ? "All hosts. Switch host" : `Host: ${current?.label ?? host.id}, ${current ? hostStatusText(current, hubVersion) : "unknown"}. Switch host`}
         onClick={() => setOpen((o) => !o)}
         className={cn(
           "inline-flex h-9 items-center gap-2 rounded-md border border-pi-border px-2 text-sm text-pi-text hover:bg-pi-card-hover",
           variant === "bar" ? "w-full bg-pi-card" : "max-w-[14rem]",
         )}
       >
-        {current && <StatusDot host={current} hubVersion={hubVersion} />}
+        {current && tab !== "hosts" && <StatusDot host={current} hubVersion={hubVersion} />}
         {variant === "bar" && <span className="text-pi-text-muted">Host:</span>}
-        <span className="truncate">{current?.label ?? host.id}</span>
+        <span className="truncate">{tab === "hosts" ? "All hosts" : current?.label ?? host.id}</span>
         <ChevronDown className={cn("h-4 w-4 shrink-0 text-pi-text-muted", variant === "bar" && "ml-auto")} aria-hidden />
       </button>
       {open && (
@@ -146,7 +151,7 @@ export function HostSwitcher({ tab, variant = "header" }: { tab: string; variant
           )}
         >
           {hosts.map((h) => {
-            const isCurrent = h.id === host.id;
+            const isCurrent = tab !== "hosts" && h.id === host.id;
             return (
               <li key={h.id}>
                 <Link
@@ -171,6 +176,23 @@ export function HostSwitcher({ tab, variant = "header" }: { tab: string; variant
               </li>
             );
           })}
+          <li className="mt-1 border-t border-pi-border pt-1">
+            <Link
+              href="/hosts"
+              aria-current={tab === "hosts" ? "true" : undefined}
+              onClick={(e) => {
+                e.preventDefault();
+                setOpen(false);
+                navigate("/hosts");
+                button.current?.focus();
+              }}
+              className="flex items-center gap-2 px-3 py-2 hover:bg-pi-card-hover focus:bg-pi-card-hover focus:outline-none"
+              data-testid="all-hosts-link"
+            >
+              <LayoutGrid className="h-4 w-4 shrink-0 text-pi-text-muted" aria-hidden />
+              <span className="flex-1">All hosts</span>
+            </Link>
+          </li>
         </ul>
       )}
     </div>

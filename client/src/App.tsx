@@ -86,6 +86,15 @@ function AppRoutes() {
       </Route>
       <Route path="/h/:hostId">{(params) => <Redirect to={hostHref(params.hostId, "dashboard")} replace />}</Route>
 
+      {/* The All hosts overview (H2): before /:tab, which would redirect it */}
+      <Route path="/hosts">
+        <ProtectedRoute>
+          <UiPrefsProvider>
+            <AppShell tab="hosts" />
+          </UiPrefsProvider>
+        </ProtectedRoute>
+      </Route>
+
       {/* One route for every tab, so the shell stays mounted across tabs */}
       <Route path="/:tab">
         {(params) =>

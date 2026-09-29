@@ -55,6 +55,7 @@ export function useCommandCenter() {
         case "go-cron": return navigate("/cron");
         case "go-settings": return navigate("/settings");
         case "go-hosts": return void window.dispatchEvent(new Event(OPEN_HOST_SWITCHER)); // no-op without remote hosts
+        case "go-overview": return navigate("/hosts");
         case "edit":
           if (s.path.endsWith("/dashboard") && s.isWide) dispatch({ type: "setEditing", editing: !s.editing });
           return;

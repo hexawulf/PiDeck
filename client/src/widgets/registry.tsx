@@ -41,9 +41,9 @@ export type WidgetDef = {
   minSize?: WidgetSize;
   maxSize?: WidgetSize;
   /**
-   * Where the widget works: "any" host, or only the hub ("local") — history
-   * charts (only the hub records history in H1) and Quick Actions (agents are
-   * read-only). Remote dashboards list only "any" widgets.
+   * Where the widget works: "any" host, or only the hub ("local") — Quick
+   * Actions (agents are read-only). History charts are "any" since H2: the hub
+   * records every host. Remote dashboards list only "any" widgets.
    */
   hosts: "local" | "any";
   /** Memoized: bodies take no props, so grid re-renders (drag, edit) skip them (E21). */
@@ -65,8 +65,8 @@ export const WIDGETS: readonly WidgetDef[] = [
   { id: "network", title: "Network", icon: Wifi, ...STAT, hosts: "any", component: memo(NetworkBox) },
   { id: "system-info", title: "System Information", icon: Info, ...HALF, hosts: "any", component: memo(SystemInfoBox) },
   { id: "top-processes", title: "Top Processes", icon: List, ...HALF, hosts: "any", component: memo(TopProcessesBox) },
-  { id: "disk-io", title: "Disk I/O", icon: HardDrive, ...CHART, hosts: "local", component: memo(DiskIoBox) },
-  { id: "net-bandwidth", title: "Network Bandwidth", icon: Activity, ...CHART, hosts: "local", component: memo(NetworkBandwidthBox) },
+  { id: "disk-io", title: "Disk I/O", icon: HardDrive, ...CHART, hosts: "any", component: memo(DiskIoBox) },
+  { id: "net-bandwidth", title: "Network Bandwidth", icon: Activity, ...CHART, hosts: "any", component: memo(NetworkBandwidthBox) },
   { id: "cpu-freq", title: "CPU Frequency", icon: Gauge, ...SMALL, hosts: "any", component: memo(CpuFreqBox) },
   { id: "nvme", title: "NVMe Health", icon: Server, ...SMALL, hosts: "any", component: memo(NvmeHealthBox) },
   { id: "thermal-zones", title: "Thermal Sensors", icon: Waves, ...SMALL, hosts: "any", component: memo(ThermalZoneBox) },

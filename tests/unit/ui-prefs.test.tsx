@@ -10,7 +10,7 @@ vi.mock("@/hooks/use-toast", () => ({ toast, useToast: () => ({ toast }) }));
 import { UiPrefsProvider, useUiPrefs, useUiPrefsDispatch } from "@/prefs/UiPrefsProvider";
 import { PREFS_BAD_KEY, PREFS_KEY, type Store } from "@/prefs/prefs";
 import { refetchInterval, useRefetch } from "@/hooks/useRefetch";
-import { ALERTS_INTERVAL_MS, useAlerts } from "@/hooks/use-alerts";
+import { ALERTS_INTERVAL_MS, ALERTS_URL, useAlerts } from "@/hooks/use-alerts";
 
 class MemStore implements Store {
   data = new Map<string, string>();
@@ -120,7 +120,7 @@ describe("useAlerts (E1)", () => {
     let dispatch!: ReturnType<typeof useUiPrefsDispatch>;
     function Probe() { dispatch = useUiPrefsDispatch(); useAlerts(); return null; }
     render(<QueryClientProvider client={client}><UiPrefsProvider store={store}><Probe /></UiPrefsProvider></QueryClientProvider>);
-    const interval = () => (client.getQueryCache().find({ queryKey: ["/api/system/alerts"] })!.observers[0].options.refetchInterval);
+    const interval = () => (client.getQueryCache().find({ queryKey: [ALERTS_URL] })!.observers[0].options.refetchInterval);
     act(() => dispatch({ type: "setSpeed", speed: "slow" }));
     act(() => dispatch({ type: "setPaused", paused: true }));
     expect(interval()).toBe(ALERTS_INTERVAL_MS);

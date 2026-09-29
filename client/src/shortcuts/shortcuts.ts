@@ -10,7 +10,8 @@
  *            ├─ "?" ──────────────────────────────► help sheet
  *            ├─ Shift+letter ─────────────────────► ignore
  *            ├─ pending "g" + d/l/a/c/s ─────────► go to tab (d/a stay on the
- *            │                                        current host; h opens the host switcher)
+ *            │                                        current host; h opens the host switcher;
+ *            │                                        o goes to the /hosts overview)
  *            └─ single key e/p/r/t, or "g" (starts a 1.5s sequence)
  *
  * Nothing destructive is ever a shortcut: Update System and Reset all are
@@ -18,7 +19,7 @@
  */
 export type ShortcutId =
   | "palette" | "help"
-  | "go-dashboard" | "go-logs" | "go-apps" | "go-cron" | "go-settings" | "go-hosts"
+  | "go-dashboard" | "go-logs" | "go-apps" | "go-cron" | "go-settings" | "go-hosts" | "go-overview"
   | "edit" | "pause" | "refresh" | "theme";
 
 export type Shortcut = { id: ShortcutId; keys: string[]; label: string; group: "General" | "Go to" | "Dashboard" };
@@ -33,6 +34,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: "go-cron", keys: ["g", "c"], label: "Go to Cron", group: "Go to" },
   { id: "go-settings", keys: ["g", "s"], label: "Go to Settings", group: "Go to" },
   { id: "go-hosts", keys: ["g", "h"], label: "Open the host list", group: "Go to" },
+  { id: "go-overview", keys: ["g", "o"], label: "Go to All hosts (overview)", group: "Go to" },
   { id: "edit", keys: ["e"], label: "Edit layout / done (dashboard, wide screens)", group: "Dashboard" },
   { id: "pause", keys: ["p"], label: "Pause / resume auto-refresh", group: "Dashboard" },
   { id: "refresh", keys: ["r"], label: "Refresh now", group: "Dashboard" },

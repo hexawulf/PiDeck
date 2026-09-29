@@ -5,6 +5,7 @@ import { downsample, type Point } from "@/lib/downsample";
 import { formatClock, formatNumber, parseDbTimestamp, rateScale } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { QueryState } from "@/widgets/WidgetFrame";
+import { useHost, useHostSummary } from "@/hosts/HostProvider";
 import type { z } from "zod";
 import type { historySchema } from "@/widgets/schemas";
 
@@ -62,6 +63,8 @@ function RangePicker({ value, onChange, label }: { value: RangeId; onChange: (r:
 
 export function HistoryChart({ id, label, series, current }: { id: string; label: string; series: Series[]; current?: React.ReactNode }) {
   const query = useHistory();
+  const host = useHost();
+  const oldAgent = useHostSummary(host.id)?.history === "unsupported";
   const [range, setRange] = useState<RangeId>("1h");
   const rangeMs = RANGES.find((r) => r.id === range)!.ms;
 
@@ -93,7 +96,11 @@ export function HistoryChart({ id, label, series, current }: { id: string; label
       <QueryState
         query={query}
         isEmpty={() => points.length === 0}
-        emptyText={`No samples in the last ${range}. The server records one per minute while it is running.`}
+        emptyText={
+          oldAgent
+            ? "This agent is older than 2.5: update the agent for history."
+            : `No samples in the last ${range}. The hub records one per minute while it can reach the host.`
+        }
       >
         {() => (
           <div className="h-[var(--pi-chart-h)] min-w-0">
@@ -149,7 +156,7 @@ export function HistoryChart({ id, label, series, current }: { id: string; label
           </div>
         )}
       </QueryState>
-      <p className="text-xs text-pi-text-muted">Sampled every minute by the server — gaps mean it wasn't running.</p>
+      <p className="text-xs text-pi-text-muted">Sampled every minute by the hub — gaps mean the host was unreachable.</p>
     </div>
   );
 }

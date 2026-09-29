@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, Clock, FileText, Grid, KeySquare, LogOut, RefreshCw, Server, SettingsIcon } from "lucide-react";
@@ -9,7 +9,7 @@ import AboutModal from "@/components/modals/about-modal";
 import { RefreshControl } from "@/components/refresh-control";
 import { PaletteButton, useCommandCenter } from "@/components/command-center";
 import { useAuth } from "@/hooks/use-auth";
-import { useAlerts } from "@/hooks/use-alerts";
+import { alertText, resolvedText, useAlerts } from "@/hooks/use-alerts";
 import { useRefreshAll } from "@/hooks/use-refresh-all";
 import { useSystemInfo } from "@/hooks/use-system-info";
 import { useToast } from "@/hooks/use-toast";
@@ -25,6 +25,9 @@ import AppMonitor from "@/components/app-monitor";
 import CronManager from "@/components/cron-manager";
 import Settings from "@/pages/settings";
 
+// The overview is its own chunk: most visits never open it.
+const HostsOverview = lazy(() => import("@/pages/hosts"));
+
 export const TABS = [
   { id: "dashboard", label: "Dashboard", icon: Activity, component: Dashboard },
   { id: "logs", label: "Logs", icon: FileText, component: LogViewer },
@@ -39,21 +42,27 @@ export const isTabId = (s: string | undefined): s is TabId => TABS.some((t) => t
 /** A remote host has only Dashboard and Apps (Logs, Cron, Settings belong to the hub). */
 const tabsFor = (isLocal: boolean) => (isLocal ? TABS : TABS.filter((t) => (REMOTE_TABS as readonly string[]).includes(t.id)));
 
-/** Toast each new server alert once; forget alerts that cleared. */
-function AlertToasts() {
+/**
+ * Toast each alert once, naming its host ("piapps2: offline since 08:12"),
+ * and once more when an alert this tab saw open is resolved.
+ */
+export function AlertToasts() {
   const { data: alerts } = useAlerts();
   const { toast } = useToast();
-  const shown = useRef(new Set<string>());
+  const openSeen = useRef(new Set<number>());
 
   useEffect(() => {
     if (!alerts) return;
-    for (const alert of alerts) {
-      if (shown.current.has(alert.id)) continue;
-      toast({ title: "System Alert", description: alert.message, variant: "destructive", duration: 10000 });
-      shown.current.add(alert.id);
+    for (const a of alerts) {
+      if (!a.resolvedAt && !openSeen.current.has(a.id)) {
+        openSeen.current.add(a.id);
+        toast({ title: a.severity === "critical" ? "Host alert" : "System Alert", description: alertText(a), variant: "destructive", duration: 10000 });
+      } else if (a.resolvedAt && openSeen.current.delete(a.id)) {
+        toast({ title: "Resolved", description: resolvedText(a), duration: 6000 });
+      }
     }
-    const active = new Set(alerts.map((a) => a.id));
-    for (const id of [...shown.current]) if (!active.has(id)) shown.current.delete(id);
+    const listed = new Set(alerts.map((a) => a.id));
+    for (const id of [...openSeen.current]) if (!listed.has(id)) openSeen.current.delete(id);
   }, [alerts, toast]);
 
   return null;
@@ -65,7 +74,8 @@ const iconButton = "p-2 bg-transparent hover:bg-pi-card-hover border-pi-border";
  * Header + tab links + the active tab. Mounted once under /:tab, so switching
  * tabs swaps only <main> and each tab's queries poll only while it is shown.
  */
-export default function AppShell({ tab }: { tab: TabId }) {
+/** "hosts" = the All hosts overview (/hosts): the hub's page, no tab selected. */
+export default function AppShell({ tab }: { tab: TabId | "hosts" }) {
   const { logout, isLogoutPending, user } = useAuth();
   const systemInfo = useSystemInfo();
   const refreshAll = useRefreshAll();
@@ -74,7 +84,7 @@ export default function AppShell({ tab }: { tab: TabId }) {
   const reboot = useQuery<{ rebootRequired?: boolean }>({ queryKey: widgetQueryKey(host.id, "/api/reboot-check") });
   const commands = useCommandCenter();
   const tabs = tabsFor(host.isLocal);
-  const current = TABS.find((t) => t.id === tab)!;
+  const current = tab === "hosts" ? { label: "All hosts", component: HostsOverview } : TABS.find((t) => t.id === tab)!;
   const Page = current.component;
 
   useEffect(() => {
@@ -196,7 +206,9 @@ export default function AppShell({ tab }: { tab: TabId }) {
             ))}
           </nav>
           <div className="tab-content pb-8">
-            <Page />
+            <Suspense fallback={<div className="pi-text-muted text-sm">Loading…</div>}>
+              <Page />
+            </Suspense>
           </div>
         </div>
       </main>

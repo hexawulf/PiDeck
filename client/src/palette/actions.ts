@@ -69,7 +69,13 @@ export function buildActions(input: PaletteContext): PaletteAction[] {
   }
 
   if (ctx.hosts.length > 1) {
-    const tab = ctx.path.split("/").pop() ?? "dashboard";
+    actions.push({
+      id: "go-overview", group: "Hosts", label: "Go to All hosts", keywords: ["overview", "hosts", "fleet", "all"],
+      hint: ctx.path === "/hosts" ? "current" : undefined,
+      perform: () => ctx.navigate("/hosts"),
+    });
+    const last = ctx.path.split("/").pop() ?? "dashboard";
+    const tab = last === "hosts" ? "dashboard" : last;
     for (const h of ctx.hosts) {
       actions.push({
         id: `host:${h.id}`, group: "Hosts", label: `Switch to ${h.label}`,

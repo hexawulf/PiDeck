@@ -69,10 +69,10 @@ describe("hostProblemOf", () => {
 });
 
 describe("registry scope", () => {
-  it("remote hosts get only 'any' widgets: no history charts, no Quick Actions", () => {
+  it("remote hosts get only 'any' widgets: history charts yes (H2), Quick Actions no", () => {
     const remote = widgetsFor(false).map((w) => w.id);
-    expect(remote).not.toContain("disk-io");
-    expect(remote).not.toContain("net-bandwidth");
+    expect(remote).toContain("disk-io");
+    expect(remote).toContain("net-bandwidth");
     expect(remote).not.toContain("quick-actions");
     expect(remote).toContain("cpu");
     expect(widgetsFor(true)).toBe(WIDGETS);
