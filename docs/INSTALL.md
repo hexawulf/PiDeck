@@ -468,6 +468,78 @@ On the hub: `PIDECK_HOSTS=id=http://ip:port,…`,
 `PIDECK_HOST_LABELS=id=Label,…`. Ids are `[a-z0-9-]{1,32}`; `local` is the
 hub itself.
 
+| Key (agent) | Default | Purpose |
+|---|---|---|
+| `PIDECK_DISK_MOUNT` | `/` | Mount whose usage the hub samples (overview tile, history). `/volume1` on a Synology. |
+
+### Synology DSM (agent only, by hand)
+
+A Synology NAS (tested: DS920+, DSM 7.4.1, x86_64) runs the agent, not the
+hub. `install.sh` has **no** DSM mode: DSM has no apt, systemd or git, so the
+steps are manual. The agent runs as an admin user (here `zk`) from
+`/var/services/homes/zk/pideck-agent`, started at boot by
+[`deploy/dsm/start-agent.sh`](../deploy/dsm/start-agent.sh).
+
+1. **Node.js**: install the *Node.js v22* package in Package Center. It has
+   **no `npm` command**; call npm through node:
+   ```bash
+   NODE=/var/packages/Node.js_v22/target/usr/local/bin/node
+   NPM="$NODE /var/packages/Node.js_v22/target/usr/local/lib/node_modules/npm/bin/npm-cli.js"
+   ```
+2. **Copy the code** from a machine with git (the NAS has none), as a
+   `git archive` of the release **plus a built `dist/`** (esbuild output is
+   plain JS). SFTP/scp is usually off on DSM, so stream the files over ssh:
+   ```bash
+   # on the build machine, in the checkout at the release tag
+   npm ci && npm run build
+   { git archive --format=tar HEAD; tar -cf - dist; } | gzip \
+     | ssh -p <port> root@<nas> 'mkdir -p /var/services/homes/zk/pideck-agent &&
+         tar -xzf - -C /var/services/homes/zk/pideck-agent &&
+         chown -R zk: /var/services/homes/zk/pideck-agent'
+   ```
+   Then, as `zk` on the NAS: `cd ~/pideck-agent && $NPM ci --omit=dev`
+   (native modules build there for x86_64).
+3. **`.env`** next to the script, mode 0600, owned by `zk`:
+   ```
+   PIDECK_MODE=agent
+   PIDECK_AGENT_BIND=192.168.50.147
+   PIDECK_AGENT_PORT=5016
+   PIDECK_AGENT_TOKEN_SHA256=<sha256 of the token>
+   PIDECK_DISK_MOUNT=/volume1
+   ```
+   Create the token on any machine (`openssl rand -hex 32`), put only its
+   SHA-256 here (`printf %s "$TOKEN" | sha256sum`), and give the token to
+   the hub with `--add-host` (below). Remote logs (2.6) add
+   `PIDECK_AGENT_LOGS=on`, see [Remote logs](#remote-logs-26).
+4. **Start at boot**: copy `deploy/dsm/start-agent.sh` into the app
+   directory, then DSM **Control Panel › Task Scheduler › Create ›
+   Triggered Task › User-defined script**, user `zk`, event **Boot-up**,
+   script `bash /var/services/homes/zk/pideck-agent/start-agent.sh`. Run it
+   once by hand (`--dry-run` first). It keeps one agent running, restarts it
+   with backoff and logs to `~/logs/pideck-agent-YYYYMMDD.log`.
+5. **Firewall**: DSM **Control Panel › Security › Firewall**: allow TCP 5016
+   from the hub's address only, deny 5016 from everywhere else. Check from
+   the hub (`curl -H "Authorization: Bearer …" http://<nas>:5016/api/agent/info`
+   → 200; without the header → 401) and from another LAN machine (must time out).
+6. **Hub**: `./scripts/install.sh --add-host ds920 --url http://192.168.50.147:5016 --label "DS920+"`.
+
+What to expect on DSM:
+- **CPU temperature** comes from hwmon (`coretemp`, "Physical id 0"): DSM has
+  no `thermal_zone0`. **About/System** shows the DSM version from
+  `/etc.defaults/VERSION`.
+- **NVMe/SMART, firewall, power status and system update** say
+  "Not available on DSM" (they need root or Synology's own tools; Storage
+  Manager and Control Panel have them).
+- **Docker** widgets and Docker logs work when the agent user is in the
+  `docker` group. That group is root-equivalent, so the agent only ever makes
+  two read-only Docker API calls (container list, container logs).
+- **`/var/log/messages`** is `system:log 660`: add the agent user to `log`
+  (`synogroup --memberadd log zk`, then restart the agent) to include it.
+  Check this again after DSM updates, which may reset system groups.
+- **Updating**: repeat step 2 with the new release, `$NPM ci --omit=dev`,
+  then `kill "$(cat ~/pideck-agent/agent.pid)"; pkill -u zk -f 'pideck-agent/dist/index.js'`
+  and run the start script again. Update agents before the hub.
+
 ## Troubleshooting
 
 **Login "works" but you land back on the login page.** The session cookie
