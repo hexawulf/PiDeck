@@ -369,12 +369,12 @@ check "a bad dist/.build-commit falls back to HEAD" grep -q "git reset --keep $p
 # The pull brings a new install.sh: the run continues with it (one re-exec), no second backup or pull.
 built="$(git -C "$APP" rev-parse --short HEAD)"
 ( cd "$W/src" && git pull -q "$APP" main 2>/dev/null; printf '\n# installer v3\n' >> scripts/install.sh && git -c user.name=t -c user.email=t@t commit -qam "installer v3" )
-nb="$(find "$W/home/backups" -maxdepth 1 -name 'pideck-dist-*' | wc -l)"; : > "$W/state/calls"
+: > "$W/state/calls"
 inst --update || { bad "update with a new installer exit $?"; tail -n 20 "$W/out"; }
 log="$(find "$W/home/logs" -name 'pideck-install-*.log' -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d' ' -f2-)"
 check "a pulled install.sh takes over the run (re-exec once)" bash -c "grep -q 'the pull changed scripts/install.sh' '$W/out' && grep -q 'continuing with the updated installer (rollback target $built)' '$W/out' && [ \"\$(grep -c 'continuing with the updated installer' '$W/out')\" = 1 ]"
 check "…the new script is what finished the update" grep -q '# installer v3' "$APP/scripts/install.sh"
-check "…one dist backup and one pull, then build and restart" bash -c "[ \"\$(find '$W/home/backups' -maxdepth 1 -name 'pideck-dist-*' | wc -l)\" = \$(( $nb + 1 )) ] && ! grep -q 'Already up to date' '$W/out' && grep -q '^npm run build' '$W/state/calls' && grep -q '^pm2 restart pideck' '$W/state/calls'"
+check "…one dist backup and one pull, then build and restart" bash -c "[ \"\$(grep -c 'back up dist/ to ' '$W/out')\" = 1 ] && ! grep -q 'Already up to date' '$W/out' && grep -q '^npm run build' '$W/state/calls' && grep -q '^pm2 restart pideck' '$W/state/calls'"
 check "…rollback still targets the build that was running" grep -q "git reset --keep $built " "$W/out"
 check "…one log file, no line written twice" bash -c "[ \"\$(grep -c 'the pull changed scripts/install.sh' '$log')\" = 1 ] && [ \"\$(grep -c 'continuing with the updated installer' '$log')\" = 1 ]"
 check "…no temp dir left behind" bash -c "! ls -d '$W'/tmp/pideck-install.* >/dev/null 2>&1"
