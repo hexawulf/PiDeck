@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { isDsm } from "../services/platform";
 
 // POST /api/system/update runs `sudo apt-get update && sudo apt-get upgrade -y`.
 // PIDECK_DISABLE_SYSTEM_UPDATE=1 turns it into a 409 that runs nothing — set
@@ -12,13 +13,18 @@ export function systemUpdateDisabled(env: NodeJS.ProcessEnv = process.env): bool
 export function createSystemUpdateHandler({
   run,
   env = process.env,
+  dsm = isDsm,
 }: {
   run: () => Promise<string>;
   env?: NodeJS.ProcessEnv;
+  dsm?: () => boolean;
 }) {
   return async (_req: Request, res: Response) => {
     if (systemUpdateDisabled(env)) {
       return res.status(409).json({ message: SYSTEM_UPDATE_DISABLED_MESSAGE });
+    }
+    if (dsm()) {
+      return res.status(409).json({ message: "Not available on DSM (update DSM in Control Panel)" });
     }
     try {
       const output = await run();

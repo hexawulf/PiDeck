@@ -11,6 +11,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import { SystemService } from "./system";
+import { diskMount } from "../config";
 
 export type RawCounters = {
   /** When these were read (ISO, UTC). */
@@ -75,8 +76,10 @@ async function readMemory(): Promise<RawCounters["memory"]> {
   return { totalMb, usedMb, percentage: Math.round(((total - available) / total) * 100) };
 }
 
-async function readDiskUsage(): Promise<number | null> {
-  const s = await fs.statfs("/");
+let mount: string | null = null;
+/** Usage % of PIDECK_DISK_MOUNT (default "/"). */
+export async function readDiskUsage(at: string = (mount ??= diskMount())): Promise<number | null> {
+  const s = await fs.statfs(at);
   const used = s.blocks - s.bfree;
   const denom = used + s.bavail;
   return denom > 0 ? Math.round((used / denom) * 100) : null;

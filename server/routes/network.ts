@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { exec } from 'child_process'
 import { classifyCommandFailure, SUDO, SUDOERS_HINT, unavailable } from '../services/unavailable'
+import { isDsm, notOnDsm } from '../services/platform'
 import { promisify } from 'util'
 
 const router = Router()
@@ -184,6 +185,8 @@ router.get('/metrics/listening-ports', async (req, res) => {
 })
 
 router.get('/metrics/firewall-status', async (_req, res) => {
+  // DSM's firewall lives in Control Panel › Security (iptables as root), not ufw.
+  if (isDsm()) return res.json(notOnDsm('the DSM firewall is managed in Control Panel'))
   try {
     const { stdout: ufwCheck } = await run('command -v ufw')
     

@@ -4,6 +4,7 @@ import fs from "fs/promises";
 import path from "path";
 import { PIDECK_LOGS_DIR } from "../config";
 import { classifyCommandFailure } from "./unavailable";
+import { platform, readHwmonTemperature } from "./platform";
 import type {
   SystemInfo,
   LogFile,
@@ -217,12 +218,21 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
   }
 
   private static async getOS(): Promise<string> {
+    const p = platform();
+    if (p.kind === "dsm") return p.os; // Synology: no lsb_release, no /etc/os-release
     try {
       const { stdout } = await execAsync("lsb_release -d | cut -f2");
-      return stdout.trim();
+      if (stdout.trim()) return stdout.trim();
     } catch {
-      return "Unknown OS";
+      // try os-release
     }
+    try {
+      const m = /^PRETTY_NAME="?([^"\n]+)"?/m.exec(await fs.readFile("/etc/os-release", "utf8"));
+      if (m) return m[1];
+    } catch {
+      // nothing else to try
+    }
+    return "Unknown OS";
   }
 
   private static async getKernel(): Promise<string> {
@@ -316,7 +326,11 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       // console.log('vcgencmd method failed:', error instanceof Error ? error.message : String(error));
     }
 
-    // Method 3: Fallback to sensors command
+    // Method 3: hwmon (x86 without thermal_zone0, e.g. a Synology: coretemp "Physical id 0")
+    const hwmon = await readHwmonTemperature().catch(() => null);
+    if (hwmon !== null) return hwmon;
+
+    // Method 4: Fallback to sensors command
     try {
       const { stdout } = await execAsync("sensors | grep -E '(Core 0|Package id 0|Tctl)' | head -1 | awk '{print $3}' | cut -d+ -f2 | cut -d° -f1");
       const temp = parseFloat(stdout.trim());
@@ -334,7 +348,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
     // No thermal zone, vcgencmd or lm-sensors reading on this host: report "unavailable" (null), warn once.
     if (!temperatureWarned) {
       temperatureWarned = true;
-      console.warn('[system] No CPU temperature source (thermal_zone0, vcgencmd, sensors); reporting it as unavailable');
+      console.warn('[system] No CPU temperature source (thermal_zone0, vcgencmd, hwmon, sensors); reporting it as unavailable');
     }
     return null;
   }

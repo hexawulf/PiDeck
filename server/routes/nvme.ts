@@ -1,10 +1,13 @@
 import { Router } from 'express'
 import { exec } from 'child_process'
 import { classifyCommandFailure, hasTool, nvmeDevice, SUDO, SUDOERS_HINT, unavailable } from '../services/unavailable'
+import { isDsm, notOnDsm } from '../services/platform'
 
 const router = Router()
 
 router.get('/api/metrics/nvme', (_req, res) => {
+  // DSM: SMART needs root and Synology's own tools (Storage Manager shows it).
+  if (isDsm()) return res.json(notOnDsm('SMART needs root; see Storage Manager'))
   if (!hasTool('smartctl')) {
     return res.json(unavailable('not-installed', 'smartctl not found (apt install smartmontools).'))
   }

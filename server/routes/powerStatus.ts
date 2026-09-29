@@ -1,10 +1,12 @@
 import { Router } from 'express'
 import { exec } from 'child_process'
 import { hasTool, unavailable } from '../services/unavailable'
+import { isDsm, notOnDsm } from '../services/platform'
 
 const router = Router()
 
 router.get('/api/metrics/power-status', (_req, res) => {
+  if (isDsm()) return res.json(notOnDsm('Raspberry Pi power status'))
   if (!hasTool('vcgencmd')) {
     return res.json(unavailable('not-supported', 'Raspberry Pi only (vcgencmd not found).'))
   }

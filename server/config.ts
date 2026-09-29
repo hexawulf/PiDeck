@@ -255,3 +255,18 @@ export function historyHours(env: NodeJS.ProcessEnv = process.env, warn: (m: str
 export function offlineAlertMinutes(env: NodeJS.ProcessEnv = process.env, warn: (m: string) => void = (m) => console.warn(m)): number {
   return intSetting(env, "PIDECK_OFFLINE_ALERT_MINUTES", 5, 1, 1440, warn);
 }
+
+/**
+ * PIDECK_DISK_MOUNT: the mount point whose usage the sample (overview tile,
+ * history) reports. Default "/". A Synology keeps its data on /volume1 while
+ * "/" is DSM's small system partition. Must be an absolute path without "..".
+ */
+export function diskMount(env: NodeJS.ProcessEnv = process.env, warn: (m: string) => void = (m) => console.warn(m)): string {
+  const raw = env.PIDECK_DISK_MOUNT?.trim();
+  if (!raw) return "/";
+  if (!raw.startsWith("/") || raw.split("/").includes("..") || /[\0\n]/.test(raw)) {
+    warn(`[config] PIDECK_DISK_MOUNT=${JSON.stringify(raw.slice(0, 80))} is not an absolute path; using /`);
+    return "/";
+  }
+  return raw;
+}
