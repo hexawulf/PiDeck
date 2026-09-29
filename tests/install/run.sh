@@ -175,7 +175,7 @@ EOF
 # Run the installer/uninstaller in the sandbox (stdin closed = non-interactive).
 inst() { (cd "$APP" && env -i PATH="$W/bin:$PATH" HOME="$W/home" TMPDIR="$W/tmp" TERM=dumb \
   PIDECK_ETC_DIR="$W/etc" PIDECK_TEST_STATE="$W/state" FAKE_UID="${FAKE_UID:-1000}" \
-  PIDECK_ADD_HOST_TOKEN="${PIDECK_ADD_HOST_TOKEN:-}" \
+  PIDECK_ADD_HOST_TOKEN="${PIDECK_ADD_HOST_TOKEN:-}" PIDECK_CHECK_LOGIN_FILE="${PIDECK_CHECK_LOGIN_FILE:-}" \
   "$APP/scripts/install.sh" "$@" </dev/null > "$W/out" 2>&1); }
 uninst() { (cd "$APP" && env -i PATH="$W/bin:$PATH" HOME="$W/home" TMPDIR="$W/tmp" TERM=dumb \
   PIDECK_ETC_DIR="$W/etc" PIDECK_TEST_STATE="$W/state" FAKE_UID="${FAKE_UID:-1000}" \
@@ -258,6 +258,23 @@ echo "changed-in-ui" > "$W/state/admin"
 inst "${STD[@]}" || bad "re-run after UI change exit $?"
 check "UI-changed password is kept" test "$(cat "$W/state/admin")" = changed-in-ui
 check "…and the health login is skipped, not failed" grep -q 'skipping the login round-trip' "$W/out"
+check "…but not silently: it says so and names --check-login" bash -c "grep -q 'NOT verified' '$W/out' && grep -q -- '--check-login' '$W/out'"
+# --check-login: ask for the UI password (no terminal here → the 0600 file form).
+UIPW="Changed-In-The-UI-42!"
+printf '%s' "$UIPW" | sha256sum | cut -d' ' -f1 | tr -d '\n' > "$W/state/admin"
+if inst "${STD[@]}" --check-login; then bad "--check-login without a terminal or file accepted"; else ok "--check-login without a terminal stops"; fi
+check "…and says why" grep -q 'needs a terminal' "$W/out"
+( umask 077; printf '%s' "$UIPW" > "$W/uipw" )
+PIDECK_CHECK_LOGIN_FILE="$W/uipw" inst "${STD[@]}" --check-login || { bad "--check-login exit $?"; tail -n 5 "$W/out"; }
+check "--check-login with the UI password: login round-trip done" grep -q 'login round-trip: /api/auth/me 200' "$W/out"
+check "…password never printed or logged" bash -c "! grep -qF '$UIPW' '$W/out' && ! grep -qF '$UIPW' \"\$(ls '$W'/home/logs/pideck-install-*.log | sort | tail -n 1)\""
+check "…and the temporary copy is gone" bash -c "! find '$W/tmp' -name check-login | grep -q ."
+( umask 077; printf 'wrong-password-123' > "$W/badpw" )
+if PIDECK_CHECK_LOGIN_FILE="$W/badpw" inst "${STD[@]}" --check-login; then bad "a wrong --check-login password passed"; else ok "a wrong --check-login password fails the health check"; fi
+check "…with the login status" grep -q 'login returned 401' "$W/out"
+chmod 644 "$W/uipw"
+if PIDECK_CHECK_LOGIN_FILE="$W/uipw" inst "${STD[@]}" --check-login; then bad "0644 --check-login file accepted"; else ok "refuses a group/world-readable --check-login file"; fi
+echo "changed-in-ui" > "$W/state/admin"
 inst "${STD[@]}" --reset-password || bad "--reset-password exit $?"
 check "--reset-password replaces it and logs in" bash -c "test \"\$(cat '$W/state/admin')\" != changed-in-ui && grep -q 'login round-trip' '$W/out'"
 # Uninstall keeps data; --purge removes it.
@@ -334,6 +351,20 @@ check "prints the rollback command" grep -q 'git reset --keep' "$W/out"
 line() { grep -nx "$1" "$W/state/calls" | head -n 1 | cut -d: -f1; }
 check "order: npm ci → pg_dump → db:migrate → build → restart" bash -c "a=\$(grep -n '^npm ci' '$W/state/calls' | cut -d: -f1); b=\$(grep -nx 'helper db-dump' '$W/state/calls' | cut -d: -f1); c=\$(grep -nx migrate '$W/state/calls' | cut -d: -f1); d=\$(grep -n '^npm run build' '$W/state/calls' | cut -d: -f1); e=\$(grep -n '^pm2 restart pideck' '$W/state/calls' | cut -d: -f1); [ -n \"\$a\" ] && [ \"\$a\" -lt \"\$b\" ] && [ \"\$b\" -lt \"\$c\" ] && [ \"\$c\" -lt \"\$d\" ] && [ \"\$d\" -lt \"\$e\" ]"
 check "database dump in ~/backups (0600) and the restore command printed" bash -c "f=\$(ls '$W'/home/backups/pideck-db-*.dump) && test \"\$(stat -c %a \"\$f\")\" = 600 && grep -q 'pg_restore --clean --if-exists' '$W/out'"
+check "the build records its commit in dist/.build-commit" bash -c "test \"\$(cat '$APP/dist/.build-commit')\" = \"\$(git -C '$APP' rev-parse HEAD)\""
+# Someone pulls by hand before --update: the rollback must target the commit that built dist/.
+built="$(git -C "$APP" rev-parse --short HEAD)"
+( cd "$W/src" && echo "// v2b" >> ecosystem.config.cjs && git -c user.name=t -c user.email=t@t commit -qam v2b )
+git -C "$APP" pull -q --ff-only
+pulled="$(git -C "$APP" rev-parse --short HEAD)"
+: > "$W/state/calls"
+inst --update || { bad "update after a manual pull exit $?"; tail -n 20 "$W/out"; }
+check "manual pull first: says the running build is older" grep -q "running build is from $built" "$W/out"
+check "…and the rollback goes to the built commit, not the pulled HEAD" bash -c "grep -q 'git reset --keep $built ' '$W/out' && ! grep -q 'git reset --keep $pulled ' '$W/out'"
+check "…then dist/.build-commit moves to the new build" bash -c "test \"\$(git -C '$APP' rev-parse --short \"\$(cat '$APP/dist/.build-commit')\")\" = '$pulled'"
+echo "not-a-commit" > "$APP/dist/.build-commit"
+inst --update || bad "update with a bad .build-commit exit $?"
+check "a bad dist/.build-commit falls back to HEAD" grep -q "git reset --keep $pulled " "$W/out"
 ( cd "$W/src" && echo "// v3" >> ecosystem.config.cjs && git -c user.name=t -c user.email=t@t commit -qam v3 )
 touch "$W/state/migrate-fail"; : > "$W/state/calls"
 if inst --update; then bad "a failing migration was accepted"; else ok "a failing migration stops the update"; fi

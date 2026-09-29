@@ -50,6 +50,8 @@ TOKEN_FILE=""
 ADD_LABEL=""
 REPLACE=0
 NO_DB_BACKUP="${PIDECK_NO_DB_BACKUP:-0}"
+CHECK_LOGIN=0
+CHECK_LOGIN_FILE="${PIDECK_CHECK_LOGIN_FILE:-}"
 
 usage() {
   cat <<'EOF'
@@ -74,6 +76,9 @@ PiDeck installer — scripts/install.sh [options]
   --reset-password          replace the admin password even if it was changed in the UI
   --public-url URL          where you open PiDeck (shown in the final message)
   --skip-health             don't run the health check
+  --check-login             when the admin password was changed in the UI, ask for it
+                            (hidden) and still test the login round-trip
+                            (non-interactive: PIDECK_CHECK_LOGIN_FILE=<0600 file>)
   -h, --help                this help
 
 Multi-host (docs/INSTALL.md › Add another machine):
@@ -119,6 +124,7 @@ while [ $# -gt 0 ]; do
     --reset-password) RESET_PW=1 ;;
     --public-url) PUBLIC_URL="${2:?}"; shift ;;
     --skip-health) SKIP_HEALTH=1 ;;
+    --check-login) CHECK_LOGIN=1 ;;
     --agent) MODE=agent ;;
     --agent-bind) AGENT_BIND="${2:?--agent-bind needs an IP}"; shift ;;
     --agent-port) AGENT_PORT="${2:?--agent-port needs a port}"; shift ;;
@@ -613,6 +619,24 @@ admin_password() {
 build() {
   step "Build"
   qrun "npm run build" npm run build
+  # The commit this dist/ was built from: --update's rollback target, even
+  # when someone ran git pull by hand before --update.
+  if [ "$DRY_RUN" = 1 ]; then dry "record the built commit in dist/.build-commit"; return; fi
+  if [ -d "$APP_DIR/dist" ]; then
+    git -C "$APP_DIR" rev-parse HEAD > "$APP_DIR/dist/.build-commit"
+    ok "dist/.build-commit = $(git -C "$APP_DIR" rev-parse --short HEAD)"
+  fi
+}
+
+# The commit the running dist/ was built from (dist/.build-commit), else HEAD.
+build_commit() {
+  local c=""
+  [ -f "$APP_DIR/dist/.build-commit" ] && c="$(tr -d '[:space:]' < "$APP_DIR/dist/.build-commit")"
+  if [[ "$c" =~ ^[0-9a-f]{40}$ ]] && git -C "$APP_DIR" cat-file -e "$c^{commit}" 2>/dev/null; then
+    git -C "$APP_DIR" rev-parse --short "$c"
+  else
+    git -C "$APP_DIR" rev-parse --short HEAD
+  fi
 }
 
 # ── 7. service ─────────────────────────────────────────────────────────
@@ -701,18 +725,43 @@ health() {
   [ "$code" = 204 ] || die "/healthz did not answer 204 within 60s (see the service logs)"
   ok "/healthz 204"
 
+  local pwf="$PW_FILE"
   if [ "$(helper admin-state "$PW_FILE")" != matches ]; then
-    info "admin password differs from $PW_FILE (changed in the UI): skipping the login round-trip"
-    return
+    if [ "$CHECK_LOGIN" != 1 ]; then
+      warn "admin password differs from $PW_FILE (changed in the UI): skipping the login round-trip — NOT verified; re-run with --check-login to test it"
+      return
+    fi
+    pwf="$TMP_DIR/check-login"
+    if [ -n "$CHECK_LOGIN_FILE" ]; then
+      [ -f "$CHECK_LOGIN_FILE" ] || die "PIDECK_CHECK_LOGIN_FILE $CHECK_LOGIN_FILE not found"
+      [[ "$(stat -c %a "$CHECK_LOGIN_FILE")" =~ 00$ ]] || die "$CHECK_LOGIN_FILE must not be readable by group/others (chmod 600)"
+      ( umask 077; cp "$CHECK_LOGIN_FILE" "$pwf" )
+    elif [ -r /dev/tty ] && { : </dev/tty; } 2>/dev/null; then
+      local typed=""
+      { read -r -s -p "  Admin password (to test the login; input hidden): " typed </dev/tty; } 2>/dev/null || typed=""
+      echo
+      [ -n "$typed" ] || die "--check-login: no password entered"
+      ( umask 077; printf '%s' "$typed" > "$pwf" )
+      typed=""
+    else
+      die "--check-login needs a terminal to ask for the password (or PIDECK_CHECK_LOGIN_FILE=<0600 file>)"
+    fi
   fi
-  # Login round-trip without the password or cookie ever in argv: body and
-  # headers come from 0600 files. Behind TLS the cookie is Secure, so ask the
-  # app to act as if proxied over HTTPS and hand the cookie back by header.
+  login_roundtrip "$base" "$pwf"
+  [ "$pwf" = "$PW_FILE" ] || rm -f "$pwf"
+}
+
+# Login round-trip without the password or cookie ever in argv: body and
+# headers come from 0600 files. Behind TLS the cookie is Secure, so ask the
+# app to act as if proxied over HTTPS and hand the cookie back by header.
+login_roundtrip() { # login_roundtrip BASE PASSWORD_FILE
+  local base="$1" pwf="$2" code
   local body="$TMP_DIR/login.json" hdr="$TMP_DIR/headers" cookie="$TMP_DIR/cookie" proto=()
-  helper login-body "$PW_FILE" "$body"
+  helper login-body "$pwf" "$body"
   [ "$(env_get PIDECK_INSECURE_HTTP)" = 1 ] || proto=(-H "X-Forwarded-Proto: https")
   code="$(curl -s -o /dev/null -D "$hdr" -w '%{http_code}' "${proto[@]}" -H 'Content-Type: application/json' --data-binary "@$body" "$base/api/auth/login")"
-  [ "$code" = 200 ] || die "login returned $code"
+  rm -f "$body"
+  [ "$code" = 200 ] || die "login returned $code$([ "$pwf" != "$PW_FILE" ] && echo " (wrong password?)")"
   ( umask 077; printf 'Cookie: %s\n' "$(sed -n 's/^[Ss]et-[Cc]ookie: \(pideck\.sid=[^;]*\).*/\1/p' "$hdr" | tr -d '\r')" > "$cookie" )
   local me; me="$(curl -s "${proto[@]}" -H "@$cookie" "$base/api/auth/me")"
   [[ "$me" == *'"authenticated":true'* ]] || die "logged in but /api/auth/me is not authenticated"
@@ -1063,7 +1112,11 @@ update() {
   detect_service
   step "Update ($([ "$agent" = 1 ] && echo "agent, $AGENT_UNIT_NAME, port $AGENT_PORT" || echo "$SERVICE, port $PORT"))"
   local prev backup="$HOME/backups/pideck-dist-$TS"
-  prev="$(git -C "$APP_DIR" rev-parse --short HEAD)"
+  prev="$(build_commit)"
+  local head; head="$(git -C "$APP_DIR" rev-parse --short HEAD)"
+  if [ "$prev" != "$head" ]; then
+    info "the running build is from $prev (dist/.build-commit) but the checkout is at $head (pulled by hand?): rollback goes to $prev"
+  fi
   if [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=no)" ]; then
     die "the checkout has local changes; commit or stash them first (git status)"
   fi

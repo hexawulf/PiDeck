@@ -119,6 +119,7 @@ backed up to `<file>.bak.<timestamp>`.
 | `--reset-password` | | Replace the admin password even if it was changed in Settings. |
 | `--public-url URL` | `PIDECK_PUBLIC_URL` | URL shown in the final message. |
 | `--skip-health` | | Skip the health check. |
+| `--check-login` | `PIDECK_CHECK_LOGIN_FILE` | The admin password was changed in the UI (so `~/.config/pideck/admin-password` is stale): ask for it (hidden) and still test the login round-trip. For scripts, the env form names a 0600 file holding it. Without this flag the login test is skipped with a warning. |
 | | `PIDECK_DB_NAME`, `PIDECK_DB_USER` | Local database and role names (default `pideck`). |
 | | `NO_COLOR=1` | No colours (also automatic when output isn't a terminal). |
 | `--agent` | | Install this machine as a read-only agent ([below](#add-another-machine-agent)). |
@@ -299,6 +300,11 @@ service, runs the health check and prints the exact rollback command, like:
 cd ~/PiDeck && git reset --keep <previous> && npm ci && rm -rf dist \
   && cp -a ~/backups/pideck-dist-<ts>/dist dist && pm2 restart pideck
 ```
+
+`<previous>` is the commit the running `dist/` was built from, recorded by
+every installer build in `dist/.build-commit` — not the checkout's `HEAD`,
+which is already the new code if someone ran `git pull` by hand first (the
+installer says so when the two differ).
 
 ### Database migrations and backups
 
