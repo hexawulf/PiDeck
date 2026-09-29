@@ -242,6 +242,14 @@ rg -n "'/api/" server/routes
 - **Never** import `./storage`, `./runtime` or call `getDb()` in code the agent loads; DB access is lazy
   (`getDb()` inside `services/history.ts` / `services/alerts.ts`). `tests/unit/agent.test.ts` fails if agent
   mode touches it.
+- **Remote logs** (2.6, `server/services/agent-logs/`): `PIDECK_AGENT_LOGS=on` → `capabilities.logs` and
+  `GET /api/agent/logs` + `/api/agent/logs/:id?lines=&filter=`. `sources.ts` (config, list, tail: 200 default,
+  2,000 lines / 1 MB JSON max, lines cut at 8 kB, ANSI stripped), `redact.ts` (runs **before** the filter, so
+  a filter can't probe a secret), `docker.ts` (node http on the socket; `assertAllowed` refuses everything but
+  `GET /containers/json?all=1` and `GET /containers/<id>/logs?stdout=1&stderr=1&tail=N&timestamps=1`; streaming
+  demux, TTY raw). Journald via `execFile("journalctl", [...])`, never a shell. The hub side is
+  `agentLogsPathFromHubUrl` (`agent-api.ts`: only `lines`/`filter`, re-encoded) and `hosts.ts` passes the agent's
+  400/404/409/503 with the message only; `routes.ts` logs `remoteLogAuditLine` per read.
 - `GET /api/agent/sample` (2.5+, `capabilities.sample: true`) returns **raw counters only**
   (`readCounters()` in `services/counters.ts`: jiffies, sectors, bytes, boot id). The hub computes rates.
 - Adding a metric for remote hosts: reuse/add its handler, add the path to `AGENT_PATHS` (both sides use it),
@@ -270,7 +278,8 @@ rg -n "'/api/" server/routes
   work while migrations are pending.
 - **Off** when `NODE_ENV=test` or `PIDECK_SAMPLER=off` (set by `scripts/e2e-server.sh`: the E2E
   build shares the production database). With it off, no history rows and no alerts are produced.
-- APIs (`server/routes/fleet.ts`, hub only, never proxied): `/api/history?host&range`, `/api/alerts?host`,
+- APIs (`server/routes/fleet.ts`, hub only, never proxied): `/api/history?host&range` (3d/7d bucket-averaged by
+  `downsampleRows`), `/api/alerts?host`,
   `/api/overview`; `/api/system/history` and `/api/system/alerts` stay as the local 2.4 aliases.
 - `/api/system/info` is read-only; disk/network rates are deltas against a per-caller baseline
   (`createRateBaseline()`), so the sampler and browser polls don't share one.

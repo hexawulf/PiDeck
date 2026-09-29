@@ -478,6 +478,62 @@ hub itself.
 |---|---|---|
 | `PIDECK_DISK_MOUNT` | `/` | Mount whose usage the hub samples (overview tile, history). `/volume1` on a Synology. |
 
+### Remote logs (2.6)
+
+An agent can show chosen logs in the hub's Logs tab, read-only. It is **off
+by default**; turn it on per agent in its `.env`, then restart the agent
+(`sudo systemctl restart pideck-agent`, or the DSM start script). The hub
+shows the host's Logs tab once the agent reports `capabilities.logs`
+(within ~15 s).
+
+| Key (agent) | Default | Purpose |
+|---|---|---|
+| `PIDECK_AGENT_LOGS` | off | `on` serves `/api/agent/logs`. |
+| `PIDECK_HOST_LOGS` | – | Files, same `[id:]Label=/absolute/path,…` syntax as the hub. `%Y`, `%m`, `%d` are filled in with today's date; a `*`/`?` in the file name picks the newest match. Only the live file is read (never `.1`, `.gz`, `.xz` …); symlinks are refused. |
+| `PIDECK_AGENT_JOURNAL_UNITS` | – | journald units, comma-separated (`journalctl -u`); `user:<unit>` for a user unit (`--user-unit`). Not on DSM. |
+| `PIDECK_AGENT_DOCKER_LOGS` | off | `on` lists **every** container (running and stopped; new ones appear by themselves) and tails its logs. |
+| `PIDECK_AGENT_DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket. |
+
+Example (piapps2):
+```
+PIDECK_AGENT_LOGS=on
+PIDECK_HOST_LOGS=syslog:Syslog=/var/log/syslog,auth:Auth log=/var/log/auth.log,agentmail:Agentmail send=/home/zk/logs/agentmail-send.log,wulfreport:Wulfreport=/home/zk/logs/wulfreport/%Y-%m.log
+PIDECK_AGENT_JOURNAL_UNITS=pideck-agent
+PIDECK_AGENT_DOCKER_LOGS=on
+```
+Example (DS920+, after `synogroup --memberadd log zk`):
+```
+PIDECK_AGENT_LOGS=on
+PIDECK_HOST_LOGS=messages:Messages=/var/log/messages,agent:PiDeck agent=/var/services/homes/zk/logs/pideck-agent-%Y%m%d.log
+PIDECK_AGENT_DOCKER_LOGS=on
+```
+
+How it behaves:
+- **Permissions**: the agent reads as its own user. A file it can't read is
+  listed greyed with a hint (Ubuntu: add the user to `adm`; DSM: `log`); a
+  journal it can't read says `systemd-journal`/`adm`. Restart the agent
+  after changing groups.
+- **Docker** is reached through the Engine API on the socket (no `docker`
+  CLI) with exactly two read-only calls: list containers
+  (`GET /containers/json?all=1`) and tail one container's logs
+  (`GET /containers/<id>/logs?stdout=1&stderr=1&tail=N&timestamps=1`). The
+  client refuses anything else before sending it: being in the `docker`
+  group is root-equivalent.
+- **Redaction** happens on the agent, before anything leaves the host and
+  before the filter runs: `Authorization:` header values, `Bearer …`
+  tokens, values of keys ending in `password`, `passwd`, `passphrase`,
+  `token`, `secret` or `api_key`/`apikey` (after `=` or `:`, quoted values
+  whole), and the password in `scheme://user:password@host`. They show as
+  `[REDACTED]` (highlighted in the UI, with a count). It is a safety net,
+  not a guarantee: keep secrets out of logs where you can.
+- **Limits**: 200 lines by default, at most 2,000 lines and 1 MB per
+  answer; lines over 8 kB are cut; the UI says "truncated" when anything
+  was cut. Filters are plain text, or `/regex/` (guarded against
+  catastrophic patterns). The tail refreshes at the header's speed (no
+  streaming).
+- **Audit**: the hub logs one line per read:
+  `[logs] remote read host=<id> source=<source> user=<id> ip=<ip> status=<code>`.
+
 ### Synology DSM (agent only, by hand)
 
 A Synology NAS (tested: DS920+, DSM 7.4.1, x86_64) runs the agent, not the

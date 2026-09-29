@@ -86,6 +86,10 @@ is the default layout; saved layouts get new widgets appended at the bottom auto
   `/api/system/history` (local) or `/api/history?host=<id>&range=24h` (`useHistory`).
 - Registry: every widget declares `hosts: "local" | "any"`; `widgetsFor(isLocal)` is what a host's dashboard
   and visibility list offer. Local-only = Quick Actions (agents are read-only); history charts are "any" (H2).
+- H3: remote hosts get a Logs tab when `useHostSummary(id).logs` (`remoteTabs(logs)` in `host-path.ts` gates
+  routes, nav, switcher, palette, `g l`); it renders `components/remote-logs.tsx` (lazy chunk), which polls the
+  tail with `useRefetch`. Remote pins share the `pins` section with ids `h:<host>:<source>` (`remotePinId`); the
+  hub's Logs tab filters them out. Charts offer 3d/7d via `rangesFor(user.historyHours)`.
 - H2: alert toasts poll `/api/alerts?host=all` and name the host (`alertText` in `hooks/use-alerts.ts`); the
   `/hosts` overview (`pages/hosts.tsx`, lazy chunk) reads `/api/overview`; `g o` / palette / switcher "All
   hosts" open it. An agent < 2.5 (`history: "unsupported"`) gets an amber dot ("update the agent for history").

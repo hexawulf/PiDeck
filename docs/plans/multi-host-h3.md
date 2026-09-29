@@ -237,3 +237,25 @@ From TODOS.md (added at the 2.5.0 release):
 > or deploy. Report: commits, new env vars, redaction patterns with tests,
 > test counts before/after, bundle numbers, agent RSS, deviations, open
 > questions, manual rollout steps in order.
+
+## H3 landed (branch `feat/multi-host-h3`, 2026-09-29)
+Track A step 3, Track B (incl. Docker logs) and Track D; Track C untouched.
+- **A:** hwmon temperature fallback (`server/services/platform.ts`), DSM
+  detection from `/etc.defaults/VERSION`, "Not available on DSM" for
+  NVMe/SMART, firewall, power status and apt update; `PIDECK_DISK_MOUNT`;
+  docs/INSTALL.md "Synology DSM".
+- **B:** `server/services/agent-logs/` (sources, redaction, Docker client);
+  hub proxy `agentLogsPathFromHubUrl` + audit line; `components/remote-logs.tsx`.
+  E2E uses a fake Docker socket served by the spec.
+- **D:** `dist/.build-commit` rollback target, `--check-login`
+  (`PIDECK_CHECK_LOGIN_FILE` for scripts), 3d/7d chart ranges.
+
+**Deviations / notes**
+- Redaction is always on (no switch to turn it off); the plan said "on by
+  default".
+- The agent's journald readability check runs `journalctl -u <unit> -n 1`
+  when the source list is fetched (list is polled every 60 s by the UI).
+- Remote pins live in the existing `pins` prefs section as `h:<host>:<source>`
+  (no prefs schema change).
+- No systemd-based widget exists, so "systemd widgets" on DSM needed no code;
+  journald sources say "Not available on DSM".
