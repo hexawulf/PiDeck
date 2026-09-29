@@ -520,6 +520,27 @@ check "uninstall: drop-in removed, copy kept" bash -c "test ! -e '$dropin' && ls
 check "uninstall: deletes exactly the interface rule" grep -qE '^sudo .*/ufw delete allow in on wg-pideck from 10.77.0.1 to any port 5016 proto tcp$' "$W/state/calls"
 cleanup
 
+new_sandbox "--agent --prebuilt: no npm, only a bundle built from this commit"
+inst "${AGENT[@]}" --prebuilt; rc=$?
+check "no bundle: refused before anything is written" bash -c "test $rc != 0 && grep -q 'no dist/index.js' '$W/out' && test ! -e '$APP/.env' && test ! -e '$W/etc/systemd/system/pideck-agent.service'"
+inst "${AGENT[@]}" --prebuilt --dry-run || bad "dry run exit $?"
+check "dry run: warns instead of stopping" grep -q 'no dist/index.js; unpack the bundle' "$W/out"
+mkdir -p "$APP/dist" "$APP/node_modules/express"; echo bundle > "$APP/dist/index.js"
+echo 0000000000000000000000000000000000000000 > "$APP/dist/.build-commit"
+inst "${AGENT[@]}" --prebuilt; rc=$?
+check "bundle from another commit: refused, nothing written" bash -c "test $rc != 0 && grep -q 'dist/ is from 0000000 but the checkout is at' '$W/out' && test ! -e '$APP/.env'"
+git -C "$APP" rev-parse HEAD > "$APP/dist/.build-commit"
+: > "$W/state/calls"
+inst "${AGENT[@]}" --prebuilt || { bad "install exit $?"; tail -n 20 "$W/out"; }
+check "installed without npm ci or build; the bundle is kept as is" bash -c "! grep -q '^npm ' '$W/state/calls' && grep -qx bundle '$APP/dist/index.js' && grep -q 'agent answers with the new token' '$W/out'"
+inst --yes --prebuilt; rc=$?
+check "refused: --prebuilt without --agent (exit 64)" test "$rc" = 64
+check "prebuilt marker written (0600)" test "$(mode "$W/home/.config/pideck/agent-prebuilt")" = 600
+: > "$W/state/calls"
+inst --update; rc=$?
+check "--update refused on a prebuilt agent, nothing run" bash -c "test $rc != 0 && grep -q 'runs a prebuilt bundle' '$W/out' && ! grep -qE '^(npm|git|systemctl)' '$W/state/calls'"
+cleanup
+
 new_sandbox "--agent on an unknown arch warns but goes on"
 echo riscv64 > "$W/state/arch"
 inst "${AGENT[@]}" --dry-run || bad "dry run exit $?"

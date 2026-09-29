@@ -129,6 +129,7 @@ backed up to `<file>.bak.<timestamp>`.
 | `--ufw-interface IFACE` | | With `--ufw-allow-from`: only on this interface (`ufw allow in on IFACE from IP …`), e.g. `wg-pideck`. |
 | `--after UNIT` | | With `--agent`: start after (and pull in) `UNIT`, e.g. `wg-quick@wg-pideck` when the agent binds to a tunnel address. Written to a systemd drop-in, kept by re-runs and `--update`. |
 | `--memory-max SIZE` | | With `--agent`: hard memory cap (`MemoryMax=`, e.g. `160M`, at least `96M`), same drop-in. |
+| `--prebuilt` | | With `--agent`: no `npm ci`, no build; use a bundle (`dist/` + runtime `node_modules/`) built on another host from the same commit. For small VPSes; `--update` is then refused ([below](#small-vps-prebuilt-bundle)). |
 | `--rotate-token` | | With `--agent`: new token; the old one stops working. |
 | `--add-host ID --url URL` | `PIDECK_ADD_HOST_TOKEN` | On the hub: add an agent (token from a hidden prompt, `--token-file`, or the env). |
 | `--label TEXT` / `--replace` / `--token-file F` | | With `--add-host`: switcher name / replace an existing host / read the token from a 0600 file. |
@@ -557,6 +558,33 @@ routes exactly one /32 to the other.
    `PIDECK_HOST_TIMEOUT_<ID>` (the default 5 s covers ~250 ms round trips).
 6. **Check** from outside the tunnel (the VPS's public address, another LAN
    machine): port 5016 must not answer.
+
+#### Small VPS: prebuilt bundle
+
+`npm ci` and the build each peak at about 650 MB, too much next to a VPS's
+real job on 1–2 GB. Build a bundle on a roomier machine with the same CPU
+architecture and OS family (x86_64 glibc for the usual VPS), from the
+commit the VPS checkout is at:
+
+```bash
+# build host, in a separate worktree (never the live checkout)
+git -C ~/projects/PiDeck worktree add --detach ~/projects/PiDeck-bundle <commit>
+cd ~/projects/PiDeck-bundle
+npm ci && npm run build && git rev-parse HEAD > dist/.build-commit
+rm -rf node_modules && npm ci --omit=dev
+tar czf ~/pideck-agent-bundle-$(git rev-parse --short HEAD).tgz dist node_modules
+```
+
+On the VPS: clone, `git checkout <commit>` (or be on `main` at it), unpack
+the bundle in the checkout (`tar xzf …`), then run the agent install with
+`--prebuilt` (it refuses a bundle built from another commit). Native modules
+(bcrypt, bufferutil) ship prebuilt binaries per platform, so the bundle runs
+on another Node version too.
+
+**Updating** such an agent: `install.sh --update` refuses (it would build).
+Instead back up `dist/` and `node_modules/`, `git pull --ff-only`, unpack
+the bundle for the new commit, and re-run `install.sh --agent --prebuilt`:
+it keeps `.env`, the token and the drop-in, restarts the agent and checks it.
 
 **Remove a VPS**: on the hub, remove the host (see above) and its `[Peer]`
 (`systemctl reload wg-quick@wg-pideck`). On the VPS: `scripts/uninstall.sh`

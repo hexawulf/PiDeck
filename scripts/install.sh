@@ -49,6 +49,7 @@ UFW_FROM=""
 UFW_IFACE=""
 AGENT_AFTER=""
 AGENT_MEMORY_MAX=""
+PREBUILT=0
 ROTATE_TOKEN=0
 ADD_HOST=""
 ADD_URL=""
@@ -102,6 +103,9 @@ Multi-host (docs/INSTALL.md › Add another machine):
                             wg-quick@wg-pideck when it binds to a tunnel address
   --memory-max SIZE         hard memory cap for the agent (systemd MemoryMax=,
                             e.g. 160M; at least 96M)
+  --prebuilt                with --agent: no npm ci, no build; use the node_modules/
+                            and dist/ unpacked from a bundle built on another host
+                            (small VPS: npm ci + build peak ~650 MB)
   --rotate-token            with --agent: make a new token (the old one stops working)
   --add-host ID --url URL   on the hub: add an agent (id [a-z0-9-]{1,32}); the
                             token is read from a hidden prompt, --token-file F
@@ -146,6 +150,7 @@ while [ $# -gt 0 ]; do
     --ufw-interface) UFW_IFACE="${2:?--ufw-interface needs an interface}"; shift ;;
     --after) AGENT_AFTER="${2:?--after needs a systemd unit}"; shift ;;
     --memory-max) AGENT_MEMORY_MAX="${2:?--memory-max needs a size}"; shift ;;
+    --prebuilt) PREBUILT=1 ;;
     --rotate-token) ROTATE_TOKEN=1 ;;
     --add-host) MODE=add-host; ADD_HOST="${2:?--add-host needs an id}"; shift ;;
     --url) ADD_URL="${2:?--url needs a URL}"; shift ;;
@@ -186,8 +191,8 @@ if [ "$MODE" = add-host ]; then
     echo "--label: up to 64 printable characters, no , or =" >&2; exit 64
   fi
 fi
-if [ "$MODE" != agent ] && { [ -n "$UFW_FROM$UFW_IFACE$AGENT_AFTER$AGENT_MEMORY_MAX" ] || [ "$ROTATE_TOKEN" = 1 ]; }; then
-  echo "--ufw-allow-from, --ufw-interface, --after, --memory-max and --rotate-token go with --agent" >&2; exit 64
+if [ "$MODE" != agent ] && { [ -n "$UFW_FROM$UFW_IFACE$AGENT_AFTER$AGENT_MEMORY_MAX" ] || [ "$ROTATE_TOKEN" = 1 ] || [ "$PREBUILT" = 1 ]; }; then
+  echo "--ufw-allow-from, --ufw-interface, --after, --memory-max, --prebuilt and --rotate-token go with --agent" >&2; exit 64
 fi
 if [ -n "$UFW_IFACE" ]; then
   [ -n "$UFW_FROM" ] || { echo "--ufw-interface goes with --ufw-allow-from" >&2; exit 64; }
@@ -844,6 +849,8 @@ AGENT_MARKER="$CONFIG_DIR/install-agent"
 # --after / --memory-max live in a drop-in, so --update (which re-renders the
 # unit from the template) keeps them.
 AGENT_DROPIN="$ETC/systemd/system/$AGENT_UNIT_NAME.service.d/10-install.conf"
+# Written by a --prebuilt install: --update (npm ci + build) is refused there.
+AGENT_PREBUILT_MARKER="$CONFIG_DIR/agent-prebuilt"
 AGENT_TOKEN=""          # set only when this run made a (new) token
 AGENT_TOKEN_FILE=""
 
@@ -915,6 +922,7 @@ agent_plan() {
   [ -n "$UFW_FROM" ] && steps+=("ufw $(ufw_rule_args "$UFW_FROM" "$AGENT_PORT" "$UFW_IFACE" | tr '\n' ' ' | sed 's/ $//')")
   step "Plan (agent)"
   info "read-only agent on $AGENT_BIND:$AGENT_PORT · no database, no login, no UI"
+  [ "$PREBUILT" = 1 ] && info "--prebuilt: uses the unpacked node_modules/ + dist/ (no npm ci, no build on this host)"
   info "These steps use sudo:"; local s; for s in "${steps[@]}"; do info "  • $s"; done
   if [ "$DRY_RUN" != 1 ] && ! confirm "Continue?" y; then die "stopped by user"; fi
 }
@@ -1069,6 +1077,22 @@ agent_summary() {
   fi
 }
 
+# --prebuilt: node_modules/ and dist/ come from a bundle built elsewhere
+# (docs/INSTALL.md › Agents over WireGuard). Accept them only when dist/ was
+# built from exactly this checkout's commit and the runtime packages are there.
+prebuilt_check() {
+  step "Prebuilt (no npm ci, no build)"
+  # A dry run reports what is missing instead of stopping.
+  local fail=die; [ "$DRY_RUN" = 1 ] && fail=warn
+  local want have=""
+  want="$(git -C "$APP_DIR" rev-parse HEAD)"
+  [ -f "$APP_DIR/dist/.build-commit" ] && have="$(tr -d '[:space:]' < "$APP_DIR/dist/.build-commit")"
+  if [ ! -f "$APP_DIR/dist/index.js" ]; then $fail "--prebuilt: no dist/index.js; unpack the bundle into $APP_DIR first"; return 0; fi
+  if [ "$have" != "$want" ]; then $fail "--prebuilt: dist/ is from ${have:0:7} but the checkout is at ${want:0:7}; unpack the bundle built from ${want:0:7}"; return 0; fi
+  if [ ! -d "$APP_DIR/node_modules/express" ]; then $fail "--prebuilt: node_modules/ is missing (the bundle holds it: npm ci --omit=dev on the build host)"; return 0; fi
+  ok "dist/ built from $(git -C "$APP_DIR" rev-parse --short HEAD), node_modules/ present"
+}
+
 # The agent can only listen on an address this host has. A tunnel address
 # (wg-pideck) exists only while the tunnel is up: bring it up first.
 bind_check() {
@@ -1091,11 +1115,19 @@ agent_install() {
   dropin_merge
   preflight
   bind_check
+  # Before anything is written: a wrong or missing bundle changes nothing.
+  [ "$PREBUILT" = 1 ] && prebuilt_check
   agent_plan
   packages
   agent_env
-  deps
-  build
+  if [ "$PREBUILT" = 1 ]; then
+    if [ "$DRY_RUN" = 1 ]; then dry "write $AGENT_PREBUILT_MARKER (--update then refuses to npm ci/build here)"
+    else install -d -m 700 "$CONFIG_DIR"; printf 'PREBUILT=1\nSINCE=%s\n' "$TS" > "$AGENT_PREBUILT_MARKER"; chmod 600 "$AGENT_PREBUILT_MARKER"; fi
+  else
+    deps; build
+    # Built here now: --update may build here again.
+    if [ -f "$AGENT_PREBUILT_MARKER" ] && [ "$DRY_RUN" != 1 ]; then rm -f "$AGENT_PREBUILT_MARKER"; info "built on this host: removed $AGENT_PREBUILT_MARKER"; fi
+  fi
   agent_service
   sudoers
   agent_firewall
@@ -1234,6 +1266,9 @@ update() {
     AGENT_PORT="$(env_get PIDECK_AGENT_PORT)"; AGENT_PORT="${AGENT_PORT:-5016}"
     AGENT_BIND="$(env_get PIDECK_AGENT_BIND)"; AGENT_BIND="${AGENT_BIND:-127.0.0.1}"
     SERVICE=systemd
+    if [ -f "$AGENT_PREBUILT_MARKER" ]; then
+      die "this agent runs a prebuilt bundle ($AGENT_PREBUILT_MARKER): --update would npm ci + build here. Update it with git pull --ff-only, the new bundle, then install.sh --agent --prebuilt (docs/INSTALL.md › Agents over WireGuard)"
+    fi
   fi
   PORT="${PORT:-$(env_get PORT)}"; PORT="${PORT:-5006}"
   detect_service
