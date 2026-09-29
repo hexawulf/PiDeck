@@ -43,3 +43,11 @@ export function formatMB(mb: number): string {
   if (mb >= 1024) return `${formatNumber(mb / 1024)} GB`;
   return `${formatNumber(mb)} MB`;
 }
+
+const UPTIME_UNITS: Record<string, string> = { year: "y", week: "w", day: "d", hour: "h", minute: "m" };
+
+/** `uptime -p` text ("up 7 weeks, 5 days, 21 hours, 8 minutes") → its two largest units ("7w 5d"); unknown text is returned trimmed. */
+export function compactUptime(text: string): string {
+  const parts = [...text.matchAll(/(\d+)\s+(year|week|day|hour|minute)s?/g)].map((m) => `${m[1]}${UPTIME_UNITS[m[2]]}`);
+  return parts.length ? parts.slice(0, 2).join(" ") : text.replace(/^up\s+/, "").trim();
+}

@@ -108,7 +108,7 @@ export function PaletteButton({ onOpen }: { onOpen: () => void }) {
       className="inline-flex h-9 items-center gap-2 rounded-md border border-pi-border px-2 text-pi-text hover:bg-pi-card-hover"
     >
       <Search className="h-5 w-5" aria-hidden />
-      <kbd className="hidden rounded border border-pi-border px-1 font-mono text-xs text-pi-text-muted xl:inline">Ctrl K</kbd>
+      <kbd className="hidden whitespace-nowrap rounded border border-pi-border px-1 font-mono text-xs text-pi-text-muted xl:inline">Ctrl K</kbd>
     </button>
   );
 }

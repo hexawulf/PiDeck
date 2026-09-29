@@ -16,7 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { DbMigrationBanner } from "@/components/db-migration-banner";
 import { HostSwitcher } from "@/components/host-switcher";
-import { useHost, useHostSummary } from "@/hosts/HostProvider";
+import { useHost, useHostSummary, useHosts } from "@/hosts/HostProvider";
+import { compactUptime } from "@/lib/format";
 import { hostHref, remoteTabs } from "@/hosts/host-path";
 import { widgetQueryKey } from "@/widgets/useWidgetQuery";
 import Dashboard from "@/pages/dashboard";
@@ -82,6 +83,7 @@ export default function AppShell({ tab }: { tab: TabId | "hosts" }) {
   const refreshAll = useRefreshAll();
   const host = useHost();
   const hostSummary = useHostSummary(host.id);
+  const multiHost = (useHosts().data?.length ?? 0) > 1; // the host switcher is shown (same rule as HostSwitcher)
   const hostLabel = hostSummary?.label ?? host.id;
   const reboot = useQuery<{ rebootRequired?: boolean }>({ queryKey: widgetQueryKey(host.id, "/api/reboot-check") });
   const commands = useCommandCenter();
@@ -116,7 +118,8 @@ export default function AppShell({ tab }: { tab: TabId | "hosts" }) {
                     PiDeck
                   </Link>
                 </h1>
-                <p className="hidden text-sm pi-text-muted sm:block">Raspberry Pi Admin</p>
+                {/* With several hosts the switcher names the machine; the subtitle would only crowd the header. */}
+                {!multiHost && <p className="hidden whitespace-nowrap text-sm pi-text-muted sm:block">Raspberry Pi Admin</p>}
               </div>
               <span className="hidden sm:block">
                 <HostSwitcher tab={tab} />
@@ -126,9 +129,13 @@ export default function AppShell({ tab }: { tab: TabId | "hosts" }) {
             <div className="hidden items-center space-x-4 md:flex">
               <div className="flex items-center space-x-2">
                 <div className="h-2 w-2 animate-pulse rounded-full bg-pi-success" />
-                <span className="text-sm pi-text-muted">System Online</span>
+                <span className="whitespace-nowrap text-sm pi-text-muted">System Online</span>
               </div>
-              {systemInfo.data?.uptime && <div className="text-sm pi-text-muted">Uptime: {systemInfo.data.uptime}</div>}
+              {systemInfo.data?.uptime && (
+                <div className="hidden whitespace-nowrap text-sm pi-text-muted xl:block" title={`Uptime: ${systemInfo.data.uptime}`} data-testid="header-uptime">
+                  Up {compactUptime(systemInfo.data.uptime)}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center space-x-2 sm:space-x-3">

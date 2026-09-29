@@ -150,6 +150,22 @@ test.describe("multi-host", () => {
     await page.evaluate(() => localStorage.removeItem("pideck:prefs:v1")); // leave no state for other specs
   });
 
+  test("header text stays on one line with the switcher (2.6.1: 1024–1440 px)", async ({ page }) => {
+    await page.goto("/dashboard");
+    await expect(switcher(page)).toBeVisible();
+    await expect(page.getByText("Raspberry Pi Admin")).toHaveCount(0); // the switcher names the host
+    for (const width of [1440, 1280, 1024]) {
+      await page.setViewportSize({ width, height: 900 });
+      const wrapped = await page.locator("header").evaluate((h) =>
+        [...h.querySelectorAll("p, span, kbd, div")]
+          .filter((e) => e.children.length === 0 && e.textContent?.trim() && e.getBoundingClientRect().height > 24)
+          .map((e) => e.textContent!.trim()));
+      expect(wrapped, `wrapped header text at ${width} px`).toEqual([]);
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.getByTestId("header-uptime")).toHaveText(/^Up \d+[ywdhm]( \d+[ywdhm])?$/);
+  });
+
   test("the switcher is axe-clean (serious/critical), open and closed, at 390 px too", async ({ page }) => {
     const serious = async () =>
       (await new AxeBuilder({ page }).include('[data-testid="host-switcher"]').withTags(["wcag2a", "wcag2aa"]).analyze()).violations
