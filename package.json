@@ -7,7 +7,7 @@
     "dev": "dotenv -e .env -- tsx server/index.ts",
     "dev:client": "vite",
     "build:client": "vite build --debug",
-    "build:server": "rm -f dist/*.js && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --splitting --outdir=dist",
+    "build:server": "node scripts/prune-dist.mjs --rotate && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --splitting --outdir=dist --metafile=dist/.server-meta.json && node scripts/prune-dist.mjs",
     "build": "npm run build:client && npm run build:server",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
