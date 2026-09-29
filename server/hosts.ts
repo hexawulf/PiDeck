@@ -10,7 +10,7 @@
 //                ▼
 //              200 JSON  |  502 {offline} {auth} {badResponse}  (never the agent's text)
 import os from "node:os";
-import { agentPathFromHubUrl } from "./agent-api";
+import { agentLogsPathFromHubUrl, agentPathFromHubUrl } from "./agent-api";
 import type { HostEntry } from "./config";
 import { majorVersion, PIDECK_VERSION } from "./version";
 
@@ -24,6 +24,8 @@ export type HostSummary = {
   lastSeen: string | null; // ISO time of the last good answer
   /** Can the hub record history for it? "unsupported" = agent < 2.5 (no /api/agent/sample): amber, update the agent. */
   history: HistorySupport;
+  /** The agent serves remote logs (capabilities.logs, 2.6+ with PIDECK_AGENT_LOGS=on). */
+  logs: boolean;
 };
 export type HistorySupport = "ok" | "unsupported" | "unknown";
 
@@ -39,13 +41,19 @@ type Outcome =
   | { kind: "ok"; body: unknown }
   | { kind: "offline" }
   | { kind: "auth" }
-  | { kind: "bad" };
+  | { kind: "bad" }
+  /** Remote logs only: the agent's own 400/404/409/503 (bad filter, no such source, unreadable, Docker down). */
+  | { kind: "status"; status: number; message: string };
+
+/** Agent statuses the logs proxy passes on (with the message only). */
+const LOG_PASS_STATUSES = new Set([400, 404, 409, 503]);
 
 type HostState = {
   lastSeen: number | null;
   version: string | null;
   status: HostStatus;
   history: HistorySupport;
+  logs: boolean;
   checkedAt: number;
   inflight?: Promise<void>;
 };
@@ -77,12 +85,12 @@ export function createHostHub({
 }: HubOptions) {
   const byId = new Map(hosts.map((h) => [h.id, h]));
   const state = new Map<string, HostState>(
-    hosts.map((h) => [h.id, { lastSeen: null, version: null, status: "offline", history: "unknown", checkedAt: -Infinity }]),
+    hosts.map((h) => [h.id, { lastSeen: null, version: null, status: "offline", history: "unknown", logs: false, checkedAt: -Infinity }]),
   );
   const iso = (t: number | null) => (t === null ? null : new Date(t).toISOString());
 
   /** One GET to an agent. Every failure becomes a kind; nothing throws. */
-  async function agentGet(host: HostEntry, path: string, timeoutMs: number): Promise<Outcome> {
+  async function agentGet(host: HostEntry, path: string, timeoutMs: number, { passStatus = false } = {}): Promise<Outcome> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs); // covers the body too
     try {
@@ -98,7 +106,8 @@ export function createHostHub({
       }
       const type = res.headers.get("content-type") || "";
       const length = Number(res.headers.get("content-length") || 0);
-      if (!res.ok || !/^application\/json\b/i.test(type) || length > maxBytes || !res.body) {
+      const passed = passStatus && LOG_PASS_STATUSES.has(res.status);
+      if ((!res.ok && !passed) || !/^application\/json\b/i.test(type) || length > maxBytes || !res.body) {
         await res.body?.cancel().catch(() => {});
         return { kind: "bad" };
       }
@@ -125,7 +134,13 @@ export function createHostHub({
         chunks.push(value);
       }
       try {
-        return { kind: "ok", body: JSON.parse(Buffer.concat(chunks).toString("utf8")) };
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        if (passed) {
+          // Only a short plain message crosses over, never the agent's whole body.
+          const msg = typeof body?.message === "string" ? body.message.replace(/[\u0000-\u001f]/g, " ").slice(0, 200) : `Agent answered ${res.status}`;
+          return { kind: "status", status: res.status, message: msg };
+        }
+        return { kind: "ok", body };
       } catch {
         return { kind: "bad" };
       }
@@ -154,9 +169,10 @@ export function createHostHub({
     const out = await agentGet(host, "/api/agent/info", infoTimeoutMs);
     s.checkedAt = now();
     if (out.kind === "ok") {
-      const body = out.body as { version?: unknown; capabilities?: { sample?: unknown } };
+      const body = out.body as { version?: unknown; capabilities?: { sample?: unknown; logs?: unknown } };
       seen(host.id, typeof body?.version === "string" ? body.version.slice(0, 32) : null);
       s.history = body?.capabilities?.sample === true ? "ok" : "unsupported";
+      s.logs = body?.capabilities?.logs === true;
     } else {
       s.status = out.kind === "auth" ? "auth-error" : "offline";
     }
@@ -171,7 +187,7 @@ export function createHostHub({
 
   function summary(h: HostEntry): HostSummary {
     const s = state.get(h.id)!;
-    return { id: h.id, label: h.label, local: false, status: s.status, version: s.version, lastSeen: iso(s.lastSeen), history: s.history };
+    return { id: h.id, label: h.label, local: false, status: s.status, version: s.version, lastSeen: iso(s.lastSeen), history: s.history, logs: s.logs };
   }
 
   return {
@@ -181,7 +197,7 @@ export function createHostHub({
     async list(): Promise<HostSummary[]> {
       await Promise.all(hosts.map(refresh)); // in parallel; each has its own timeout
       const local: HostSummary = {
-        id: "local", label: localLabel, local: true, status: "online", version: hubVersion, lastSeen: iso(now()), history: "ok",
+        id: "local", label: localLabel, local: true, status: "online", version: hubVersion, lastSeen: iso(now()), history: "ok", logs: true,
       };
       return [local, ...hosts.map(summary)];
     },
@@ -218,21 +234,30 @@ export function createHostHub({
       if (out.kind === "ok") seen(id);
       else if (out.kind === "offline") s.status = "offline";
       else if (out.kind === "auth") s.status = "auth-error";
-      return out;
+      return out.kind === "status" ? { kind: "bad" } : out; // (no status pass-through here)
     },
 
     /** Forward one allowlisted GET. `rawUrl` is req.originalUrl, before any decoding. */
-    async proxy(id: string, rawUrl: string): Promise<{ status: number; body: unknown }> {
+    async proxy(id: string, rawUrl: string): Promise<{ status: number; body: unknown; logSource?: string | null }> {
       const host = byId.get(id);
       if (!host) return { status: 404, body: { message: "No such host" } };
-      const path = agentPathFromHubUrl(rawUrl, id);
+      // Remote logs (2.6): the only agent paths with a query string, validated and re-encoded.
+      const logs = agentLogsPathFromHubUrl(rawUrl, id);
+      if (logs && "error" in logs) return { status: 400, body: { message: logs.error } };
+      const path = logs ? logs.path : agentPathFromHubUrl(rawUrl, id);
       if (!path) return { status: 400, body: { message: "Not an allowed agent path" } };
-      const out = await agentGet(host, path, proxyTimeoutMs);
+      const out = await agentGet(host, path, proxyTimeoutMs, { passStatus: logs !== null });
       const s = state.get(id)!;
+      const tag = logs ? { logSource: logs.sourceId } : {};
+      if (out.kind === "status") {
+        seen(id); // it answered
+        return { status: out.status, body: { message: out.message, host: id }, ...tag };
+      }
+      if (out.kind === "ok") {
+        seen(id);
+        return { status: 200, body: out.body, ...tag };
+      }
       switch (out.kind) {
-        case "ok":
-          seen(id);
-          return { status: 200, body: out.body };
         case "auth":
           s.status = "auth-error";
           return { status: 502, body: { auth: true, host: id } };

@@ -20,6 +20,8 @@ export const hostSummarySchema = z
     lastSeen: z.string().nullable(),
     /** "unsupported" = agent < 2.5: no history until it's updated (amber). Optional: a 2.4 hub doesn't send it. */
     history: z.enum(["ok", "unsupported", "unknown"]).optional(),
+    /** The agent serves remote logs (2.6+, PIDECK_AGENT_LOGS=on): the Logs tab shows for it. Optional: older hubs don't send it. */
+    logs: z.boolean().optional(),
   })
   .strict();
 export const hostsSchema = z.array(hostSummarySchema);

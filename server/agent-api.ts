@@ -106,3 +106,10 @@ export function agentLogsPathFromHubUrl(rawUrl: string, hostId: string): LogsReq
   const qs = out.toString();
   return { path: `/api/agent/logs/${sourceId}${qs ? `?${qs}` : ""}`, sourceId };
 }
+
+/** The hub's audit line for one remote log read. Values are ids/numbers only, never log content. */
+export function remoteLogAuditLine(r: { host: string; source: string; user: unknown; ip?: string; status: number }): string {
+  const user = typeof r.user === "number" || (typeof r.user === "string" && /^[\w.-]{1,64}$/.test(r.user)) ? String(r.user) : "?";
+  const ip = r.ip && /^[0-9a-fA-F:.]{1,64}$/.test(r.ip) ? r.ip : "?";
+  return `[logs] remote read host=${r.host} source=${r.source} user=${user} ip=${ip} status=${r.status}`;
+}
