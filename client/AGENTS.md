@@ -81,10 +81,14 @@ is the default layout; saved layouts get new widgets appended at the bottom auto
   `REMOTE_TABS`: dashboard, apps). `useHost()` gives `{ id, isLocal }`; `useHosts()` the hub's host list.
 - Every per-host request path comes from `apiPath(host.id, "/api/…")` (remote → `/api/hosts/<id>/…`) and its
   query key is `widgetQueryKey(host.id, url)` = `[path, hostId]`, so hosts never share a cache entry.
-  `useWidgetQuery` does both; `useDocker`/`usePm2`/the reboot check use `widgetQueryKey`. Hub-only data
-  (history) passes `{ scope: "hub" }`.
+  `useWidgetQuery` does both; `useDocker`/`usePm2`/the reboot check use `widgetQueryKey`. Data the hub
+  holds for every host passes `{ scope: "hub" }` with the host in the URL: history is
+  `/api/system/history` (local) or `/api/history?host=<id>&range=24h` (`useHistory`).
 - Registry: every widget declares `hosts: "local" | "any"`; `widgetsFor(isLocal)` is what a host's dashboard
-  and visibility list offer. Local-only = history charts, Quick Actions (agents are read-only).
+  and visibility list offer. Local-only = Quick Actions (agents are read-only); history charts are "any" (H2).
+- H2: alert toasts poll `/api/alerts?host=all` and name the host (`alertText` in `hooks/use-alerts.ts`); the
+  `/hosts` overview (`pages/hosts.tsx`, lazy chunk) reads `/api/overview`; `g o` / palette / switcher "All
+  hosts" open it. An agent < 2.5 (`history: "unsupported"`) gets an amber dot ("update the agent for history").
 - Remote failures arrive as 502 `{offline|auth|badResponse}`; `QueryState` renders `HostProblemNotice`
   ("<host> is offline (last seen …)") instead of an error card. Mutations (Docker/pm2 actions) are local only.
 - Links to a tab on the current host: `hostHref(host.id, tab)`; Logs, Cron and Settings are always the hub's.

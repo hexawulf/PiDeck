@@ -80,9 +80,10 @@ Missing optional pieces don't break anything: their widgets show a calm
    the file changes, a timestamped `.env.bak.<ts>` is kept and a one-line
    `+added / -removed` summary is printed.
 6. **Dependencies**: `npm ci`.
-7. **Schema**: only when the PiDeck tables are missing (a fresh database),
-   `drizzle-kit push --force` runs non-interactively. Existing databases are
-   never touched.
+7. **Schema**: `npm run db:migrate` ([migrations](#database-migrations-and-backups)).
+   A fresh database gets every migration; a database from PiDeck ≤ 2.4 is
+   recognised, its baseline is recorded without running any DDL, and only the
+   newer migrations run. Already up to date → nothing happens.
 8. **Admin password**: see [below](#the-admin-password).
 9. **Build**: `npm run build`.
 10. **Service**: pm2 (`pm2 start ecosystem.config.cjs`, `pm2 save`) or
@@ -104,7 +105,8 @@ backed up to `<file>.bak.<timestamp>`.
 |---|---|---|
 | `--dry-run` | | Print every action, change nothing. Start here. |
 | `--yes` | `PIDECK_YES=1` | Non-interactive: accept defaults, no prompts. |
-| `--update` | | `git pull --ff-only`, `npm ci`, build, restart, health check. |
+| `--update` | | `git pull --ff-only`, `npm ci`, database backup + `db:migrate` (hub), build, restart, health check. |
+| `--no-db-backup` | `PIDECK_NO_DB_BACKUP=1` | With `--update`: skip the `pg_dump` before migrating (not recommended). |
 | `--port N` | `PIDECK_PORT` | Listen port (default 5006, or `PORT` from `.env`). |
 | `--database-url URL` | `PIDECK_DATABASE_URL` | Use this PostgreSQL. Prefer the env form, which keeps the URL out of the process list. |
 | `--no-apt` | `PIDECK_NO_APT=1` | Don't install distro packages. |
@@ -262,7 +264,9 @@ to touch:
 | `PM2_LOGS_DIR` | `~/.pm2/logs` | pm2 logs. |
 | `PIDECK_HOST_LOGS` | unset | Extra log files for the Logs tab, see below. |
 | `PIDECK_NVME_DEVICE` | first `/dev/nvme*` | NVMe Health device. |
-| `PIDECK_SAMPLER` | on | `off` disables the 60 s history/alert sampler. |
+| `PIDECK_SAMPLER` | on | `off` disables the 60 s history/alert sampler (every host). |
+| `PIDECK_HISTORY_HOURS` | 24 | Hours of history kept per host (1–168). |
+| `PIDECK_OFFLINE_ALERT_MINUTES` | 5 | Minutes an agent must be unreachable before its "offline" alert (1–1440). |
 
 `PIDECK_HOST_LOGS` is a comma-separated list of `[id:]Label=/absolute/path`
 entries. The optional `id:` keeps pins and "last opened" stable if you
@@ -287,13 +291,44 @@ After editing `.env`, restart PiDeck (`pm2 restart pideck` or
 
 The update refuses to run on a checkout with local changes. It copies
 `dist/` to `~/backups/pideck-dist-<timestamp>`, then runs
-`git pull --ff-only`, `npm ci` and the build. After that it restarts the
+`git pull --ff-only` and `npm ci`. On a hub it then backs up and migrates
+the database ([below](#database-migrations-and-backups)), builds, restarts the
 service, runs the health check and prints the exact rollback command, like:
 
 ```bash
 cd ~/PiDeck && git reset --keep <previous> && npm ci && rm -rf dist \
   && cp -a ~/backups/pideck-dist-<ts>/dist dist && pm2 restart pideck
 ```
+
+### Database migrations and backups
+
+Since 2.5 the schema is managed by migrations in `migrations/`
+(`npm run db:migrate`, `scripts/migrate.mjs`): each runs in its own
+transaction under a Postgres advisory lock, so two runs never interleave and
+a failing migration leaves the database as it was. Applied migrations are
+recorded in `public.__drizzle_migrations`. The session table
+(`user_sessions`) is never touched.
+
+`--update` on a hub:
+
+1. `pg_dump -Fc` to `~/backups/pideck-db-<timestamp>.dump` (mode 0600; needs
+   `postgresql-client` of the server's major version; `--no-db-backup`
+   skips it).
+2. `db:migrate`, after `npm ci` and **before** the build and restart.
+3. If the migration fails, the update stops: the running service keeps its
+   current build, and the installer prints the restore command, like:
+
+```bash
+pg_restore --clean --if-exists --no-owner \
+  --dbname "$(sed -n 's/^DATABASE_URL=//p' .env)" ~/backups/pideck-db-<ts>.dump
+```
+
+The first 2.5 update of a 2.x database records its baseline (logged as
+`BASELINE … WITHOUT running it`) and then applies the newer migrations. If
+the hub starts while migrations are pending, it keeps serving, logs
+`DATABASE NEEDS MIGRATING`, and the UI shows a banner; run
+`./scripts/install.sh --update` (or `npm run db:migrate`). Check with
+`node scripts/migrate.mjs --status` (exit 3 = work pending).
 
 **Uninstall:**
 
@@ -385,7 +420,15 @@ seen …)", and they recover once it is started again. On piapps2,
 | green | online |
 | grey | offline: the hub can't reach it (cards say when it was last seen) |
 | red | the hub's token is wrong or was rotated ("Can't authenticate to …") |
-| amber | the agent runs a different major version: update it (`./scripts/install.sh --update` on the agent) |
+| amber | the agent runs a different major version, or is older than 2.5 ("update the agent for history": the hub can't record its history): update it (`./scripts/install.sh --update` on the agent) |
+
+The **All hosts** page (`/hosts`, from the host switcher, the palette or
+`g o`) shows every host's latest one-minute sample, open alerts and last-seen
+time. The hub records history for every 2.5+ agent each minute (kept
+`PIDECK_HISTORY_HOURS`), so remote dashboards have Disk I/O and Network
+Bandwidth charts too. An agent unreachable for `PIDECK_OFFLINE_ALERT_MINUTES`
+(5) raises an "offline" alert and a toast naming the host; a wrong token does
+not. Update agents **before** the hub, so they serve `/api/agent/sample`.
 
 ### Rotate a token
 
@@ -470,7 +513,7 @@ The installer only automates these steps. To do them yourself:
 sudo apt-get install -y postgresql lm-sensors smartmontools
 sudo -u postgres createuser -P pideck && sudo -u postgres createdb -O pideck pideck
 cp .env.example .env && chmod 600 .env && nano .env   # SESSION_SECRET, DATABASE_URL, PORT, ...
-npm ci && npm run db:push && npm run build
+npm ci && npm run db:migrate && npm run build
 pm2 start ecosystem.config.cjs && pm2 save             # or a systemd unit from deploy/systemd/
 ```
 

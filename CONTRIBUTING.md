@@ -283,11 +283,11 @@ tail -f ~/logs/*.log
 
 ### Database Changes
 ```bash
-# Generate migration
+# Generate a migration (a new file; never edit an applied one)
 npm run db:generate
 
-# Push changes
-npm run db:push
+# Apply it
+npm run db:migrate
 ```
 
 ### Testing

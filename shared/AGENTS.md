@@ -67,9 +67,10 @@ export type MyTable = typeof myTable.$inferSelect
 export type InsertMyTable = typeof myTable.$inferInsert
 ```
 
-**After adding/changing tables**:
+**After adding/changing tables** (a new migration; never edit an applied one):
 ```bash
-npm run db:push   # Apply schema to database
+npm run db:generate   # writes migrations/NNNN_*.sql — review it
+npm run db:migrate    # applies it
 ```
 
 ### Adding API Types
@@ -138,7 +139,7 @@ router.post('/api/my-endpoint', (req, res) => {
 - **Everything**: `shared/schema.ts` - All types, schemas, tables in one file
 
 ### Key Exports
-- **Tables**: `users`, `sessions`, `historicalMetrics`
+- **Tables**: `users`, `sessions` (unused, kept), `historicalMetrics` (per `hostId`), `alerts`
 - **Schemas**: `insertUserSchema`, `loginSchema`, `diskIOSchema`, `networkBandwidthSchema`
 - **Types**: `User`, `SystemInfo`, `DockerContainer`, `PM2Process`, `HistoricalMetric`
 
@@ -161,7 +162,8 @@ rg -n "^export" shared/schema.ts
 ```
 
 ## Common Gotchas
-- **Schema changes**: ALWAYS run `npm run db:push` after editing Drizzle tables
+- **Schema changes**: ALWAYS `npm run db:generate` a new migration after editing Drizzle tables
+- **History timestamps**: `historical_metrics.timestamp` holds UTC without a zone (prod DB TimeZone is Asia/Taipei): no `defaultNow()`, write it from JS; new time columns are `timestamptz`
 - **Type imports**: Use `import type { }` for types, `import { }` for tables/schemas
 - **Zod validation**: Use `.safeParse()` not `.parse()` to avoid throwing exceptions
 - **Circular refs**: Avoid by keeping all types in single file
@@ -173,11 +175,11 @@ rg -n "^export" shared/schema.ts
 npm run check          # TypeScript validation
 
 # If you changed Drizzle schema
-npm run db:push        # Apply to database
+npm run db:generate && npm run db:migrate
 ```
 
 **Checklist**:
 - [ ] All new tables have corresponding inferred types
 - [ ] Zod schemas exist for user input validation
 - [ ] Types exported and used in both client and server
-- [ ] Database changes applied with `npm run db:push`
+- [ ] Database changes are a new file in `migrations/` (applied with `npm run db:migrate`)

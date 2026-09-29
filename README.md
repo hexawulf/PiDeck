@@ -28,6 +28,8 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 
 ### System Monitoring
 - **Real-time Metrics**: CPU, memory, temperature and network, with history charts
+- **Multi-host**: read-only agents on other machines; the hub records their history every minute, raises
+  per-host alerts (temperature, offline) and shows them all on the **All hosts** page (`/hosts`)
 - **System Information**: Hostname, OS details, kernel version, uptime, top processes
 - **Hardware Health**: Thermal sensors, power status, NVMe health, disk and swap usage
 - **Network Status**: IP configuration, listening ports and firewall status
@@ -106,7 +108,7 @@ troubleshooting: **[docs/INSTALL.md](./docs/INSTALL.md)**.
 ```bash
 npm ci
 cp .env.example .env && nano .env   # DATABASE_URL, SESSION_SECRET
-npm run db:push
+npm run db:migrate
 npm run dev                         # http://localhost:5006, log in as admin / admin
 ```
 

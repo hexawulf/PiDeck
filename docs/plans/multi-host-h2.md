@@ -224,3 +224,30 @@ tick (60 s, advisory lock)
 > bump the version or deploy. Report: commits, migration list with SQL
 > summaries, drift findings, test counts before/after, bundle numbers, agent
 > RSS, deviations, open questions.
+
+## H2 landed (branch `feat/multi-host-h2`, 2026-09-29)
+**Migrations** (`migrations/`, `npm run db:migrate` = `scripts/migrate.mjs`):
+- `0000_baseline.sql`: the prod shape exactly (users + `users_username_unique`
+  + `idx_users_username`, sessions + FK, historical_metrics). On a 2.x
+  database it is **recorded, never run** (loud `BASELINE` log).
+- `0001_drop_redundant_username_index.sql`: `DROP INDEX IF EXISTS
+  idx_users_username`. Prod (with it) and push installs (without it) converge.
+- `0002_host_history_and_alerts.sql`: `alerts` table; `historical_metrics`
+  gets `host_id text DEFAULT 'local' NOT NULL` (metadata-only on PG ≥ 11),
+  index `(host_id, timestamp DESC)`, and loses the timestamp default.
+
+**Drift resolution.** `idx_users_username`: declared for the baseline so
+0000 matches prod byte-for-byte, then dropped in 0001 — it duplicates the
+unique constraint's index, and fresh/push installs never had it, so one
+shape remains everywhere. `user_sessions` is outside `tablesFilter` and is
+never touched (fingerprinted in `tests/unit/migrate.db.test.ts`).
+
+**Deviations.**
+- A custom runner instead of drizzle's `migrate()`: drizzle runs all pending
+  migrations in one transaction and has no baseline mark. Bookkeeping is
+  drizzle-compatible (`public.__drizzle_migrations`).
+- E2E: the E2E hub keeps `PIDECK_SAMPLER=off` (it shares the prod DB), so
+  remote history, the old-agent tile and the alert toast use route stubs;
+  the real agent → hub tick is covered in `tests/unit/agent.test.ts`.
+- Offline alerts allow 5 s of timer drift (`OFFLINE_SLACK_MS`), so they
+  open on the tick N minutes after the first failed poll, not one tick later.

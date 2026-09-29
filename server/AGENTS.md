@@ -21,8 +21,10 @@ npm run start         # NODE_ENV=production, PORT=5006
 # Type check
 npm run check         # TypeScript validation
 
-# Database
-npm run db:push       # Push Drizzle schema to PostgreSQL
+# Database (migrations since 2.5; never `drizzle-kit push` on a real install)
+npm run db:generate   # write migrations/NNNN_*.sql from shared/schema.ts
+npm run db:migrate    # apply pending migrations (advisory lock, one transaction each)
+node scripts/migrate.mjs --status   # exit 3 when work is pending
 ```
 
 ## Patterns & Conventions
@@ -150,9 +152,18 @@ await db.insert(historicalMetrics).values({
 await db.update(users).set({ failed_login_attempts: 0 }).where(eq(users.id, 1))
 ```
 
-**Schema changes**:
-1. Edit `shared/schema.ts`
-2. Run `npm run db:push` to apply to database
+**Schema changes** (docs/plans/multi-host-h2.md › M0):
+1. Edit `shared/schema.ts` (only its tables are managed: `tablesFilter` in `drizzle.config.ts`;
+   connect-pg-simple's `user_sessions` never appears in a migration)
+2. `npm run db:generate` → review the new `migrations/NNNN_*.sql`, then `npm run db:migrate`
+3. **Never edit an applied migration**; every change is a new file. `scripts/migrate-core.mjs` refuses an
+   edited one. The hub serves with a "database needs migrating" banner while any are pending
+   (`server/db-schema.ts`); `scripts/install.sh --update` backs up with `pg_dump` and migrates.
+
+**Timezone trap**: `historical_metrics.timestamp` is `timestamp without time zone` holding **UTC**, and prod's
+database TimeZone is Asia/Taipei. Write it from JS ISO strings, compute cutoffs in JS (`utcCutoff()` in
+`services/history.ts`), never compare it with `now()`/`localtimestamp` or rely on a column default.
+New time columns use `timestamptz` (e.g. `alerts`). `tests/unit/history.db.test.ts` runs under Asia/Taipei.
 
 ### Shell Command Safety
 **Rules**:
@@ -228,8 +239,11 @@ rg -n "'/api/" server/routes
 - The agent is JSON-only: bearer token → SHA-256 → `timingSafeEqual` against `PIDECK_AGENT_TOKEN_SHA256`
   (401 without detail; 429 after 10 failures per address), then **exact** GET allowlist (`AGENT_PATHS`),
   then the *same* route handlers the hub uses. No sessions, login, static files, sampler, POST.
-- **Never** import `./storage` or call `getDb()` in code the agent loads; DB access is lazy (`getDb()`,
-  `historyDb()` in `services/system.ts`). `tests/unit/agent.test.ts` fails if agent mode touches it.
+- **Never** import `./storage`, `./runtime` or call `getDb()` in code the agent loads; DB access is lazy
+  (`getDb()` inside `services/history.ts` / `services/alerts.ts`). `tests/unit/agent.test.ts` fails if agent
+  mode touches it.
+- `GET /api/agent/sample` (2.5+, `capabilities.sample: true`) returns **raw counters only**
+  (`readCounters()` in `services/counters.ts`: jiffies, sectors, bytes, boot id). The hub computes rates.
 - Adding a metric for remote hosts: reuse/add its handler, add the path to `AGENT_PATHS` (both sides use it),
   keep it read-only and query-string-free.
 - Hub: `GET /api/hosts` (status per host, cached 15 s) and `GET /api/hosts/:id/*` → `createHostHub().proxy()`:
@@ -237,15 +251,27 @@ rg -n "'/api/" server/routes
   5 s timeout incl. body, 1 MB cap, JSON only; failures are 502 `{offline,lastSeen}` / `{auth}` /
   `{badResponse}` — never the agent's own error text.
 
-### Background sampler
-**Location**: `server/services/sampler.ts`, started from `server/index.ts` after `initializeStorage()`.
+### Background sampler (every host, H2)
+**Location**: `server/services/sampler.ts` (`createSampleTick`), shared state in `server/runtime.ts`
+(`hubRuntime()`: host hub, alert manager, last sample per host). Plan: `docs/plans/multi-host-h2.md`.
 
-- Every 60s: collect metrics → evaluate temperature alert (in memory, per process) → insert one
-  `historical_metrics` row and prune rows older than 24h, behind `pg_try_advisory_xact_lock`
-  so only one instance writes.
-- Ticks never overlap; a failing tick is logged once per distinct error and the timer keeps going.
+- Every 60s, in parallel: local `readCounters()` and `GET /api/agent/sample` on each agent (5 s per host,
+  10 s per tick; hosts that didn't answer are logged as skipped). An agent < 2.5 (no `capabilities.sample`)
+  is skipped with history "unsupported" (amber in the UI), never offline.
+- Rates come from `ratesBetween(prev, cur)` (`services/counters.ts`): a counter reset, a new boot id, a gap
+  over 15 min or a non-forward time drops that interval — never a negative rate.
+- Behind `pg_try_advisory_xact_lock` (one writer): insert one `historical_metrics` row per host
+  (`host_id`), prune rows older than `PIDECK_HISTORY_HOURS` (default 24) with a UTC cutoff from JS, and
+  evaluate alerts per `(host, type)` (`services/alerts.ts`): temperature > 70 °C, and offline after
+  `PIDECK_OFFLINE_ALERT_MINUTES` (default 5) of failed polls **counted from the first failure this process
+  saw** — so a restart never fires one early. A wrong token or bad answer is not offline.
+- Alerts live in the `alerts` table (at most one open per host+type); open ones are loaded at start.
+- Ticks never overlap; a failing tick is logged once per distinct error and the timer keeps going. No DB
+  work while migrations are pending.
 - **Off** when `NODE_ENV=test` or `PIDECK_SAMPLER=off` (set by `scripts/e2e-server.sh`: the E2E
   build shares the production database). With it off, no history rows and no alerts are produced.
+- APIs (`server/routes/fleet.ts`, hub only, never proxied): `/api/history?host&range`, `/api/alerts?host`,
+  `/api/overview`; `/api/system/history` and `/api/system/alerts` stay as the local 2.4 aliases.
 - `/api/system/info` is read-only; disk/network rates are deltas against a per-caller baseline
   (`createRateBaseline()`), so the sampler and browser polls don't share one.
 
@@ -264,7 +290,7 @@ User `?grep=` values go through `server/services/log-filter.ts`: literal by defa
 - **Error handling**: Always return JSON errors, never throw unhandled exceptions
 - **Shell commands**: Use `exec()` not `execSync()` to avoid blocking
 - **Sessions**: Require `express-session` setup in `server/index.ts` (already configured)
-- **Database**: Schema changes require `npm run db:push` to apply
+- **Database**: Schema changes need a new migration (`npm run db:generate`, then `npm run db:migrate`)
 - **CORS**: off by default (same-origin UI); `PIDECK_CORS_ORIGIN` lists extra origins (`corsOrigins()` in `server/config.ts`)
 
 ## Pre-PR Checks
