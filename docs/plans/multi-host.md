@@ -142,7 +142,8 @@ changed: read-only remote logs pulled forward from H4 (local nodes first);
 DS920+ added as a host. WireGuard + piapps3/piapps4 postponed to a later
 phase (design kept in multi-host-h3.md, Track C).
 
-### Later — WireGuard + piapps3 / piapps4 (was H3)
+### 2.7.0 — WireGuard + piapps3 / piapps4 / hwca-ap02 (was H3 Track C)
+Todo: [multi-host-2.7.0.md](./multi-host-2.7.0.md) (2026-09-29, start 2026-09-30).
 
 - WireGuard between the hub and the VPSes (separate subnet from the existing
   brixhouse tunnel on piapps4); agents bind to their wg0 address only; no
