@@ -9,7 +9,8 @@
 #              PIDECK_DISABLE_SYSTEM_UPDATE=1: it also shares the prod host, so
 #              POST /api/system/update answers 409 instead of running apt.
 #              Also starts two read-only agents (PIDECK_MODE=agent) on
-#              127.0.0.1:5018/5019 and points the hub at them (multi-host).
+#              127.0.0.1:5018/5019 and points the hub at them (multi-host);
+#              the first serves remote logs from test fixtures (.e2e/agent-logs).
 # Modified:    2026-09-28
 # Usage:       scripts/e2e-server.sh [--dry-run]
 set -euo pipefail
@@ -48,14 +49,37 @@ npx esbuild server/index.ts --platform=node --packages=external --bundle --forma
 AGENT_PORT="${E2E_AGENT_PORT:-5018}"
 AGENT_TOKEN="e2e-agent-token-test-only-0123456789abcdef"
 sha() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
-start_agent() { # start_agent PORT TOKEN
-  env NODE_ENV=production PIDECK_MODE=agent PIDECK_AGENT_BIND=127.0.0.1 PIDECK_AGENT_PORT="$1" \
-    PIDECK_AGENT_TOKEN_SHA256="$(sha "$2")" PIDECK_DISABLE_SYSTEM_UPDATE=1 node "$OUT/index.js" >>"$LOG" 2>&1 &
+start_agent() { # start_agent PORT TOKEN [VAR=value …]
+  local port="$1" token="$2"; shift 2
+  env NODE_ENV=production PIDECK_MODE=agent PIDECK_AGENT_BIND=127.0.0.1 PIDECK_AGENT_PORT="$port" \
+    PIDECK_AGENT_TOKEN_SHA256="$(sha "$token")" PIDECK_DISABLE_SYSTEM_UPDATE=1 PIDECK_HOST_LOGS= "$@" \
+    node "$OUT/index.js" >>"$LOG" 2>&1 &
   AGENT_PIDS+=("$!")
 }
+
+# Remote logs (tests/e2e/remote-logs.spec.ts): test-only fixture files, and
+# Docker logs from a fake Engine socket the spec itself serves (never a real
+# daemon). e2e-agent has logs on; e2e-badtoken keeps them off.
+LOGFIX="$ROOT/.e2e/agent-logs"
+rm -rf "$LOGFIX"; mkdir -p "$LOGFIX"
+{
+  echo "2026-09-29T08:00:00Z app started"
+  echo "2026-09-29T08:00:01Z GET /api/items Authorization: Bearer e2e-fake-bearer-0123456789"
+  echo "2026-09-29T08:00:02Z db connect password=e2e-fake-password ok"
+  echo "2026-09-29T08:00:03Z ERROR upstream timeout"
+} > "$LOGFIX/app.log"
+echo "monthly report line" > "$LOGFIX/report-$(date +%Y-%m).log"
+ln -s "$LOGFIX/app.log" "$LOGFIX/link.log"   # a symlink: listed as unreadable, never followed
+AGENT_LOG_ENV=(
+  PIDECK_AGENT_LOGS=on
+  "PIDECK_HOST_LOGS=app:App log=$LOGFIX/app.log,report:Monthly report=$LOGFIX/report-%Y-%m.log,link:Linked log=$LOGFIX/link.log"
+  PIDECK_AGENT_DOCKER_LOGS=on
+  "PIDECK_AGENT_DOCKER_SOCKET=$ROOT/.e2e/fake-docker.sock"
+)
+
 AGENT_PIDS=()
 trap 'kill "${AGENT_PIDS[@]}" 2>/dev/null' EXIT INT TERM
-start_agent "$AGENT_PORT" "$AGENT_TOKEN"
+start_agent "$AGENT_PORT" "$AGENT_TOKEN" "${AGENT_LOG_ENV[@]}"
 start_agent "$((AGENT_PORT + 1))" "another-agents-token-test-only-0123456789"
 
 echo "serving dist-dev on :$PORT with e2e agents on :$AGENT_PORT-$((AGENT_PORT + 2)) (log: $LOG)"
