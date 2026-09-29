@@ -1,4 +1,5 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -144,11 +145,15 @@ export type ProcessInfo = {
   memUsage: number; // Percentage
 };
 
-// Historical data table
+// Historical data table: one row per host per minute (the hub's sampler).
+// TIMEZONE: `timestamp` is `timestamp without time zone` holding UTC wall
+// time, while prod's database TimeZone is Asia/Taipei. Always write it from
+// JS as a UTC ISO string and compute cutoffs in JS (or `now() AT TIME ZONE
+// 'UTC'`); never compare it with now()/localtimestamp. No DEFAULT (dropped in
+// migrations/0002): a default of now() would store Taipei local time.
 export const historicalMetrics = pgTable("historical_metrics", {
   id: serial("id").primaryKey(),
-  // store timestamp as ISO string for postgres.js compatibility
-  timestamp: timestamp("timestamp", { mode: 'string' }).notNull().defaultNow(),
+  timestamp: timestamp("timestamp", { mode: 'string' }).notNull(),
   cpuUsage: integer("cpu_usage"),
   memoryUsage: integer("memory_usage"), // Percentage
   temperature: integer("temperature"),
@@ -156,7 +161,30 @@ export const historicalMetrics = pgTable("historical_metrics", {
   diskWriteSpeed: integer("disk_write_speed"), // KB/s
   networkRx: integer("network_rx"), // KB/s
   networkTx: integer("network_tx"), // KB/s
-});
+  /** "local" = the hub itself, else a PIDECK_HOSTS id. */
+  hostId: text("host_id").notNull().default("local"),
+}, (t) => [
+  // Range reads and the prune, per host.
+  index("historical_metrics_host_ts_idx").on(t.hostId, t.timestamp.desc()),
+]);
+
+// Alerts per host (temperature, offline). One open alert per (host, type) at
+// most, enforced by a partial unique index. timestamptz (absolute instants);
+// always written explicitly from JS, never by a database default.
+export const alerts = pgTable("alerts", {
+  id: serial("id").primaryKey(),
+  hostId: text("host_id").notNull(),
+  type: text("type").notNull(), // "temperature" | "offline"
+  severity: text("severity").notNull(), // "warning" | "critical"
+  message: text("message").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "date" }),
+}, (t) => [
+  uniqueIndex("alerts_one_open_per_host_type").on(t.hostId, t.type).where(sql`${t.resolvedAt} IS NULL`),
+  index("alerts_resolved_at_idx").on(t.resolvedAt),
+]);
+
+export type AlertRow = typeof alerts.$inferSelect;
 
 export type HistoricalMetric = typeof historicalMetrics.$inferSelect;
 export type InsertHistoricalMetric = typeof historicalMetrics.$inferInsert;

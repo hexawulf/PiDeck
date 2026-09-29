@@ -226,3 +226,32 @@ export function parseHosts(
   }
   return hosts;
 }
+
+/** An integer env value clamped to [min, max]; invalid → fallback with a warning. */
+function intSetting(
+  env: NodeJS.ProcessEnv, key: string, fallback: number, min: number, max: number, warn: (m: string) => void,
+): number {
+  const raw = env[key]?.trim();
+  if (!raw) return fallback;
+  if (!/^\d+$/.test(raw)) {
+    warn(`[config] ${key}="${raw.slice(0, 20)}" is not a whole number; using ${fallback}`);
+    return fallback;
+  }
+  const n = Number(raw);
+  if (n < min || n > max) {
+    const c = Math.min(Math.max(n, min), max);
+    warn(`[config] ${key}=${n} is outside ${min}–${max}; using ${c}`);
+    return c;
+  }
+  return n;
+}
+
+/** PIDECK_HISTORY_HOURS: how long history (and resolved alerts) are kept, per host. Default 24, 1–168. */
+export function historyHours(env: NodeJS.ProcessEnv = process.env, warn: (m: string) => void = (m) => console.warn(m)): number {
+  return intSetting(env, "PIDECK_HISTORY_HOURS", 24, 1, 168, warn);
+}
+
+/** PIDECK_OFFLINE_ALERT_MINUTES: an unreachable agent raises an "offline" alert after this long. Default 5, 1–1440. */
+export function offlineAlertMinutes(env: NodeJS.ProcessEnv = process.env, warn: (m: string) => void = (m) => console.warn(m)): number {
+  return intSetting(env, "PIDECK_OFFLINE_ALERT_MINUTES", 5, 1, 1440, warn);
+}

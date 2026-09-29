@@ -15,6 +15,13 @@
       "when": 1790642440954,
       "tag": "0001_drop_redundant_username_index",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790642977535,
+      "tag": "0002_host_history_and_alerts",
+      "breakpoints": true
     }
   ]
 }
