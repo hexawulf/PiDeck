@@ -1,7 +1,7 @@
 // Hub side of remote logs (H3 Track B): the proxy's URL/query validation,
 // pass-through of the agent's logs statuses, the logs capability, the audit line.
 import { describe, expect, it, vi } from "vitest";
-import { agentAllows, agentLogsPathFromHubUrl, agentPathFromHubUrl, remoteLogAuditLine } from "../../server/agent-api";
+import { agentAllows, agentLogsPathFromHubUrl, agentPathFromHubUrl, createRemoteLogAudit, remoteLogAuditLine } from "../../server/agent-api";
 import { createHostHub } from "../../server/hosts";
 
 const H = "/api/hosts/p2/agent/logs";
@@ -104,5 +104,41 @@ describe("audit line", () => {
       "[logs] remote read host=p2 source=docker_plex user=1 ip=192.168.50.10 status=200",
     );
     expect(remoteLogAuditLine({ host: "p2", source: "x", user: "a b\n", ip: "evil\nline", status: 404 })).toBe("[logs] remote read host=p2 source=x user=? ip=? status=404");
+  });
+});
+
+describe("audit throttle (2.6.1)", () => {
+  const read = (over: Partial<{ host: string; source: string; user: unknown; ip: string; status: number }> = {}) =>
+    ({ host: "ds920", source: "docker_plex", user: 1, ip: "192.168.50.74", status: 200, ...over });
+  it("logs the first read, stays quiet while the log polls, then reports the polls after the window", () => {
+    let t = 0;
+    const audit = createRemoteLogAudit({ windowMs: 600_000, now: () => t });
+    expect(audit(read())).toBe("[logs] remote read host=ds920 source=docker_plex user=1 ip=192.168.50.74 status=200");
+    for (let i = 0; i < 99; i++) { t += 5_000; expect(audit(read())).toBeNull(); } // Live refresh for ~8 min
+    t = 600_000;
+    expect(audit(read())).toBe("[logs] remote read host=ds920 source=docker_plex user=1 ip=192.168.50.74 status=200 polls=99");
+    t += 5_000;
+    expect(audit(read())).toBeNull();
+  });
+  it("a new source, user or ip is logged at once; errors always", () => {
+    let t = 0;
+    const audit = createRemoteLogAudit({ now: () => t });
+    expect(audit(read())).not.toBeNull();
+    expect(audit(read({ source: "docker_sonarr" }))).not.toBeNull();
+    expect(audit(read({ user: 2 }))).not.toBeNull();
+    expect(audit(read({ ip: "192.168.50.120" }))).not.toBeNull();
+    expect(audit(read({ host: "piapps2" }))).not.toBeNull();
+    t += 1_000;
+    expect(audit(read({ status: 502 }))).toBe("[logs] remote read host=ds920 source=docker_plex user=1 ip=192.168.50.74 status=502");
+    expect(audit(read({ status: 404 }))).not.toBeNull();
+    expect(audit(read())).toBeNull(); // the error line restarted the window
+  });
+  it("memory stays bounded", () => {
+    let t = 0;
+    const audit = createRemoteLogAudit({ maxKeys: 3, now: () => t });
+    for (const s of ["a", "b", "c", "d"]) audit(read({ source: s }));
+    t += 1;
+    expect(audit(read({ source: "a" }))).not.toBeNull(); // evicted as the oldest → logged again
+    expect(audit(read({ source: "d" }))).toBeNull();
   });
 });

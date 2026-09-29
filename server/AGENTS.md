@@ -249,7 +249,7 @@ rg -n "'/api/" server/routes
   `GET /containers/json?all=1` and `GET /containers/<id>/logs?stdout=1&stderr=1&tail=N&timestamps=1`; streaming
   demux, TTY raw). Journald via `execFile("journalctl", [...])`, never a shell. The hub side is
   `agentLogsPathFromHubUrl` (`agent-api.ts`: only `lines`/`filter`, re-encoded) and `hosts.ts` passes the agent's
-  400/404/409/503 with the message only; `routes.ts` logs `remoteLogAuditLine` per read.
+  400/404/409/503 with the message only; `routes.ts` logs remote reads through `createRemoteLogAudit` (first read of a host/source/user/ip, then at most every 10 min with `polls=N`; non-200 always).
 - `GET /api/agent/sample` (2.5+, `capabilities.sample: true`) returns **raw counters only**
   (`readCounters()` in `services/counters.ts`: jiffies, sectors, bytes, boot id). The hub computes rates.
 - Adding a metric for remote hosts: reuse/add its handler, add the path to `AGENT_PATHS` (both sides use it),

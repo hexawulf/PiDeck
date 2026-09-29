@@ -107,9 +107,36 @@ export function agentLogsPathFromHubUrl(rawUrl: string, hostId: string): LogsReq
   return { path: `/api/agent/logs/${sourceId}${qs ? `?${qs}` : ""}`, sourceId };
 }
 
+type AuditRead = { host: string; source: string; user: unknown; ip?: string; status: number };
+const auditUser = (u: unknown) => (typeof u === "number" || (typeof u === "string" && /^[\w.-]{1,64}$/.test(u)) ? String(u) : "?");
+const auditIp = (ip?: string) => (ip && /^[0-9a-fA-F:.]{1,64}$/.test(ip) ? ip : "?");
+
 /** The hub's audit line for one remote log read. Values are ids/numbers only, never log content. */
-export function remoteLogAuditLine(r: { host: string; source: string; user: unknown; ip?: string; status: number }): string {
-  const user = typeof r.user === "number" || (typeof r.user === "string" && /^[\w.-]{1,64}$/.test(r.user)) ? String(r.user) : "?";
-  const ip = r.ip && /^[0-9a-fA-F:.]{1,64}$/.test(r.ip) ? r.ip : "?";
-  return `[logs] remote read host=${r.host} source=${r.source} user=${user} ip=${ip} status=${r.status}`;
+export function remoteLogAuditLine(r: AuditRead, polls = 0): string {
+  const line = `[logs] remote read host=${r.host} source=${r.source} user=${auditUser(r.user)} ip=${auditIp(r.ip)} status=${r.status}`;
+  return polls > 0 ? `${line} polls=${polls}` : line;
+}
+
+/**
+ * Quieter audit (2.6.1): an open log polls every few seconds, so log a read
+ * when a (host, source, user, ip) is first seen, then at most once per
+ * `windowMs` while it keeps polling (`polls=N` = reads since the last line).
+ * Anything but a 200 is always logged. Memory is bounded (`maxKeys`).
+ */
+export function createRemoteLogAudit({ windowMs = 10 * 60_000, maxKeys = 500, now = Date.now }: { windowMs?: number; maxKeys?: number; now?: () => number } = {}) {
+  const seen = new Map<string, { at: number; polls: number }>();
+  return (r: AuditRead): string | null => {
+    const key = `${r.host}\0${r.source}\0${auditUser(r.user)}\0${auditIp(r.ip)}`;
+    const t = now();
+    const prev = seen.get(key);
+    if (r.status === 200 && prev && t - prev.at < windowMs) {
+      prev.polls++;
+      return null;
+    }
+    const polls = prev?.polls ?? 0;
+    seen.delete(key); // re-insert: Map order = oldest first
+    seen.set(key, { at: t, polls: 0 });
+    if (seen.size > maxKeys) seen.delete(seen.keys().next().value as string);
+    return remoteLogAuditLine(r, polls);
+  };
 }

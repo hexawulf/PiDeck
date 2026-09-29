@@ -25,7 +25,7 @@ import { rateLimitLogin } from "./middleware/rateLimitLogin";
 import { envPasswordMatches } from "./services/env-password";
 import { cookieSecure, insecureHttp } from "./config";
 import { hubRuntime } from "./runtime";
-import { remoteLogAuditLine } from "./agent-api";
+import { createRemoteLogAudit } from "./agent-api";
 import { registerFleetRoutes } from "./routes/fleet";
 import { schemaReady, schemaState } from "./db-schema";
 import { adminPasswordIsDefault } from "./storage";
@@ -240,12 +240,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/hosts", requireAuth, async (_req, res) => {
     res.json(await hostHub.list());
   });
+  const auditRemoteLogRead = createRemoteLogAudit();
   app.get("/api/hosts/:id/*", requireAuth, async (req, res) => {
     // originalUrl is the raw path as sent: the allowlist check must see any
     // %-encoding, not Express's decoded req.params.
     const { status, body, logSource } = await hostHub.proxy(req.params.id, req.originalUrl);
-    // One line per remote log read (host, source, user): the pattern H4 uses for remote actions.
-    if (logSource) console.log(remoteLogAuditLine({ host: req.params.id, source: logSource, user: (req.session as any)?.userId, ip: req.ip, status }));
+    // Audit remote log reads (host, source, user): the pattern H4 uses for remote actions.
+    // Throttled per open log (first read, then every 10 min; errors always).
+    const line = logSource ? auditRemoteLogRead({ host: req.params.id, source: logSource, user: (req.session as any)?.userId, ip: req.ip, status }) : null;
+    if (line) console.log(line);
     res.status(status).json(body);
   });
   app.all("/api/hosts/*", requireAuth, (req, res) =>
