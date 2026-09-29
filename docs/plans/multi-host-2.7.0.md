@@ -15,12 +15,12 @@ small installer changes → a **Claude Code CLI task** (like 2.6.1), phase-gated
 per the homelab standard. No cloud session needed.
 
 ## Decide first (blocking)
-1. **hwca-ap02 is colleague-billed, "read/ops only; never co-mingle personal
-   services"** (hexawulf-homelab §1/§5). A PiDeck agent + a WireGuard
-   interface there is a personal service on their box. **Needs the
-   colleague's explicit OK**; without it hwca-ap02 is out of scope (the
-   existing read-only `sigint-hwca-ap02-audit.sh` stays the monitoring).
-   It also has only 961 MB RAM (622 MB free) next to nginx + fail2ban.
+1. ~~hwca-ap02 ownership~~ **Decided 2026-09-29: hwca-ap02 is in.** The
+   operator is its server admin; the box belongs to HWCA studio (hwca.de).
+   It stays a production web host, so: agent memory-capped, nothing that
+   touches nginx/fail2ban, rollout last and only after piapps4/piapps3 went
+   cleanly. (The homelab skill's "colleague-billed, read/ops only" wording
+   is outdated for this purpose; correct it in step 5.)
 2. **Logs for cloud hosts in 2.7.0?** Plan: metrics/history/alerts first;
    remote logs opt-in per host afterwards (lower priority, decided
    2026-09-29). Which sources, if any (auth.log, RELAY/BUILD logs)?
@@ -35,7 +35,7 @@ per the homelab standard. No cloud session needed.
 | piapps (hub) | arm64, Ubuntu 26.04.1, Node 22, 16 GB. **No `wireguard-tools`, no wg interface.** Behind the ASUS NAT with a dynamic WAN IP → it dials out. Docker nets 172.17–172.20 |
 | piapps3 | DO SGP1 `139.59.253.127`, **x86_64, Ubuntu 24.04.5**, Node 24, 2 GB with **~640 MB available** (RELAY 小信使, sole Mastodon poster). ufw 22/80/443. zk in `sudo`, `users` only. DO nets `10.104.0.0/20`, `10.15.0.0/16` |
 | piapps4 | Hetzner FSN1 `167.233.201.18`, x86_64, Ubuntu 26.04.1, Node 24, 4 GB (2.1 GB avail). **`wg0` = brixhouse tunnel `192.168.178.202/24` — must stay untouched** (BUILD/GUARDIAN monitors depend on it). ufw 22 only |
-| hwca-ap02 | Linode Osaka `172.233.75.18`, x86_64, Ubuntu 24.04.5, Node 22, **961 MB (622 avail)**, nginx + fail2ban (hwca.de). No wg. ufw 22/80/443. **Colleague-billed** (see above) |
+| hwca-ap02 | Linode Osaka `172.233.75.18`, x86_64, Ubuntu 24.04.5, Node 22, **961 MB (622 avail)**, nginx + fail2ban (hwca.de, HWCA studio). No wg. ufw 22/80/443. In scope (decision 1), production web host |
 | Subnet | `10.77.0.0/24` free on all hosts (checked 2026-09-29) |
 | Code | Agent + installer are x86-ready in principle (hwmon temperature since 2.6.0) but **`install.sh --agent` has never run on x86_64** |
 
@@ -78,7 +78,7 @@ per the homelab standard. No cloud session needed.
 - [ ] Key pair, `wg-pideck.conf` with the VPS peers (added one by one).
 - [ ] `wg-quick@wg-pideck` enabled; hub ufw needs no inbound rule (it dials out).
 
-### 3. Per VPS (piapps4 first — most RAM; then piapps3; hwca-ap02 only if OK'd)
+### 3. Per VPS (piapps4 first — most RAM; then piapps3; hwca-ap02 last)
 - [ ] `apt install wireguard-tools`; key pair; `wg-pideck.conf`; ufw `51821/udp`.
 - [ ] `wg-quick@wg-pideck` up + enabled; ping `10.77.0.1` ↔ `10.77.0.x`.
 - [ ] piapps4: confirm `wg0` (brixhouse) unchanged and its monitors green.
@@ -100,7 +100,9 @@ per the homelab standard. No cloud session needed.
 - [ ] Obsidian runbook `pideck-wireguard-agents-runbook.md` (topology, keys'
       locations, add/remove a host, rollback).
 - [ ] hexawulf-homelab skill: `references/network.md` (new tunnel),
-      `references/hosts-detail.md` (pideck agents; DS920 is DSM 7.4.1, not 7.3).
+      `references/hosts-detail.md` (pideck agents; DS920 is DSM 7.4.1, not 7.3;
+      hwca-ap02: operator is the admin, owner HWCA studio — replace the
+      "colleague-billed, read/ops only" wording with what's actually allowed).
 - [ ] Release 2.7.0 (tag, GitHub release), memory notes.
 
 ## Rollback (per host, any time)
@@ -115,6 +117,6 @@ per the homelab standard. No cloud session needed.
   swap/OOM; `MemoryMax` as a hard cap.
 - **piapps4 `wg0`** (brixhouse): separate interface, separate port, separate
   subnet; verify before/after.
-- **hwca-ap02**: ownership (decision 1) and 1 GB RAM.
+- **hwca-ap02**: production site (hwca.de) with 1 GB RAM: memory cap, rollout last, verify the site before/after.
 - First x86_64 run of `install.sh --agent` (dry run first on each host).
 - Provider firewalls silently dropping 51821/udp (step 0).
