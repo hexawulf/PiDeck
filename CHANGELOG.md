@@ -5,6 +5,27 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-09-29
+
+Multi-host, phase H2 (plan: [docs/plans/multi-host-h2.md](./docs/plans/multi-host-h2.md)). Every machine now gets what the hub already had: history charts, alerts, and data recorded even when no tab is open.
+
+### Added
+- **Schema migrations**: `migrations/` (drizzle-kit) applied by `npm run db:migrate` under an advisory lock, one transaction per migration. A database from 2.x is recognised and its baseline (`0000`) is only *recorded*, never run; `user_sessions` is never touched by any migration
+- `install.sh`: fresh installs use `db:migrate` instead of `drizzle-kit push`; `--update` takes a `pg_dump -Fc` to `~/backups/` (`--no-db-backup` / `PIDECK_NO_DB_BACKUP` to skip), migrates before the restart, and on failure keeps the running build and prints the restore command. The hub serves with a "Database needs migrating" banner instead of crash-looping when migrations are pending
+- **Per-host history**: the hub samples every host each minute in parallel (5 s per host, 10 s per tick); agents expose raw counters at `GET /api/agent/sample` (`capabilities.sample`) and the hub computes true one-minute averages, dropping intervals across counter resets. Retention `PIDECK_HISTORY_HOURS` (default 24, 1–168)
+- **Per-host alerts** stored in a new `alerts` table (they survive a hub restart): temperature for every host, plus **offline** after `PIDECK_OFFLINE_ALERT_MINUTES` (default 5). Toasts name the host. An old agent or a wrong token is not "offline"
+- **All hosts overview** `/hosts`: one tile per machine (status, CPU, temperature, RAM, disk, open alerts, last seen), click through to its dashboard; linked from the host switcher and the palette
+- APIs: `GET /api/history?host=&range=`, `GET /api/alerts?host=<id|all>`, `GET /api/overview`; `/api/system/history` and `/api/system/alerts` stay as local aliases
+- Tests: unit 336 → 397 (21 on a real Postgres with the prod time zone, `PIDECK_TEST_PG_URL`), installer 124 → 129, E2E 112 → 117
+
+### Changed
+- `historical_metrics` gains `host_id` (existing rows become `local`) and an index on `(host_id, timestamp DESC)`; timestamps are always written as UTC by the app (the column's database default is dropped)
+- Remote dashboards show history charts and alerts; agents older than 2.5 show an amber "update the agent for history" state
+- The old hand-written `migrations/0001_…sql` moved to `migrations/legacy/` (kept, never run); the redundant `idx_users_username` index is dropped
+
+### Upgrading
+- Update agents first (`git pull && ./scripts/install.sh --update --yes` on each), then the hub (`./scripts/install.sh --update`). The hub needs `pg_dump` of the server's major version
+
 ## [2.4.0] - 2026-09-28
 
 Multi-host, phase H1 (plan: [docs/plans/multi-host.md](./docs/plans/multi-host.md)). One dashboard for several machines; guide: [Add another machine](./docs/INSTALL.md#add-another-machine-agent).
