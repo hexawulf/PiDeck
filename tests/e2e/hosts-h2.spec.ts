@@ -19,7 +19,7 @@ test.describe("multi-host H2", () => {
     expect(hist.status()).toBe(200);
     expect(Array.isArray(await hist.json())).toBe(true);
     expect((await api.get("/api/history?host=nope&range=1h")).status()).toBe(404);
-    expect((await api.get("/api/history?host=e2e-agent&range=7d")).status()).toBe(400);
+    expect((await api.get("/api/history?host=e2e-agent&range=30d")).status()).toBe(400);
     expect((await api.get("/api/system/history")).status()).toBe(200); // 2.4 alias
     expect((await api.get("/api/system/alerts")).status()).toBe(200); // 2.4 alias
     expect(Array.isArray(await (await api.get("/api/alerts?host=all")).json())).toBe(true);

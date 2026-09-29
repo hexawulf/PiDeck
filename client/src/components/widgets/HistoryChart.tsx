@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useHistory } from "@/hooks/use-system-info";
 import { downsample, type Point } from "@/lib/downsample";
-import { formatClock, formatNumber, parseDbTimestamp, rateScale } from "@/lib/format";
+import { formatClock, formatDayClock, formatNumber, parseDbTimestamp, rateScale } from "@/lib/format";
+import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { QueryState } from "@/widgets/WidgetFrame";
 import { useHost, useHostSummary } from "@/hosts/HostProvider";
@@ -16,8 +17,16 @@ export const RANGES = [
   { id: "1h", label: "1h", ms: 60 * 60_000 },
   { id: "6h", label: "6h", ms: 6 * 60 * 60_000 },
   { id: "24h", label: "24h", ms: 24 * 60 * 60_000 },
+  { id: "3d", label: "3d", ms: 3 * 24 * 60 * 60_000 },
+  { id: "7d", label: "7d", ms: 7 * 24 * 60 * 60_000 },
 ] as const;
 export type RangeId = (typeof RANGES)[number]["id"];
+
+/** Ranges the hub keeps enough history for (PIDECK_HISTORY_HOURS; 24 h when unknown). */
+export function rangesFor(historyHours: number | undefined): (typeof RANGES)[number][] {
+  const keptMs = (historyHours ?? 24) * 3_600_000;
+  return RANGES.filter((r) => r.ms <= 24 * 3_600_000 || r.ms <= keptMs);
+}
 
 export type Series = {
   key: string;
@@ -40,10 +49,10 @@ export function toChartPoints(rows: HistoryRow[], series: Series[], rangeMs: num
   return downsample(pts, 300);
 }
 
-function RangePicker({ value, onChange, label }: { value: RangeId; onChange: (r: RangeId) => void; label: string }) {
+function RangePicker({ value, onChange, label, ranges }: { value: RangeId; onChange: (r: RangeId) => void; label: string; ranges: (typeof RANGES)[number][] }) {
   return (
     <div role="group" aria-label={`${label} time range`} className="flex rounded-md border border-pi-border p-0.5">
-      {RANGES.map((r) => (
+      {ranges.map((r) => (
         <button
           key={r.id}
           type="button"
@@ -62,11 +71,15 @@ function RangePicker({ value, onChange, label }: { value: RangeId; onChange: (r:
 }
 
 export function HistoryChart({ id, label, series, current }: { id: string; label: string; series: Series[]; current?: React.ReactNode }) {
-  const query = useHistory();
+  const ranges = rangesFor(useAuth().user?.historyHours);
   const host = useHost();
   const oldAgent = useHostSummary(host.id)?.history === "unsupported";
-  const [range, setRange] = useState<RangeId>("1h");
+  const [picked, setRange] = useState<RangeId>("1h");
+  const range = ranges.some((r) => r.id === picked) ? picked : "1h";
   const rangeMs = RANGES.find((r) => r.id === range)!.ms;
+  const long = range === "3d" || range === "7d";
+  const query = useHistory(long ? range : undefined);
+  const tick = long ? formatDayClock : formatClock;
 
   // Recompute only when a new history payload arrives or the range changes.
   const { points, scale, domain } = useMemo(() => {
@@ -91,7 +104,7 @@ export function HistoryChart({ id, label, series, current }: { id: string; label
     <div className="flex h-full flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs text-pi-text-muted tabular-nums">{current}</div>
-        <RangePicker value={range} onChange={setRange} label={label} />
+        <RangePicker value={range} onChange={setRange} label={label} ranges={ranges} />
       </div>
       <QueryState
         query={query}
@@ -120,7 +133,7 @@ export function HistoryChart({ id, label, series, current }: { id: string; label
                   type="number"
                   scale="time"
                   domain={domain}
-                  tickFormatter={formatClock}
+                  tickFormatter={tick}
                   stroke="var(--pi-text-muted)"
                   fontSize={11}
                   minTickGap={24}
@@ -133,7 +146,7 @@ export function HistoryChart({ id, label, series, current }: { id: string; label
                   label={{ value: scale.unit, angle: -90, position: "insideLeft", fill: "var(--pi-text-muted)", fontSize: 11, dy: 16 }}
                 />
                 <Tooltip
-                  labelFormatter={(t: number) => formatClock(t)}
+                  labelFormatter={(t: number) => tick(t)}
                   formatter={(v: number) => `${formatNumber(v)} ${scale.unit}`}
                   contentStyle={{ background: "var(--pi-card)", border: "1px solid var(--pi-border)", borderRadius: 6, fontSize: 12 }}
                   labelStyle={{ color: "var(--pi-text-muted)" }}

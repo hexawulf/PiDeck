@@ -13,6 +13,11 @@ export function formatClock(t: number): string {
   return new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/** Axis label for multi-day ranges: "Tue 14:00". */
+export function formatDayClock(t: number): string {
+  return new Date(t).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 /** Pick one unit for a whole axis so ticks don't each carry their own. */
 export function rateScale(maxKBps: number): { unit: string; divisor: number } {
   if (maxKBps >= 1024 * 1024) return { unit: "GB/s", divisor: 1024 * 1024 };

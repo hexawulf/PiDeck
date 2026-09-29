@@ -25,9 +25,53 @@ export type HistoryPoint = {
 /** One row as /api/history and /api/system/history return it (no host id: the caller asked for one). */
 export type HistoryRow = Omit<HistoryPoint, "hostId"> & { id: number };
 
-export const RANGES_MS = { "15m": 15 * 60_000, "1h": 3_600_000, "6h": 6 * 3_600_000, "24h": 24 * 3_600_000 } as const;
+export const RANGES_MS = {
+  "15m": 15 * 60_000, "1h": 3_600_000, "6h": 6 * 3_600_000, "24h": 24 * 3_600_000,
+  "3d": 3 * 24 * 3_600_000, "7d": 7 * 24 * 3_600_000, // only as far back as PIDECK_HISTORY_HOURS keeps
+} as const;
 export type RangeId = keyof typeof RANGES_MS;
-export const isRangeId = (r: unknown): r is RangeId => typeof r === "string" && r in RANGES_MS;
+export const isRangeId = (r: unknown): r is RangeId => typeof r === "string" && Object.hasOwn(RANGES_MS, r);
+/** Long ranges are bucket-averaged on the hub (≤ ~860 points instead of up to 10,080 rows). */
+export const RANGE_BUCKET_MS: Partial<Record<RangeId, number>> = { "3d": 5 * 60_000, "7d": 15 * 60_000 };
+
+/** The column's zone-less UTC wall time (or an ISO string) → ms. */
+const rowTime = (v: unknown) => Date.parse(dbTimestampToIso(v));
+
+/**
+ * Average rows into fixed UTC buckets (bucket start as the timestamp). Empty
+ * buckets are simply absent, so gaps (host unreachable) stay visible.
+ */
+export function downsampleRows(rows: HistoryRow[], bucketMs: number): HistoryRow[] {
+  const out: HistoryRow[] = [];
+  const fields = ["cpuUsage", "memoryUsage", "temperature", "diskReadSpeed", "diskWriteSpeed", "networkRx", "networkTx"] as const;
+  let key = Number.NaN;
+  let acc: { id: number; sums: number[]; counts: number[] } | null = null;
+  const flush = () => {
+    if (!acc) return;
+    const row = { id: acc.id, timestamp: new Date(key * bucketMs).toISOString() } as HistoryRow;
+    fields.forEach((f, i) => ((row as Record<string, unknown>)[f] = acc!.counts[i] ? Math.round(acc!.sums[i] / acc!.counts[i]) : null));
+    out.push(row);
+  };
+  for (const r of rows) {
+    const t = rowTime(r.timestamp);
+    if (!Number.isFinite(t)) continue;
+    const k = Math.floor(t / bucketMs);
+    if (k !== key) {
+      flush();
+      key = k;
+      acc = { id: r.id, sums: fields.map(() => 0), counts: fields.map(() => 0) };
+    }
+    fields.forEach((f, i) => {
+      const v = r[f];
+      if (typeof v === "number" && Number.isFinite(v)) {
+        acc!.sums[i] += v;
+        acc!.counts[i]++;
+      }
+    });
+  }
+  flush();
+  return out;
+}
 
 /** A cutoff `ms` before `now`, as the UTC ISO string the column is compared with. */
 export const utcCutoff = (ms: number, now = Date.now()) => new Date(now - ms).toISOString();

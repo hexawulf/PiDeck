@@ -15,8 +15,10 @@ export function useSystemInfo() {
  * always asks the hub: /api/system/history for itself (the 2.4 path), else
  * /api/history?host=<id>. The host id is in the path, so caches never mix.
  */
-export function useHistory() {
+export function useHistory(long?: "3d" | "7d") {
   const host = useHost();
+  // Long ranges come bucket-averaged from the hub and change slowly: poll every 5 min.
+  if (long) return useWidgetQuery(`/api/history?host=${encodeURIComponent(host.id)}&range=${long}`, 300_000, historySchema, { scope: "hub" });
   const url = host.isLocal ? "/api/system/history" : `/api/history?host=${encodeURIComponent(host.id)}&range=24h`;
   return useWidgetQuery(url, 60000, historySchema, { scope: "hub" });
 }

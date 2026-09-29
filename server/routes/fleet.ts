@@ -1,12 +1,12 @@
 // Hub-only APIs for every host (docs/plans/multi-host-h2.md › API), all
 // served from the hub's database and memory, never proxied:
-//   GET /api/history?host=<id>&range=15m|1h|6h|24h   (+ /api/system/history = local, full retention)
+//   GET /api/history?host=<id>&range=15m|1h|6h|24h|3d|7d   (3d/7d bucket-averaged; + /api/system/history = local)
 //   GET /api/alerts?host=<id|all>                    (+ /api/system/alerts  = local, 2.4 shape)
 //   GET /api/overview                                (one request for the /hosts page)
 import type { Express, RequestHandler } from "express";
 import type { HubRuntime } from "../runtime";
 import type { Alert } from "../services/alerts";
-import { historyStore, isRangeId, RANGES_MS, utcCutoff, type HistoryStore } from "../services/history";
+import { downsampleRows, historyStore, isRangeId, RANGE_BUCKET_MS, RANGES_MS, utcCutoff, type HistoryStore } from "../services/history";
 
 /** Resolved alerts stay listed this long (so the UI can toast "resolved"). */
 export const RECENT_RESOLVED_MS = 60 * 60_000;
@@ -39,9 +39,11 @@ export function registerFleetRoutes(
     const host = req.query.host ?? "local";
     if (!known(host)) return res.status(404).json({ message: "No such host" });
     const range = req.query.range ?? "24h";
-    if (!isRangeId(range)) return res.status(400).json({ message: "range must be 15m, 1h, 6h or 24h" });
+    if (!isRangeId(range)) return res.status(400).json({ message: "range must be 15m, 1h, 6h, 24h, 3d or 7d" });
     try {
-      res.json(await history.range(host, utcCutoff(Math.min(RANGES_MS[range], keepMs()), now())));
+      const rows = await history.range(host, utcCutoff(Math.min(RANGES_MS[range], keepMs()), now()));
+      const bucket = RANGE_BUCKET_MS[range];
+      res.json(bucket ? downsampleRows(rows, bucket) : rows);
     } catch (error) {
       console.error("[history]", error);
       res.status(500).json({ message: "Failed to read history" });

@@ -194,7 +194,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Pending schema migrations (M0): a banner tells the operator to run --update.
     const maintenance = { dbMigrationsPending: schemaState().checked && !schemaReady() };
     if ((req.session as any)?.authenticated) {
-      res.json({ authenticated: true, userId: (req.session as any).userId, transport, maintenance, defaultPassword: adminPasswordIsDefault() });
+      // historyHours: how far back history goes (PIDECK_HISTORY_HOURS), so charts offer 3d/7d only when kept.
+      res.json({ authenticated: true, userId: (req.session as any).userId, transport, maintenance, defaultPassword: adminPasswordIsDefault(), historyHours: runtime.historyHours });
     } else {
       res.json({ authenticated: false, transport, maintenance });
     }

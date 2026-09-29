@@ -82,7 +82,7 @@ describe("fleet APIs", () => {
 
   it("/api/history: 404 unknown host, 400 bad range", async () => {
     expect((await get("/api/history?host=nope")).status).toBe(404);
-    expect((await get("/api/history?host=p2&range=7d")).status).toBe(400);
+    expect((await get("/api/history?host=p2&range=30d")).status).toBe(400);
     expect((await get("/api/history?host=p2&host=x")).status).toBe(404); // repeated param is not a string
   });
 

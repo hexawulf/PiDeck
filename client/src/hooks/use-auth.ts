@@ -11,6 +11,8 @@ interface AuthStatus {
   maintenance?: { dbMigrationsPending: boolean };
   /** Signed in and the admin password is still the seeded default. */
   defaultPassword?: boolean;
+  /** PIDECK_HISTORY_HOURS on the hub (2.6+): charts offer 3d/7d only when that much is kept. */
+  historyHours?: number;
 }
 
 export function useAuth() {
