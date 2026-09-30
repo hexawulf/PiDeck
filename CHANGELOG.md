@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Favicon: dashboard tiles on a teal rounded square (inline SVG, same style as PiTasker's).
+- Logo tile (header and login) uses the favicon's teal via a new `--pi-brand` token (`#0d9488`, both themes); buttons keep `--pi-accent` blue.
 
 ## [2.8.0] - 2026-09-30
 

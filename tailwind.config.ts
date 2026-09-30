@@ -64,6 +64,7 @@ export default {
           "accent-text": "var(--pi-accent-text)",
           "accent-hover": "var(--pi-accent-hover)",
           "on-accent": "var(--pi-on-accent)",
+          brand: "var(--pi-brand)",
           success: "var(--pi-success)",
           warning: "var(--pi-warning)",
           error: "var(--pi-error)",

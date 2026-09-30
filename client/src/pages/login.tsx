@@ -60,7 +60,7 @@ export default function Login() {
           <CardContent className="p-8">
             <div className="text-center mb-8">
               <div className="flex items-center justify-center mb-4">
-                <div className="w-12 h-12 bg-pi-accent rounded-lg flex items-center justify-center">
+                <div className="w-12 h-12 bg-pi-brand rounded-lg flex items-center justify-center">
                   <Server className="w-6 h-6 text-pi-on-accent" />
                 </div>
               </div>

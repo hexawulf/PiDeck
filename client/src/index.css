@@ -65,6 +65,7 @@
   --pi-accent-hover: hsl(224, 76%, 48%);  /*                   (blue-700)  */
   --pi-accent-text: hsl(221, 83%, 53%);   /* blue-600: 5.20:1 on --pi-card, 4.73:1 on --pi-dark */
   --pi-on-accent: hsl(0, 0%, 100%);
+  --pi-brand: #0d9488;                    /* teal-600, exactly the favicon fill (logo tile, both themes) */
   --pi-success: hsl(142, 72%, 29%);       /*                   (green-700) */
   --pi-warning: hsl(26, 90%, 37%);        /*                   (amber-700) */
   --pi-error: hsl(0, 74%, 42%);           /*                   (red-700)   */
@@ -116,6 +117,7 @@
   --pi-accent-hover: hsl(224, 76%, 48%);
   --pi-accent-text: hsl(213, 94%, 68%);   /* blue-400: 5.79:1 on --pi-card (blue-600 was 2.81:1) */
   --pi-on-accent: hsl(0, 0%, 100%);
+  --pi-brand: #0d9488;                    /* teal-600, exactly the favicon fill (logo tile, both themes) */
   --pi-success: hsl(142, 69%, 58%);
   --pi-warning: hsl(50, 98%, 64%);
   --pi-error: hsl(0, 91%, 71%);           /* red-400: AA on --pi-card */
