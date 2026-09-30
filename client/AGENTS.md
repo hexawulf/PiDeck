@@ -86,6 +86,9 @@ is the default layout; saved layouts get new widgets appended at the bottom auto
   `/api/system/history` (local) or `/api/history?host=<id>&range=24h` (`useHistory`).
 - Registry: every widget declares `hosts: "local" | "any"`; `widgetsFor(isLocal)` is what a host's dashboard
   and visibility list offer. Local-only = Quick Actions (agents are read-only); history charts are "any" (H2).
+- 2.8: the Apps tab starts with `components/services-card.tsx` (lazy chunk; `/api/services`, not asked on agents
+  without `useHostSummary(id).services`); Docker/pm2 collapse to one line when absent; the overview chip is
+  `serviceChip()` in `pages/hosts.tsx`, a sibling link of the tile (links can't nest).
 - H3: remote hosts get a Logs tab when `useHostSummary(id).logs` (`remoteTabs(logs)` in `host-path.ts` gates
   routes, nav, switcher, palette, `g l`); it renders `components/remote-logs.tsx` (lazy chunk), which polls the
   tail with `useRefetch`. Remote pins share the `pins` section with ids `h:<host>:<source>` (`remotePinId`); the

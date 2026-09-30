@@ -259,6 +259,21 @@ rg -n "'/api/" server/routes
   5 s timeout incl. body, 1 MB cap, JSON only; failures are 502 `{offline,lastSeen}` / `{auth}` /
   `{badResponse}` — never the agent's own error text.
 
+### Services: read-only systemd (2.8)
+**Files**: `server/services/systemd.ts` (config, argv gate, `show` parser, cached collector, compact form),
+`server/services/unit-name.ts` (the one unit-name rule, shared with journal log sources), `server/routes/services.ts`
+(`GET /api/services`, hub with login + agent allowlist; `capabilities.services`). Plan: `docs/plans/services-2.8.0.md`.
+
+- Only three `execFile("systemctl", argv)` shapes, each through `assertAllowedArgv` before it runs:
+  `show --no-pager -p <SERVICE_PROPS…> -- <units>` (one call per manager), `list-units --state=failed --plain
+  --no-legend --no-pager`, `show --no-pager -p Version`; `--user` in front for user units, with `userEnv()`
+  (XDG_RUNTIME_DIR/DBUS). Never add a verb; tests assert refusals.
+- Parse key=value (property order differs by version), never by position; systemd 219 has no NRestarts; `[not set]`
+  and max-uint64 are null; "since" = CLOCK_MONOTONIC µs + `/proc/uptime`. `show` prints one record per argument, in
+  argument order (aliases show the target's Id).
+- The sample (`readCounters`) carries `services: CompactService[]` when systemd runs; the hub keeps them in
+  `runtime.lastServices` (overview chip) and raises `service:<unit>` alerts for **listed** units only (no migration).
+
 ### Background sampler (every host, H2)
 **Location**: `server/services/sampler.ts` (`createSampleTick`), shared state in `server/runtime.ts`
 (`hubRuntime()`: host hub, alert manager, last sample per host). Plan: `docs/plans/multi-host-h2.md`.

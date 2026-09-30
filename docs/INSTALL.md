@@ -272,6 +272,9 @@ to touch:
 | `PIDECK_SAMPLER` | on | `off` disables the 60 s history/alert sampler (every host). |
 | `PIDECK_HISTORY_HOURS` | 24 | Hours of history kept per host (1–168). |
 | `PIDECK_OFFLINE_ALERT_MINUTES` | 5 | Minutes an agent must be unreachable before its "offline" alert (1–1440). |
+| `PIDECK_SERVICES` | unset | systemd units for the Services card and alerts ([Services](#services-systemd-28)). Hub and agents. |
+| `PIDECK_SERVICES_FAILED` | on | Also list every failed unit (shown, not alerting). |
+| `PIDECK_SERVICE_ALERT_MINUTES` | 3 | Hub: minutes a listed unit may be down before its alert (1–1440). |
 
 `PIDECK_HOST_LOGS` is a comma-separated list of `[id:]Label=/absolute/path`
 entries. The optional `id:` keeps pins and "last opened" stable if you
@@ -668,6 +671,32 @@ How it behaves:
   streaming).
 - **Audit**: the hub logs one line per read:
   `[logs] remote read host=<id> source=<source> user=<id> ip=<ip> status=<code>`.
+
+### Services (systemd, 2.8)
+
+The Apps tab of every host (hub and agents, 2.8+) starts with a read-only
+**Services** card: the units you list, plus any unit in `failed` state. Set
+the list in each host's `.env` and restart PiDeck or the agent:
+
+```
+PIDECK_SERVICES=nginx,ssh,Database=postgresql@18-main,wg-quick@wg-pideck,user:syncthing
+```
+
+- `user:<unit>` reads the agent user's own manager (`systemctl --user`). It
+  needs lingering (`sudo loginctl enable-linger <user>`); without it the card
+  says so and those units show as unknown.
+- A **listed** unit that isn't active for `PIDECK_SERVICE_ALERT_MINUTES` (3)
+  raises an alert and a toast ("piapps4: vnstat is inactive since 16:26"):
+  critical when failed or not found, warning otherwise; it resolves when the
+  unit is active again. Unlisted failed units are shown, never alerted. A
+  oneshot like `wg-quick@…` is healthy as "active (exited)".
+- The "All hosts" overview shows a chip per host ("14/14 ok",
+  "1 failed: …") that opens its Apps tab.
+- Read-only by design: PiDeck only runs `systemctl show` and
+  `systemctl list-units --state=failed` (argument lists, no shell, unit
+  names validated); no start/stop, no sudo, no new groups. Works from
+  systemd 219 (Synology DSM) on. Hosts without systemd say so.
+- Docker and pm2 collapse to one line in the Apps tab when a host has none.
 
 ### Synology DSM (agent only, by hand)
 
