@@ -77,13 +77,27 @@ AGENT_LOG_ENV=(
   "PIDECK_AGENT_DOCKER_SOCKET=$ROOT/.e2e/fake-docker.sock"
 )
 
+# Services (tests/e2e/services.spec.ts): a fake systemctl first on PATH for
+# the hub and e2e-agent (never the real one: the harness shares the prod
+# host). It logs every argv to .e2e/fake-systemctl.log.
+mkdir -p "$ROOT/.e2e/fake-bin"
+ln -sf "$ROOT/tests/e2e/fake-systemctl.sh" "$ROOT/.e2e/fake-bin/systemctl"
+FAKE_SYSTEMCTL_LOG="$ROOT/.e2e/fake-systemctl.log"; : > "$FAKE_SYSTEMCTL_LOG"
+FAKE_PATH="$ROOT/.e2e/fake-bin:$PATH"
+AGENT_LOG_ENV+=(
+  "PATH=$FAKE_PATH" "FAKE_SYSTEMCTL_LOG=$FAKE_SYSTEMCTL_LOG"
+  "PIDECK_SERVICES=pideck-agent,nginx,wg-quick@wg-pideck,Typo=typo-unit,vnstat,user:syncthing"
+  "PIDECK_AGENT_JOURNAL_UNITS=nginx,user:syncthing"
+)
+
 AGENT_PIDS=()
 trap 'kill "${AGENT_PIDS[@]}" 2>/dev/null' EXIT INT TERM
 start_agent "$AGENT_PORT" "$AGENT_TOKEN" "${AGENT_LOG_ENV[@]}"
 start_agent "$((AGENT_PORT + 1))" "another-agents-token-test-only-0123456789"
 
 echo "serving dist-dev on :$PORT with e2e agents on :$AGENT_PORT-$((AGENT_PORT + 2)) (log: $LOG)"
-env NODE_ENV=production CSP_ENFORCE=true PIDECK_SAMPLER=off PIDECK_DISABLE_SYSTEM_UPDATE=1 PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \
+env PATH="$FAKE_PATH" FAKE_SYSTEMCTL_LOG="$FAKE_SYSTEMCTL_LOG" PIDECK_SERVICES=nginx,ssh \
+  NODE_ENV=production CSP_ENFORCE=true PIDECK_SAMPLER=off PIDECK_DISABLE_SYSTEM_UPDATE=1 PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \
   PIDECK_HOSTS="e2e-agent=http://127.0.0.1:$AGENT_PORT,e2e-badtoken=http://127.0.0.1:$((AGENT_PORT + 1)),e2e-offline=http://127.0.0.1:$((AGENT_PORT + 2))" \
   PIDECK_HOST_TOKEN_E2E_AGENT="$AGENT_TOKEN" \
   PIDECK_HOST_TOKEN_E2E_BADTOKEN="wrong-token-test-only-0123456789abcdef" \

@@ -120,7 +120,7 @@ test.describe("multi-host", () => {
 
   test("palette 'Switch to <host>' and the g h shortcut", async ({ page }) => {
     await page.goto("/apps");
-    await expect(page.getByRole("heading", { name: "Docker Containers" })).toBeVisible();
+    await expect(page.getByTestId("services-card")).toBeVisible(); // (Docker may be absent here: then it's one line)
     await page.keyboard.press("Control+k");
     await page.getByRole("combobox").fill("switch to e2e agent");
     await page.keyboard.press("Enter");
