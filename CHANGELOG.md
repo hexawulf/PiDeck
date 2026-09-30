@@ -5,6 +5,28 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-09-30
+
+Services (plan: [docs/plans/services-2.8.0.md](./docs/plans/services-2.8.0.md)): what actually runs each machine, on every host. The Apps tab knew only Docker and pm2, so the cloud VPSes (neither) showed nothing, and nginx, PostgreSQL, WireGuard, OpenClaw or Syncthing weren't shown anywhere.
+
+### Added
+- **Services card** first in the Apps tab of every host (hub and agents): the units in `PIDECK_SERVICES` (`user:<unit>` for user units, `Label=<unit>`), plus every failed unit (`PIDECK_SERVICES_FAILED`, on). Status, sub-state, since, restarts, memory; failed and not-found first; a Logs link when the agent has that unit's journal source
+- **Service alerts**: a listed unit down for `PIDECK_SERVICE_ALERT_MINUTES` (3) raises `service:<unit>` (critical when failed/not found, warning when inactive) with a toast, resolved on the next good sample. Unlisted failed units show but never alert. No migration
+- **"All hosts" overview chip** per host ("9/9 ok", "1 failed: …") that opens its Apps tab
+- `GET /api/services` on the hub and every agent (`capabilities.services`); a compact form rides in the sample. Agents older than 2.8 say "update the agent"
+
+### Changed
+- Docker and pm2 cards collapse to one line on a host without them
+- Journal log units and services share one unit-name rule (`server/services/unit-name.ts`)
+
+### Security
+- Read-only by design: only `systemctl show` and `systemctl list-units --state=failed` (plus `show -p Version`), via execFile with fixed argv behind a tested gate (17 refused shapes incl. start/stop/restart/enable/kill/set-property/edit); no shell, no sudo, no new groups. User units use the agent user's own manager (`XDG_RUNTIME_DIR`/`DBUS_SESSION_BUS_ADDRESS`, needs lingering)
+
+### Verified (2026-09-30)
+- Real systemd 259 (piapps, piapps2, piapps4), 255 (piapps3, hwca-ap02) and 219 (Synology DSM: no restarts/memory, shown as "—"); user units from a system service; alias `sshd` → `ssh.service`; a typo shows "not found"
+- Alert cycle live: `vnstat` stopped on piapps4 → alert after ~3.9 min, resolved 43 s after restart
+- Tests: unit 549 → 603 (21 need Postgres), E2E 123 → 128; eager JS +587 B gzip (the card is a 2.7 kB lazy chunk). Agent RSS 80–98 MB
+
 ## [2.7.1] - 2026-09-30
 
 Remote logs for the cloud hosts. No change to the hub or agent code; the agents on piapps3, piapps4 and hwca-ap02 were configured through their `.env`, and the docs describe how.

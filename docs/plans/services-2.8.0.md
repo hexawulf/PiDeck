@@ -1,6 +1,6 @@
 # PiDeck 2.8.0 — Services (systemd) on every host
 
-Status: plan, 2026-09-30. Build in a Claude Code **cloud** session on branch
+Status: **done, released as v2.8.0 (2026-09-30)**. Was: plan, 2026-09-30. Build in a Claude Code **cloud** session on branch
 `feat/2.8.0-services` from `main` (v2.7.1 + docs `beaaca1`). Rollout
 (per-host config, deploy, release) is done afterwards from the CLI.
 
