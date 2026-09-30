@@ -5,6 +5,11 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Favicon: dashboard tiles on a teal rounded square (inline SVG, same style as PiTasker's).
+
 ## [2.8.0] - 2026-09-30
 
 Services (plan: [docs/plans/services-2.8.0.md](./docs/plans/services-2.8.0.md)): what actually runs each machine, on every host. The Apps tab knew only Docker and pm2, so the cloud VPSes (neither) showed nothing, and nginx, PostgreSQL, WireGuard, OpenClaw or Syncthing weren't shown anywhere.
