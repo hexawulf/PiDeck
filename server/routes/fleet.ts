@@ -6,6 +6,7 @@
 import type { Express, RequestHandler } from "express";
 import type { HubRuntime } from "../runtime";
 import type { Alert } from "../services/alerts";
+import { compactServices, localServices, type CompactService } from "../services/systemd";
 import { downsampleRows, historyStore, isRangeId, RANGE_BUCKET_MS, RANGES_MS, utcCutoff, type HistoryStore } from "../services/history";
 
 /** Resolved alerts stay listed this long (so the UI can toast "resolved"). */
@@ -22,11 +23,34 @@ export type AlertView = {
   resolvedAt: string | null;
 };
 
+/** The overview chip: listed units ok of listed, and what's failed or down (listed or not). null = nothing known. */
+export type ServiceSummary = { listed: number; ok: number; failed: string[]; down: string[] };
+export function serviceSummary(list: CompactService[] | undefined): ServiceSummary | null {
+  if (!list) return null;
+  const name = (s: CompactService) => `${s.unit}${s.user ? " (user)" : ""}`;
+  const listed = list.filter((s) => s.listed);
+  return {
+    listed: listed.length,
+    ok: listed.filter((s) => s.health === "ok").length,
+    failed: list.filter((s) => s.health === "fail").map(name),
+    down: listed.filter((s) => s.health === "warn").map(name),
+  };
+}
+
 export function registerFleetRoutes(
   app: Express,
   requireAuth: RequestHandler,
-  rt: Pick<HubRuntime, "hostHub" | "alerts" | "lastSample" | "historyHours">,
-  { history = historyStore, now = Date.now }: { history?: Pick<HistoryStore, "range" | "latestPerHost">; now?: () => number } = {},
+  rt: Pick<HubRuntime, "hostHub" | "alerts" | "lastSample" | "historyHours"> & Partial<Pick<HubRuntime, "lastServices">>,
+  {
+    history = historyStore,
+    now = Date.now,
+    localServiceList = async () => compactServices(await localServices().get()),
+  }: {
+    history?: Pick<HistoryStore, "range" | "latestPerHost">;
+    now?: () => number;
+    /** The hub's own units, read live (cached 10 s): the overview works with the sampler off too. */
+    localServiceList?: () => Promise<CompactService[] | undefined>;
+  } = {},
 ) {
   const known = (id: unknown): id is string => typeof id === "string" && (id === "local" || rt.hostHub.has(id));
   const view = (a: Alert): AlertView => ({
@@ -82,6 +106,8 @@ export function registerFleetRoutes(
       const hosts = await rt.hostHub.list();
       const needDb = hosts.some((h) => !rt.lastSample.has(h.id));
       const latest = needDb ? await history.latestPerHost().catch(() => new Map()) : new Map();
+      const localSvc = await localServiceList().catch(() => undefined);
+      const servicesOf = (id: string) => (id === "local" ? localSvc : rt.lastServices?.get(id));
       res.json({
         generatedAt: new Date(now()).toISOString(),
         historyHours: rt.historyHours,
@@ -93,7 +119,7 @@ export function registerFleetRoutes(
             : row
               ? { at: row.timestamp, cpu: row.cpuUsage, memory: row.memoryUsage, temperature: row.temperature, diskUsage: null, rxKBs: row.networkRx, txKBs: row.networkTx }
               : null;
-          return { ...h, sample, alerts: rt.alerts.openAlerts(h.id).map(view) };
+          return { ...h, sample, alerts: rt.alerts.openAlerts(h.id).map(view), servicesSummary: serviceSummary(servicesOf(h.id)) };
         }),
       });
     } catch (error) {

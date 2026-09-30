@@ -21,6 +21,7 @@ import nvmeRouter from "./routes/nvme";
 import thermalZonesRouter from "./routes/thermalZones";
 import powerStatusRouter from "./routes/powerStatus";
 import { LogFilterError } from "./services/log-filter";
+import { servicesHandler } from "./routes/services";
 import { agentLogConfig, listSources, parseTailQuery, readSource, SourceError, type AgentLogConfig } from "./services/agent-logs/sources";
 
 export type AgentInfo = {
@@ -29,15 +30,16 @@ export type AgentInfo = {
   /**
    * sample: serves /api/agent/sample, so the hub records history for it (2.5+).
    * logs: serves /api/agent/logs (PIDECK_AGENT_LOGS=on, 2.6+).
+   * services: serves /api/services, read-only systemd units (2.8+).
    */
-  capabilities: { read: true; sample: true; actions: false; logs: boolean; paths: readonly string[] };
+  capabilities: { read: true; sample: true; actions: false; logs: boolean; services: true; paths: readonly string[] };
 };
 
 export function agentInfo(logs = agentLogConfig(process.env, () => {}).enabled): AgentInfo {
   return {
     version: PIDECK_VERSION,
     hostname: os.hostname(),
-    capabilities: { read: true, sample: true, actions: false, logs, paths: AGENT_PATHS },
+    capabilities: { read: true, sample: true, actions: false, logs, services: true, paths: AGENT_PATHS },
   };
 }
 
@@ -90,6 +92,8 @@ export function createAgentApp(opts: {
       next(err);
     }
   });
+  // Read-only systemd units (listed in PIDECK_SERVICES + failed ones).
+  app.get("/api/services", servicesHandler);
   // The same handlers the hub serves locally (only the allowlisted paths reach them).
   app.use("/api", systemRouter, metricsRouter, networkRouter, dockerRouter, pm2Router);
   app.get("/api/metrics/nvme", nvmeRouter);

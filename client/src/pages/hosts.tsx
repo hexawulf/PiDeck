@@ -23,6 +23,8 @@ const overviewSchema = z.object({
     hostSummarySchema.extend({
       sample: z.object({ at: z.string(), cpu: num, memory: num, temperature: num, diskUsage: num, rxKBs: num, txKBs: num }).nullable(),
       alerts: z.array(alertSchema),
+      /** systemd units (2.8 hub): null = unknown (agent < 2.8, no systemd, not sampled yet). */
+      servicesSummary: z.object({ listed: z.number(), ok: z.number(), failed: z.array(z.string()), down: z.array(z.string()) }).nullable().optional(),
     }),
   ),
 });

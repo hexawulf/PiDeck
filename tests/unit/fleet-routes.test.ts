@@ -47,7 +47,15 @@ let base = "";
 beforeAll(async () => {
   const app = express();
   const requireAuth: RequestHandler = (req, res, next) => (req.headers["x-auth"] === "yes" ? next() : res.status(401).json({ message: "Authentication required" }));
-  registerFleetRoutes(app, requireAuth, { hostHub, alerts, lastSample, historyHours: 6 }, { history: { range, latestPerHost } as never, now: () => NOW });
+  const lastServices = new Map([
+    ["p2", [
+      { unit: "nginx", user: false, health: "ok" as const, listed: true, state: "active", since: null },
+      { unit: "syncthing", user: true, health: "warn" as const, listed: true, state: "inactive", since: null },
+      { unit: "pkgctl-HyperBackup-ED.service", user: false, health: "fail" as const, listed: false, state: "failed", since: null },
+    ]],
+  ]);
+  const localServiceList = async () => [{ unit: "ssh", user: false, health: "ok" as const, listed: true, state: "active", since: null }];
+  registerFleetRoutes(app, requireAuth, { hostHub, alerts, lastSample, historyHours: 6, lastServices }, { history: { range, latestPerHost } as never, now: () => NOW, localServiceList });
   server = app.listen(0, "127.0.0.1");
   await new Promise((r) => server.once("listening", r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -124,5 +132,15 @@ describe("fleet APIs", () => {
     expect(by.down).toMatchObject({ status: "offline", sample: null, alerts: [expect.objectContaining({ type: "offline" })] });
     expect(by.badtoken).toMatchObject({ status: "auth-error", alerts: [] });
     expect(by.old).toMatchObject({ status: "online", history: "unsupported" });
+  });
+});
+
+describe("overview: services chip data (2.8)", () => {
+  it("listed ok of listed, failed (listed or not) and down units; null when nothing is known", async () => {
+    const { body } = await get("/api/overview");
+    const by = Object.fromEntries(body.hosts.map((h: { id: string }) => [h.id, h]));
+    expect(by.local.servicesSummary).toEqual({ listed: 1, ok: 1, failed: [], down: [] });
+    expect(by.p2.servicesSummary).toEqual({ listed: 2, ok: 1, failed: ["pkgctl-HyperBackup-ED.service"], down: ["syncthing (user)"] });
+    expect(by.down.servicesSummary).toBeNull();
   });
 });

@@ -25,7 +25,8 @@ import { hubRuntime, type HubRuntime, type LastSample } from "../runtime";
 import type { SampleOutcome } from "../hosts";
 import { isRawCounters, ratesBetween, readCounters, type RawCounters } from "./counters";
 import { historyStore, utcCutoff, type HistoryPoint, type HistoryStore } from "./history";
-import { offlineMessage, TEMPERATURE_THRESHOLD, temperatureMessage } from "./alerts";
+import { offlineMessage, serviceAlertType, serviceMessage, TEMPERATURE_THRESHOLD, temperatureMessage } from "./alerts";
+import { parseCompactServices, type CompactService } from "./systemd";
 
 export const SAMPLE_INTERVAL_MS = 60_000;
 /** Arbitrary fixed key for pg_try_advisory_xact_lock ("PiDeck" in ASCII). */
@@ -128,7 +129,7 @@ const withTimeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
   });
 
 export type TickDeps = {
-  runtime?: Pick<HubRuntime, "hostHub" | "alerts" | "lastSample" | "historyHours" | "offlineMinutes">;
+  runtime?: Pick<HubRuntime, "hostHub" | "alerts" | "lastSample" | "historyHours" | "offlineMinutes"> & Partial<Pick<HubRuntime, "serviceMinutes" | "lastServices">>;
   history?: Pick<HistoryStore, "insert" | "prune" | "latestPerHost">;
   readLocal?: () => Promise<RawCounters>;
   withLock?: (fn: () => Promise<void>) => Promise<boolean>;
@@ -154,6 +155,9 @@ export function createSampleTick({
   const { hostHub, alerts, lastSample } = runtime;
   const prev = new Map<string, RawCounters>();
   const failingSince = new Map<string, number>(); // first failed poll of the current streak
+  const serviceDownSince = new Map<string, number>(); // host \0 alert type → first non-ok sample of the streak
+  const serviceMinutes = runtime.serviceMinutes ?? 3;
+  const lastServices = runtime.lastServices ?? new Map<string, CompactService[]>();
   let seeded = false;
 
   async function pollOne(id: string): Promise<Poll> {
@@ -170,6 +174,7 @@ export function createSampleTick({
       severity: "warning",
       message: typeof temp === "number" ? temperatureMessage(temp) : "",
     });
+    await evaluateServiceAlerts(p, t);
     if (p.id === "local") return;
     // Offline: unreachable for longer than PIDECK_OFFLINE_ALERT_MINUTES. A wrong
     // token, a bad answer or an old agent is *not* offline (it has its own
@@ -185,6 +190,43 @@ export function createSampleTick({
     } else {
       failingSince.delete(p.id);
       await alerts.evaluate(p.id, "offline", false, { severity: "critical", message: "" });
+    }
+  }
+
+  /**
+   * service:<unit> alerts (2.8): only units the host lists in PIDECK_SERVICES.
+   * Opens after PIDECK_SERVICE_ALERT_MINUTES of consecutive non-ok samples,
+   * resolves on the first ok one. No sample (offline host) or no `services`
+   * in it (agent < 2.8, no systemd) → nothing changes: offline covers the
+   * first, and the second simply has no service alerts.
+   */
+  async function evaluateServiceAlerts(p: Poll, t: number) {
+    const services = p.counters ? parseCompactServices(p.counters.services) : null;
+    if (!services) return;
+    const listedTypes = new Set<string>();
+    for (const s of services) {
+      if (!s.listed) continue;
+      const type = serviceAlertType(s.unit, s.user);
+      listedTypes.add(type);
+      const key = `${p.id}\u0000${type}`;
+      if (s.health === "ok") {
+        serviceDownSince.delete(key);
+        await alerts.evaluate(p.id, type, false, { severity: "warning", message: "" });
+        continue;
+      }
+      if (s.health === "unknown") continue; // e.g. the user manager isn't reachable: no change
+      const since = serviceDownSince.get(key) ?? t;
+      serviceDownSince.set(key, since);
+      const overdue = t - since >= serviceMinutes * 60_000 - OFFLINE_SLACK_MS;
+      const startedAt = s.since && Date.parse(s.since) <= since ? new Date(s.since) : new Date(since);
+      await alerts.evaluate(p.id, type, overdue ? true : null, { severity: s.health === "fail" ? "critical" : "warning", message: serviceMessage(s), startedAt });
+    }
+    // A unit taken off the list: its open alert resolves.
+    for (const a of alerts.openAlerts(p.id)) {
+      if (a.type.startsWith("service:") && !listedTypes.has(a.type)) {
+        serviceDownSince.delete(`${p.id}\u0000${a.type}`);
+        await alerts.evaluate(p.id, a.type, false, { severity: a.severity, message: "" });
+      }
     }
   }
 
@@ -216,6 +258,9 @@ export function createSampleTick({
     const points: HistoryPoint[] = [];
     for (const p of polls) {
       if (!p.counters) continue;
+      const svc = parseCompactServices(p.counters.services);
+      if (svc) lastServices.set(p.id, svc);
+      else lastServices.delete(p.id); // agent < 2.8 or no systemd
       const rates = ratesBetween(prev.get(p.id) ?? null, p.counters);
       prev.set(p.id, p.counters);
       if (!rates) continue; // first sample, reboot or counter reset: this interval is dropped

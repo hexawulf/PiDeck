@@ -2,7 +2,8 @@
 // newest sample per host. Hub only: the agent never imports this (it pulls in
 // the database-backed alert store).
 import { createHostHub, type HostHub } from "./hosts";
-import { historyHours, offlineAlertMinutes, parseHosts } from "./config";
+import { historyHours, offlineAlertMinutes, parseHosts, serviceAlertMinutes } from "./config";
+import type { CompactService } from "./services/systemd";
 import { createAlertManager, type AlertManager } from "./services/alerts";
 
 /** What the sampler last computed for a host (the overview's numbers). */
@@ -24,6 +25,10 @@ export type HubRuntime = {
   lastSample: Map<string, LastSample>;
   historyHours: number;
   offlineMinutes: number;
+  /** PIDECK_SERVICE_ALERT_MINUTES (2.8). */
+  serviceMinutes: number;
+  /** Each host's systemd units from its latest sample (overview chip). */
+  lastServices: Map<string, CompactService[]>;
 };
 
 let runtime: HubRuntime | null = null;
@@ -35,6 +40,8 @@ export function hubRuntime(): HubRuntime {
     lastSample: new Map(),
     historyHours: historyHours(),
     offlineMinutes: offlineAlertMinutes(),
+    serviceMinutes: serviceAlertMinutes(),
+    lastServices: new Map(),
   };
   return runtime;
 }

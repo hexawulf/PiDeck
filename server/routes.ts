@@ -26,6 +26,7 @@ import { envPasswordMatches } from "./services/env-password";
 import { cookieSecure, insecureHttp } from "./config";
 import { hubRuntime } from "./runtime";
 import { createRemoteLogAudit } from "./agent-api";
+import { servicesHandler } from "./routes/services";
 import { registerFleetRoutes } from "./routes/fleet";
 import { schemaReady, schemaState } from "./db-schema";
 import { adminPasswordIsDefault } from "./storage";
@@ -262,6 +263,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/system/update", createSystemUpdateHandler({ run: () => SystemService.updateSystem() }));
 
   app.get("/api/reboot-check", rebootCheckHandler);
+  // Read-only systemd units on the hub itself (agents serve the same route).
+  app.get("/api/services", requireAuth, servicesHandler);
 
   // Docker container actions (listing handled by dockerRouter via Dockerode)
   app.post("/api/docker/containers/:id/restart", async (req, res) => {

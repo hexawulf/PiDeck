@@ -22,6 +22,7 @@ export const AGENT_PATHS: readonly string[] = [
   "/api/reboot-check",
   "/api/docker/containers",
   "/api/pm2/processes",
+  "/api/services", // read-only systemd units (2.8+)
 ];
 const ALLOWED = new Set(AGENT_PATHS);
 

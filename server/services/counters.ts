@@ -12,6 +12,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import { SystemService } from "./system";
 import { diskMount } from "../config";
+import { compactServices, localServices, type CompactService } from "./systemd";
 
 export type RawCounters = {
   /** When these were read (ISO, UTC). */
@@ -30,6 +31,8 @@ export type RawCounters = {
   temperature: number | null;
   /** Used share of the root filesystem, like df (%). */
   diskUsage: number | null;
+  /** systemd units (2.8+): listed + failed, compact; absent without systemd or on older agents. */
+  services?: CompactService[];
 };
 
 async function readCpu(): Promise<RawCounters["cpu"]> {
@@ -94,8 +97,8 @@ const soft = async <T>(p: Promise<T>): Promise<T | null> => {
 };
 
 /** Read everything; a part that can't be read is null (the rest still counts). */
-export async function readCounters(now: () => Date = () => new Date()): Promise<RawCounters> {
-  const [bootId, cpu, disk, net, memory, temperature, diskUsage] = await Promise.all([
+export async function readCounters(now: () => Date = () => new Date(), services: () => Promise<CompactService[] | undefined> = async () => compactServices(await localServices().get())): Promise<RawCounters> {
+  const [bootId, cpu, disk, net, memory, temperature, diskUsage, svc] = await Promise.all([
     soft(fs.readFile("/proc/sys/kernel/random/boot_id", "utf8").then((s) => s.trim())),
     soft(readCpu()),
     soft(readDisk()),
@@ -103,8 +106,11 @@ export async function readCounters(now: () => Date = () => new Date()): Promise<
     soft(readMemory()),
     soft(SystemService.readTemperature()),
     soft(readDiskUsage()),
+    soft(services()),
   ]);
-  return { sampledAt: now().toISOString(), bootId, hostname: os.hostname(), cpu, disk, net, memory, temperature, diskUsage };
+  const out: RawCounters = { sampledAt: now().toISOString(), bootId, hostname: os.hostname(), cpu, disk, net, memory, temperature, diskUsage };
+  if (svc) out.services = svc;
+  return out;
 }
 
 export type Rates = {

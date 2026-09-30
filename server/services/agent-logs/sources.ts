@@ -17,6 +17,7 @@ import { parseHostLogs } from "../../config";
 import { lineFilter } from "../log-filter";
 import { hasTool } from "../unavailable";
 import { isDsm } from "../platform";
+import { parseUnitRef } from "../unit-name";
 import { redactLine } from "./redact";
 import { ContainerGone, DEFAULT_DOCKER_SOCKET, DockerUnavailable, containerLogs, listContainers, type Container } from "./docker";
 
@@ -41,7 +42,8 @@ export type AgentLogConfig = {
 };
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48);
-const UNIT_RE = /^[A-Za-z0-9@._:-]{1,120}$/;
+/** The log source id of a journal unit (the Services card links to it). */
+export const journalSourceId = (unit: string, user: boolean) => `journal_${user ? "user_" : ""}${slug(unit)}`.slice(0, 64);
 
 /** The agent's log configuration from its .env. */
 export function agentLogConfig(env: NodeJS.ProcessEnv = process.env, warn: (m: string) => void = (m) => console.warn(m)): AgentLogConfig {
@@ -56,13 +58,13 @@ export function agentLogConfig(env: NodeJS.ProcessEnv = process.env, warn: (m: s
   for (const raw of (env.PIDECK_AGENT_JOURNAL_UNITS ?? "").split(",")) {
     const item = raw.trim();
     if (!item) continue;
-    const user = item.startsWith("user:");
-    const unit = user ? item.slice(5) : item;
-    if (!UNIT_RE.test(unit) || unit.startsWith("-")) {
+    const ref = parseUnitRef(item);
+    if (!ref) {
       warn(`[config] PIDECK_AGENT_JOURNAL_UNITS: ignoring "${item.slice(0, 60)}"`);
       continue;
     }
-    const id = `journal_${user ? "user_" : ""}${slug(unit)}`.slice(0, 64);
+    const { unit, user } = ref;
+    const id = journalSourceId(unit, user);
     if (journal.some((j) => j.id === id)) continue;
     journal.push({ id, label: `${unit}${user ? " (user)" : ""} · journal`, kind: "journal", unit, user });
   }

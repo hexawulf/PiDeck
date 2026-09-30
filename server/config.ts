@@ -239,7 +239,7 @@ export function parseHosts(
 }
 
 /** An integer env value clamped to [min, max]; invalid → fallback with a warning. */
-function intSetting(
+export function intSetting(
   env: NodeJS.ProcessEnv, key: string, fallback: number, min: number, max: number, warn: (m: string) => void,
 ): number {
   const raw = env[key]?.trim();
@@ -280,4 +280,9 @@ export function diskMount(env: NodeJS.ProcessEnv = process.env, warn: (m: string
     return "/";
   }
   return raw;
+}
+
+/** PIDECK_SERVICE_ALERT_MINUTES: a listed systemd unit not active this long raises an alert (2.8). Default 3, 1–1440. */
+export function serviceAlertMinutes(env: NodeJS.ProcessEnv = process.env, warn: (m: string) => void = (m) => console.warn(m)): number {
+  return intSetting(env, "PIDECK_SERVICE_ALERT_MINUTES", 3, 1, 1440, warn);
 }

@@ -96,6 +96,19 @@ describe("hub proxy for remote logs", () => {
     const { h: old } = hub(() => json({ version: "2.5.0", capabilities: { sample: true, logs: false } }));
     expect((await old.list())[1].logs).toBe(false);
   });
+  it("services capability (2.8): new agents yes, 2.7 agents no; /api/services is allowlisted and proxied", async () => {
+    const { h, fetchImpl } = hub((url) => (url.endsWith("/api/agent/info") ? json({ version: "2.8.0", capabilities: { sample: true, services: true } }) : json({ available: true, services: [] })));
+    const [local, p2] = await h.list();
+    expect(local.services).toBe(true);
+    expect(p2.services).toBe(true);
+    expect(await h.proxy("p2", "/api/hosts/p2/services")).toMatchObject({ status: 200, body: { available: true } });
+    expect(fetchImpl.mock.calls.at(-1)![0]).toBe("http://p2:5016/api/services");
+    expect((await h.proxy("p2", "/api/hosts/p2/services?x=1")).status).toBe(400); // no query parameters
+    const { h: old } = hub(() => json({ version: "2.7.1", capabilities: { sample: true, logs: true } }));
+    expect((await old.list())[1].services).toBe(false);
+    expect(agentAllows("GET", "/api/services")).toBe(true);
+    expect(agentAllows("POST", "/api/services")).toBe(false);
+  });
 });
 
 describe("audit line", () => {

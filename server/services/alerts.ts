@@ -10,7 +10,8 @@
 // Times are timestamptz written from JS (never a database default).
 import { getDb } from "../db";
 
-export type AlertType = "temperature" | "offline";
+/** service:<unit> / service:user:<unit> (2.8): free text in the table, one open alert per (host, type). */
+export type AlertType = "temperature" | "offline" | `service:${string}`;
 export type Severity = "warning" | "critical";
 export type Alert = {
   id: number;
@@ -156,4 +157,12 @@ export function temperatureMessage(t: number) {
 }
 export function offlineMessage(since: Date) {
   return `Not answering since ${since.toISOString()}`;
+}
+
+/** The type of a listed unit's alert. */
+export const serviceAlertType = (unit: string, user: boolean): AlertType => `service:${user ? "user:" : ""}${unit}`;
+/** "piapps4-mail-listener (user) is inactive" — the UI adds the host and "since …" (startedAt). */
+export function serviceMessage(s: { unit: string; user: boolean; state: string | null }) {
+  const state = s.state === "not-found" ? "not found" : s.state ?? "unknown";
+  return `${s.unit}${s.user ? " (user)" : ""} is ${state}`;
 }

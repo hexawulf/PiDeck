@@ -10,6 +10,7 @@ import type { RawCounters } from "../../server/services/counters";
 import type { HistoryPoint } from "../../server/services/history";
 import { createSampleTick } from "../../server/services/sampler";
 import type { LastSample } from "../../server/runtime";
+import type { CompactService } from "../../server/services/systemd";
 
 const TOKEN = "0123456789abcdef0123456789abcdef";
 const MIN = 60_000;
@@ -35,6 +36,8 @@ function setup(fleet: Fleet, { offlineMinutes = 5, store = memoryAlertStore(), l
   let tickNo = 0;
   const agentTemp: Record<string, number> = {};
   const agentBoot: Record<string, string> = {};
+  const agentServices: Record<string, CompactService[] | undefined> = {};
+  const withSvc = (host: string) => (agentServices[host] ? { services: agentServices[host] } : {});
   const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
     const host = new URL(url).hostname;
     const kind = fleet[host];
@@ -47,7 +50,7 @@ function setup(fleet: Fleet, { offlineMinutes = 5, store = memoryAlertStore(), l
       return json({ version: kind === "old" ? "2.4.0" : "2.5.0", hostname: host, capabilities: kind === "old" ? { read: true } : { read: true, sample: true } });
     }
     if (url.endsWith("/api/agent/sample")) {
-      return json(counters(tickNo, { temperature: agentTemp[host] ?? 50, bootId: agentBoot[host] ?? "boot" }));
+      return json(counters(tickNo, { temperature: agentTemp[host] ?? 50, bootId: agentBoot[host] ?? "boot", ...withSvc(host) }));
     }
     return new Response("", { status: 404 });
   });
@@ -61,12 +64,13 @@ function setup(fleet: Fleet, { offlineMinutes = 5, store = memoryAlertStore(), l
     latestPerHost: vi.fn(async () => latest),
   };
   const lastSample = new Map<string, LastSample>();
+  const lastServices = new Map<string, CompactService[]>();
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const lock = { held: true };
   const tick = createSampleTick({
-    runtime: { hostHub, alerts, lastSample, historyHours: 24, offlineMinutes },
+    runtime: { hostHub, alerts, lastSample, historyHours: 24, offlineMinutes, serviceMinutes: 3, lastServices },
     history,
-    readLocal: async () => counters(tickNo, { temperature: agentTemp.local ?? 45 }),
+    readLocal: async () => counters(tickNo, { temperature: agentTemp.local ?? 45, ...withSvc("local") }),
     withLock: async (fn) => (lock.held ? (await fn(), true) : false),
     isReady: () => true,
     now: () => clock,
@@ -82,7 +86,7 @@ function setup(fleet: Fleet, { offlineMinutes = 5, store = memoryAlertStore(), l
     }
   };
   const advance = (ms: number) => void (clock += ms);
-  return { run, advance, tick, rows, history, alerts, store, hostHub, lastSample, logger, lock, agentTemp, agentBoot, fetchImpl, clock: () => clock };
+  return { run, advance, tick, rows, history, alerts, store, hostHub, lastSample, lastServices, logger, lock, agentTemp, agentBoot, agentServices, fetchImpl, clock: () => clock };
 }
 
 const open = (s: { store: { rows: Alert[] } }, type?: string) => s.store.rows.filter((a) => !a.resolvedAt && (!type || a.type === type));
@@ -249,5 +253,70 @@ describe("alert manager", () => {
     expect(store.rows[0].resolvedAt).toEqual(new Date(T0 + MIN));
     await m2.pruneResolved(new Date(T0 + 2 * MIN));
     expect(store.rows).toEqual([]);
+  });
+});
+
+const svc = (unit: string, health: CompactService["health"], over: Partial<CompactService> = {}): CompactService => ({
+  unit, user: false, health, listed: true, state: health === "ok" ? "active" : health === "fail" ? "failed" : "inactive", since: null, ...over,
+});
+
+describe("hub sampler: service alerts (2.8)", () => {
+  it("a listed unit down for PIDECK_SERVICE_ALERT_MINUTES opens one alert (since the unit's state change), resolves when active", async () => {
+    const s = setup({ p4: "good" });
+    const since = new Date(T0 - 10 * 60 * MIN).toISOString(); // down for 10 h already
+    s.agentServices.p4 = [svc("nginx", "ok"), svc("piapps4-mail-listener", "warn", { user: true, since })];
+    await s.run(3); // 0, 1, 2 minutes of "inactive" samples
+    expect(open(s, "service:user:piapps4-mail-listener")).toEqual([]);
+    await s.run(1); // 3 minutes
+    expect(open(s)).toEqual([expect.objectContaining({
+      hostId: "p4", type: "service:user:piapps4-mail-listener", severity: "warning", message: "piapps4-mail-listener (user) is inactive", startedAt: new Date(since),
+    })]);
+    await s.run(2);
+    expect(s.store.rows).toHaveLength(1); // no duplicates
+    s.agentServices.p4 = [svc("nginx", "ok"), svc("piapps4-mail-listener", "ok", { user: true })];
+    await s.run(1);
+    expect(open(s)).toEqual([]);
+  });
+  it("failed / not found are critical; the local host alerts too", async () => {
+    const s = setup({});
+    s.agentServices.local = [svc("typo", "fail", { state: "not-found" }), svc("nginx", "fail")];
+    await s.run(4);
+    expect(open(s).map((a) => [a.type, a.severity, a.message])).toEqual([
+      ["service:typo", "critical", "typo is not found"], ["service:nginx", "critical", "nginx is failed"],
+    ]);
+  });
+  it("unlisted failed units show (overview) but never alert", async () => {
+    const s = setup({ ds920: "good" });
+    s.agentServices.ds920 = [svc("nginx", "ok"), svc("pkgctl-HyperBackup-ED.service", "fail", { listed: false })];
+    await s.run(10);
+    expect(open(s)).toEqual([]);
+    expect(s.lastServices.get("ds920")).toHaveLength(2);
+  });
+  it("an offline host: no service alerts (offline covers it); the streak doesn't grow while unknown", async () => {
+    const fleet: Fleet = { p3: "good" };
+    const s = setup(fleet, { offlineMinutes: 60 });
+    s.agentServices.p3 = [svc("vnstat", "warn")];
+    await s.run(1);
+    fleet.p3 = "down";
+    await s.run(10);
+    expect(open(s).filter((a) => a.type.startsWith("service:"))).toEqual([]);
+  });
+  it("an agent without services in its sample (< 2.8, no systemd): no service alerts, no overview data", async () => {
+    const s = setup({ old: "good" });
+    await s.run(5);
+    expect(open(s)).toEqual([]);
+    expect(s.lastServices.has("old")).toBe(false);
+  });
+  it("unknown (user manager unreachable) changes nothing; a unit taken off the list resolves its alert", async () => {
+    const s = setup({ p2: "good" });
+    s.agentServices.p2 = [svc("syncthing", "fail", { user: true })];
+    await s.run(4);
+    expect(open(s)).toHaveLength(1);
+    s.agentServices.p2 = [svc("syncthing", "unknown", { user: true })];
+    await s.run(2);
+    expect(open(s)).toHaveLength(1); // still open, not resolved by "unknown"
+    s.agentServices.p2 = [];
+    await s.run(1);
+    expect(open(s)).toEqual([]);
   });
 });

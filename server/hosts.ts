@@ -26,6 +26,8 @@ export type HostSummary = {
   history: HistorySupport;
   /** The agent serves remote logs (capabilities.logs, 2.6+ with PIDECK_AGENT_LOGS=on). */
   logs: boolean;
+  /** The agent serves /api/services (capabilities.services, 2.8+); older agents: "update the agent". */
+  services: boolean;
 };
 export type HistorySupport = "ok" | "unsupported" | "unknown";
 
@@ -54,6 +56,7 @@ type HostState = {
   status: HostStatus;
   history: HistorySupport;
   logs: boolean;
+  services: boolean;
   checkedAt: number;
   inflight?: Promise<void>;
 };
@@ -85,7 +88,7 @@ export function createHostHub({
 }: HubOptions) {
   const byId = new Map(hosts.map((h) => [h.id, h]));
   const state = new Map<string, HostState>(
-    hosts.map((h) => [h.id, { lastSeen: null, version: null, status: "offline", history: "unknown", logs: false, checkedAt: -Infinity }]),
+    hosts.map((h) => [h.id, { lastSeen: null, version: null, status: "offline", history: "unknown", logs: false, services: false, checkedAt: -Infinity }]),
   );
   const iso = (t: number | null) => (t === null ? null : new Date(t).toISOString());
 
@@ -169,10 +172,11 @@ export function createHostHub({
     const out = await agentGet(host, "/api/agent/info", infoTimeoutMs);
     s.checkedAt = now();
     if (out.kind === "ok") {
-      const body = out.body as { version?: unknown; capabilities?: { sample?: unknown; logs?: unknown } };
+      const body = out.body as { version?: unknown; capabilities?: { sample?: unknown; logs?: unknown; services?: unknown } };
       seen(host.id, typeof body?.version === "string" ? body.version.slice(0, 32) : null);
       s.history = body?.capabilities?.sample === true ? "ok" : "unsupported";
       s.logs = body?.capabilities?.logs === true;
+      s.services = body?.capabilities?.services === true;
     } else {
       s.status = out.kind === "auth" ? "auth-error" : "offline";
     }
@@ -187,7 +191,7 @@ export function createHostHub({
 
   function summary(h: HostEntry): HostSummary {
     const s = state.get(h.id)!;
-    return { id: h.id, label: h.label, local: false, status: s.status, version: s.version, lastSeen: iso(s.lastSeen), history: s.history, logs: s.logs };
+    return { id: h.id, label: h.label, local: false, status: s.status, version: s.version, lastSeen: iso(s.lastSeen), history: s.history, logs: s.logs, services: s.services };
   }
 
   return {
@@ -197,7 +201,7 @@ export function createHostHub({
     async list(): Promise<HostSummary[]> {
       await Promise.all(hosts.map(refresh)); // in parallel; each has its own timeout
       const local: HostSummary = {
-        id: "local", label: localLabel, local: true, status: "online", version: hubVersion, lastSeen: iso(now()), history: "ok", logs: true,
+        id: "local", label: localLabel, local: true, status: "online", version: hubVersion, lastSeen: iso(now()), history: "ok", logs: true, services: true,
       };
       return [local, ...hosts.map(summary)];
     },

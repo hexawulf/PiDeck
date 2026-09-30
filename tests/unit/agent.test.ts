@@ -97,8 +97,20 @@ describe("agent HTTP", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     const body = await res.json();
     expect(isRawCounters(body)).toBe(true);
-    expect(Object.keys(body).sort()).toEqual(["bootId", "cpu", "disk", "diskUsage", "hostname", "memory", "net", "sampledAt", "temperature"]);
+    // "services" (2.8) only where systemd runs.
+    expect(Object.keys(body).filter((k) => k !== "services").sort()).toEqual(["bootId", "cpu", "disk", "diskUsage", "hostname", "memory", "net", "sampledAt", "temperature"]);
     expect((await get("/api/agent/sample", TOKEN, { method: "POST" })).status).toBe(404);
+  });
+  it("/api/services (2.8): token-protected, read-only, capabilities.services", async () => {
+    expect((await get("/api/services", null)).status).toBe(401);
+    const res = await get("/api/services");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveProperty("available");
+    expect(Array.isArray(body.services) && Array.isArray(body.failedOnly) && Array.isArray(body.warnings)).toBe(true);
+    expect((await get("/api/services", TOKEN, { method: "POST" })).status).toBe(404);
+    expect((await get("/api/services?unit=nginx")).status).toBe(200); // query ignored: nothing is taken from the request
+    expect((await (await get("/api/agent/info")).json()).capabilities.services).toBe(true);
   });
   it("serves an allowlisted metric with the hub's handler", async () => {
     const res = await get("/api/metrics/ram");

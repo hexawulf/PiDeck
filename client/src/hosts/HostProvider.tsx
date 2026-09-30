@@ -22,6 +22,8 @@ export const hostSummarySchema = z
     history: z.enum(["ok", "unsupported", "unknown"]).optional(),
     /** The agent serves remote logs (2.6+, PIDECK_AGENT_LOGS=on): the Logs tab shows for it. Optional: older hubs don't send it. */
     logs: z.boolean().optional(),
+    /** The agent serves /api/services (2.8+): the Services card; older agents show "update the agent". */
+    services: z.boolean().optional(),
   })
   .strict();
 export const hostsSchema = z.array(hostSummarySchema);
