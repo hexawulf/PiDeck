@@ -264,7 +264,12 @@ export function createServiceCollector(cfg: ServiceConfig, { exec = execSystemct
       // `show` prints one record per argument, in argument order (an alias shows its target's Id).
       const recFor = (i: number) => (records && records.length === names.length ? records[i] : undefined);
       listed.forEach((w, i) => services.push(toService(recFor(i), w, true, up, t)));
-      extra.forEach((n, i) => failedOnly.push(toService(recFor(listed.length + i), { unit: n, user, label: null }, false, up, t)));
+      // A failed unit that a listed alias already shows (sshd listed, ssh.service failed) appears once, as listed.
+      const listedIds = new Set(listed.map((_, i) => recFor(i)?.Id).filter((id): id is string => !!id));
+      extra.forEach((n, i) => {
+        const rec = recFor(listed.length + i);
+        if (!rec?.Id || !listedIds.has(rec.Id)) failedOnly.push(toService(rec, { unit: n, user, label: null }, false, up, t));
+      });
     }
     if (!cfg.units.length) warnings.push("No services listed: set PIDECK_SERVICES in .env (e.g. nginx,ssh,user:syncthing) and restart.");
     return { available: true, systemd: version, services, failedOnly, warnings };

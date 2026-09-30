@@ -697,6 +697,11 @@ PIDECK_SERVICES=nginx,ssh,Database=postgresql@18-main,wg-quick@wg-pideck,user:sy
   names validated); no start/stop, no sudo, no new groups. Works from
   systemd 219 (Synology DSM) on. Hosts without systemd say so.
 - Docker and pm2 collapse to one line in the Apps tab when a host has none.
+- Memory is the unit's cgroup (`MemoryCurrent`) **including page cache**, so
+  a service that reads a lot of files (e.g. `ssh` during rsync) can show
+  gigabytes; it's shown as "—" on systemd without memory accounting (DSM).
+- An alias is fine (`sshd` for `ssh.service`); a failed unit that a listed
+  alias already covers appears once.
 
 ### Synology DSM (agent only, by hand)
 

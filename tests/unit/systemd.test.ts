@@ -243,6 +243,14 @@ describe("collector", () => {
     expect(r.failedOnly.map((s) => s.unit)).toEqual(["pkgctl-HyperBackup-ED.service"]);
     expect(r.warnings.join(" ")).toMatch(/PIDECK_SERVICES/);
   });
+  it("a failed unit shown by a listed alias appears once, as listed (sshd → ssh.service)", async () => {
+    const ssh = "Id=ssh.service\nLoadState=loaded\nActiveState=failed\nSubState=failed";
+    const f = fakeExec({ failed: "ssh.service loaded failed failed OpenBSD Secure Shell server\n", records: { sshd: ssh, "ssh.service": ssh } });
+    const r = await createServiceCollector(cfg({ units: [{ unit: "sshd", user: false, label: null }] }), { exec: f.exec, now: () => NOW, uptime: async () => UPTIME }).get();
+    expect(r.services.map((s) => [s.unit, s.health])).toEqual([["sshd", "fail"]]);
+    expect(r.failedOnly).toEqual([]);
+  });
+
   it("a failed unit name that isn't a valid unit never reaches argv", async () => {
     const f = fakeExec({ failed: "--now x\n$(reboot) y\nok.service loaded failed failed z\n" });
     await createServiceCollector(cfg({ units: [] }), { exec: f.exec, now: () => NOW, uptime: async () => UPTIME }).get();

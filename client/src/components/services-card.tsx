@@ -125,7 +125,7 @@ export default function ServicesCard() {
                       <th scope="col" className="py-1 pr-3 font-medium">State</th>
                       <th scope="col" className="hidden py-1 pr-3 font-medium sm:table-cell">Since</th>
                       <th scope="col" className="hidden py-1 pr-3 text-right font-medium lg:table-cell">Restarts</th>
-                      <th scope="col" className="hidden py-1 pr-3 text-right font-medium lg:table-cell">Memory</th>
+                      <th scope="col" className="hidden py-1 pr-3 text-right font-medium lg:table-cell" title="The unit's cgroup memory (systemd MemoryCurrent), including page cache: file reads can make it large">Memory (incl. cache)</th>
                       <th scope="col" className="py-1 font-medium"><span className="sr-only">Logs</span></th>
                     </tr>
                   </thead>
