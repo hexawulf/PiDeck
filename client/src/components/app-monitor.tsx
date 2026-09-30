@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { useDocker, useContainerAction, type ContainerAction } from "@/hooks/use-docker";
 import { usePm2, useProcessAction, type ProcessAction } from "@/hooks/use-pm2";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +18,20 @@ import {
   RefreshCw,
   Copy
 } from "lucide-react";
+
+// Services (systemd) is its own chunk: a table the Apps tab alone needs.
+const ServicesCard = lazy(() => import("@/components/services-card"));
+
+/** "No Docker on this host" in one line instead of an empty card (e.g. the VPSes). */
+function AbsentNote({ icon: Icon, what, detail, testId }: { icon: React.ElementType; what: string; detail: string; testId: string }) {
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 rounded-lg border border-pi-border bg-pi-card px-4 py-2 text-sm text-pi-text" data-testid={testId}>
+      <Icon className="h-4 w-4 text-pi-text-muted" aria-hidden />
+      <span>{what}</span>
+      <span className="text-xs text-pi-text-muted">{detail}</span>
+    </p>
+  );
+}
 
 export default function AppMonitor() {
   // Remote hosts are read-only in H1: lists only, no action buttons.
@@ -101,9 +116,28 @@ export default function AppMonitor() {
     return ports.map(p => `${p.private}${p.public ? `:${p.public}` : ""}`).join(", ");
   };
 
+  // Absent = the host answered and has none (not an error, not still loading).
+  const dockerAbsent = !dockerContainers.isLoading && !dockerContainers.error && !dockerContainers.data?.containers?.length && !!dockerContainers.data?.warning;
+  const pm2Absent = !pm2Processes.isLoading && !pm2Processes.error && isUnavailable(pm2Processes.data);
+
   return (
+    <div className="space-y-6">
+    <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+      <ServicesCard />
+    </Suspense>
+    {(dockerAbsent || pm2Absent) && (
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+        {dockerAbsent && (
+          <AbsentNote icon={Box} what="No Docker on this host" testId="docker-absent"
+            detail={dockerContainers.data?.warning === "socket unavailable or permission denied" ? "(no socket, or this user isn't in the docker group)" : "(not installed or not responding)"} />
+        )}
+        {pm2Absent && <AbsentNote icon={Zap} what="No pm2 on this host" testId="pm2-absent" detail="(no pm2 daemon for this user)" />}
+      </div>
+    )}
+    {!(dockerAbsent && pm2Absent) && (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-       {/* Docker Containers - Always visible */}
+       {/* Docker Containers (collapsed to one line above when absent) */}
+       {!dockerAbsent && (
        <Card className="bg-pi-card border-pi-border">
          <CardContent className="p-6">
            <div className="flex items-center justify-between mb-6">
@@ -233,7 +267,10 @@ export default function AppMonitor() {
          </CardContent>
        </Card>
 
-      {/* PM2 Processes */}
+      )}
+
+      {/* PM2 Processes (collapsed to one line above when absent) */}
+      {!pm2Absent && (
       <Card className="bg-pi-card border-pi-border">
         <CardContent className="p-6">
           <div className="flex items-center justify-between mb-6">
@@ -311,6 +348,9 @@ export default function AppMonitor() {
           )}
         </CardContent>
       </Card>
+      )}
+    </div>
+    )}
     </div>
   );
 }

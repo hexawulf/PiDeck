@@ -40,6 +40,8 @@ const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 /** "piapps2: offline since 08:12", "piapps2: temperature above 70 °C (75.0 °C)". */
 export function alertText(a: AlertView): string {
   if (a.type === "offline") return `${a.hostLabel}: offline since ${hhmm(a.startedAt)}`;
+  // "piapps4: piapps4-mail-listener (user) is inactive since 16:26"
+  if (a.type.startsWith("service:")) return `${a.hostLabel}: ${a.message} since ${hhmm(a.startedAt)}`;
   return `${a.hostLabel}: ${lowerFirst(a.message)}`;
 }
 
@@ -47,5 +49,6 @@ export function alertText(a: AlertView): string {
 export function resolvedText(a: AlertView): string {
   if (a.type === "offline") return `${a.hostLabel}: back online`;
   if (a.type === "temperature") return `${a.hostLabel}: temperature back to normal`;
+  if (a.type.startsWith("service:")) return `${a.hostLabel}: ${a.message.replace(/ is [^ ]+( [^ ]+)?$/, "")} is running again`;
   return `${a.hostLabel}: resolved`;
 }

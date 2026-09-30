@@ -78,3 +78,9 @@ export function remoteLogHref(hostId: string, sourceId: string, grep?: string): 
   if (grep) q.set("grep", grep);
   return `${hostHref(hostId, "logs")}?${q.toString()}`;
 }
+
+/** The agent's log source id for a journal unit (server: journalSourceId in agent-logs/sources.ts). */
+export function journalSourceId(unit: string, user: boolean): string {
+  const slug = unit.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48);
+  return `journal_${user ? "user_" : ""}${slug}`.slice(0, 64);
+}

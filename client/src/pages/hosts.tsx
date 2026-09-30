@@ -51,12 +51,25 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+type ServicesSummary = NonNullable<HostTile["servicesSummary"]>;
+/** The services chip: "14/14 ok", "1 failed: pkgctl-HyperBackup-ED", "1 down: vnstat". null = nothing to show. */
+export function serviceChip(sum: ServicesSummary | null | undefined): { text: string; tone: "ok" | "warn" | "fail" | "none" } | null {
+  if (!sum) return null;
+  const more = (xs: string[]) => (xs.length > 1 ? ` +${xs.length - 1}` : "");
+  if (sum.failed.length) return { text: `${sum.failed.length} failed: ${sum.failed[0]}${more(sum.failed)}`, tone: "fail" };
+  if (sum.down.length) return { text: `${sum.down.length} down: ${sum.down[0]}${more(sum.down)}`, tone: "warn" };
+  if (sum.listed) return { text: `${sum.ok}/${sum.listed} ok`, tone: sum.ok === sum.listed ? "ok" : "warn" };
+  return { text: "no services listed", tone: "none" };
+}
+const CHIP_TONE = { ok: "bg-pi-success-soft", warn: "bg-pi-warning-soft", fail: "bg-pi-error-soft", none: "bg-pi-card-hover" } as const;
+
 function Tile({ h, hubVersion }: { h: HostTile; hubVersion: string | null }) {
   const reachable = h.status === "online";
   const s = h.sample;
   const alerts = h.alerts;
+  const chip = serviceChip(h.servicesSummary);
   return (
-    <li>
+    <li className="relative">
       <Link
         href={hostHref(h.id, "dashboard")}
         data-testid={`host-tile-${h.id}`}
@@ -66,6 +79,7 @@ function Tile({ h, hubVersion }: { h: HostTile; hubVersion: string | null }) {
           needsAgentUpdate(h) ? "border-pi-warning" : h.status === "auth-error" ? "border-pi-error" : "border-pi-border",
           // Offline is grey, not an error; a darker surface keeps text contrast (no opacity).
           h.status === "offline" ? "border-dashed bg-pi-darker" : "bg-pi-card",
+          chip && "pb-12", // room for the services chip (its own link, below)
         )}
       >
         <div className="mb-3 flex items-center gap-2">
@@ -108,6 +122,21 @@ function Tile({ h, hubVersion }: { h: HostTile; hubVersion: string | null }) {
           {h.local ? "Sampled by the hub" : `Last seen ${formatLastSeen(h.lastSeen)}`}
         </p>
       </Link>
+      {chip && (
+        // A sibling of the tile's link (links can't nest), placed over its bottom edge.
+        <Link
+          href={hostHref(h.id, "apps")}
+          data-testid={`services-chip-${h.id}`}
+          data-tone={chip.tone}
+          aria-label={`Services on ${h.label}: ${chip.text}`}
+          className={cn(
+            "absolute bottom-3 left-4 right-4 truncate rounded-full px-2 py-0.5 text-xs text-pi-text hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-pi-accent",
+            CHIP_TONE[chip.tone],
+          )}
+        >
+          Services: {chip.text}
+        </Link>
+      )}
     </li>
   );
 }
