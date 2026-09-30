@@ -9,7 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Favicon: dashboard tiles on a teal rounded square (inline SVG, same style as PiTasker's).
-- Logo tile (header and login) uses the favicon's teal via a new `--pi-brand` token (`#0d9488`, both themes); buttons keep `--pi-accent` blue.
+- Logo tile (header and login) uses the favicon's teal via a new `--pi-brand` token (`#0d9488`, both themes).
+
+### Changed
+- Accent is teal instead of blue: buttons, active tabs, the Live toggle, checkmarks, checkbox/radio inputs, focus rings, the layout drop placeholder, and the CPU and filesystem usage bars. `--pi-accent` teal-700 `#0f766e` (5.47:1 with white; the favicon's teal-600 is 3.74:1, below AA), hover teal-800, accent text teal-700 light / teal-400 dark, shadcn `--primary` likewise. Kept on purpose: the network chart's blue "received" line (pairs with emerald "sent") and the log viewer's blue INFO level (SUCCESS is green).
 
 ## [2.8.0] - 2026-09-30
 

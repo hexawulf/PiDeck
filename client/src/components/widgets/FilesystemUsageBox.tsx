@@ -30,7 +30,7 @@ export function FilesystemUsageBox() {
                     <div className="flex items-center gap-2">
                       <div className="h-1.5 flex-1 rounded-full bg-pi-darker" aria-hidden>
                         <div
-                          className={`h-1.5 rounded-full ${fs.pcent >= 90 ? "bg-pi-error" : fs.pcent >= 75 ? "bg-pi-warning" : "bg-pi-chart-3"}`}
+                          className={`h-1.5 rounded-full ${fs.pcent >= 90 ? "bg-pi-error" : fs.pcent >= 75 ? "bg-pi-warning" : "bg-pi-accent"}`}
                           style={{ width: `${Math.min(100, fs.pcent)}%` }}
                         />
                       </div>

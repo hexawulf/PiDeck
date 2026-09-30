@@ -41,7 +41,7 @@
   --card-foreground: hsl(20, 14.3%, 4.1%);
   --border: hsl(20, 5.9%, 90%);
   --input: hsl(20, 5.9%, 90%);
-  --primary: hsl(207, 90%, 54%);
+  --primary: #0f766e;                     /* teal-700 (was blue) */
   --primary-foreground: hsl(211, 100%, 99%);
   --secondary: hsl(60, 4.8%, 95.9%);
   --secondary-foreground: hsl(24, 9.8%, 10%);
@@ -61,9 +61,9 @@
   --pi-border: hsl(213, 27%, 84%);        /*                   (slate-300) */
   --pi-text: hsl(222, 47%, 11%);          /*                   (slate-900) */
   --pi-text-muted: hsl(215, 19%, 35%);    /*                   (slate-600) */
-  --pi-accent: hsl(221, 83%, 53%);        /*                   (blue-600)  */
-  --pi-accent-hover: hsl(224, 76%, 48%);  /*                   (blue-700)  */
-  --pi-accent-text: hsl(221, 83%, 53%);   /* blue-600: 5.20:1 on --pi-card, 4.73:1 on --pi-dark */
+  --pi-accent: #0f766e;                   /* teal-700: 5.47:1 with white (favicon teal-600 is 3.74:1) */
+  --pi-accent-hover: #115e59;             /*                   (teal-800)  */
+  --pi-accent-text: #0f766e;              /* teal-700: 5.47:1 on --pi-card, 4.99:1 on --pi-dark */
   --pi-on-accent: hsl(0, 0%, 100%);
   --pi-brand: #0d9488;                    /* teal-600, exactly the favicon fill (logo tile, both themes) */
   --pi-success: hsl(142, 72%, 29%);       /*                   (green-700) */
@@ -94,7 +94,7 @@
   --card-foreground: hsl(210, 40%, 98%);
   --border: hsl(215, 14%, 34%);
   --input: hsl(215, 14%, 34%);
-  --primary: hsl(217, 91%, 60%);
+  --primary: #2dd4bf;                     /* teal-400 (was blue) */
   --primary-foreground: hsl(222, 84%, 5%);
   --secondary: hsl(215, 28%, 17%);
   --secondary-foreground: hsl(210, 40%, 98%);
@@ -113,9 +113,9 @@
   --pi-border: hsl(215, 14%, 34%);
   --pi-text: hsl(210, 40%, 98%);
   --pi-text-muted: hsl(215, 20%, 65%);
-  --pi-accent: hsl(221, 83%, 53%);        /* blue-600: AA with white (was blue-500, 3.6:1) */
-  --pi-accent-hover: hsl(224, 76%, 48%);
-  --pi-accent-text: hsl(213, 94%, 68%);   /* blue-400: 5.79:1 on --pi-card (blue-600 was 2.81:1) */
+  --pi-accent: #0f766e;                   /* teal-700: AA with white (teal-600 is 3.74:1) */
+  --pi-accent-hover: #115e59;             /* teal-800 */
+  --pi-accent-text: #2dd4bf;              /* teal-400: 7.85:1 on --pi-card */
   --pi-on-accent: hsl(0, 0%, 100%);
   --pi-brand: #0d9488;                    /* teal-600, exactly the favicon fill (logo tile, both themes) */
   --pi-success: hsl(142, 69%, 58%);

@@ -6,7 +6,7 @@ export function CpuBox() {
   const query = useSystemInfo();
   return (
     <QueryState query={query}>
-      {(d) => <Meter label="CPU usage" value={`${d.cpu.toFixed(1)}%`} percent={d.cpu} barClassName="bg-pi-chart-3" />}
+      {(d) => <Meter label="CPU usage" value={`${d.cpu.toFixed(1)}%`} percent={d.cpu} barClassName="bg-pi-accent" />}
     </QueryState>
   );
 }
