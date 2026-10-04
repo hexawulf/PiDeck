@@ -34,6 +34,7 @@ describe("cspDirectives", () => {
 
   it("includes Firebase domains when firebase option is true", () => {
     const d = cspDirectives(["'sha256-abc'"], { firebase: true });
+    expect(d["script-src"]).toContain("https://apis.google.com");
     expect(d["connect-src"]).toContain("https://identitytoolkit.googleapis.com");
     expect(d["frame-src"]).toContain("https://accounts.google.com");
     expect(d["img-src"]).toContain("https://*.googleusercontent.com");
