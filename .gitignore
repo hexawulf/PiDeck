@@ -145,3 +145,7 @@ test-results/
 playwright-report/
 # installer backups of .env (contain every secret)
 .env.bak.*
+
+# Firebase Auth plan and credentials
+docs/plans/firebase-google-auth.md
+*firebase-service-account*.json

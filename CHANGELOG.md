@@ -5,14 +5,17 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.9.0] - 2026-10-04
+
+Google Firebase Authentication (plan: [docs/plans/firebase-google-auth.md](./docs/plans/firebase-google-auth.md)): single-sign-on (SSO) via Google with hardware-backed MFA / Passkeys, strictly restricted to confirmed Google accounts on the server allowlist, with local password break-glass emergency login retained for offline / WAN-down resilience.
 
 ### Added
-- Favicon: dashboard tiles on a teal rounded square (inline SVG, same style as PiTasker's).
-- Logo tile (header and login) uses the favicon's teal via a new `--pi-brand` token (`#0d9488`, both themes).
-
-### Changed
-- Accent is teal instead of blue: buttons, active tabs, the Live toggle, checkmarks, checkbox/radio inputs, focus rings, the layout drop placeholder, and the CPU and filesystem usage bars. `--pi-accent` teal-700 `#0f766e` (5.47:1 with white; the favicon's teal-600 is 3.74:1, below AA), hover teal-800, accent text teal-700 light / teal-400 dark, shadcn `--primary` likewise. Kept on purpose: the network chart's blue "received" line (pairs with emerald "sent") and the log viewer's blue INFO level (SUCCESS is green).
+- **Google Firebase Authentication**: 1-click Sign in with Google on the login page via Firebase Web Client SDK with account selection prompt (`client/src/lib/firebase.ts`)
+- **Backend Token Verification & Strict Allowlist**: `POST /api/auth/firebase-login` cryptographically verifies Google ID tokens via `firebase-admin` and enforces `FIREBASE_ALLOWED_EMAILS`. Non-whitelisted or unverified Google accounts are rejected with `403 Forbidden` (`server/services/firebase-auth.ts`)
+- **Hybrid Session Model**: On valid Google authentication, the backend creates the existing secure Express session cookie (`pideck.sid`), keeping all downstream telemetry, WebSockets, and agent communications intact
+- **Break-Glass Fallback**: The local admin password form remains functional and clearly accessible on `/login` under "Local Admin Password (Break-Glass)"
+- **CSP Updates**: Extended Content Security Policy directives to allow Firebase and Google authentication domains under enforcement mode (`server/security.ts`)
+- **Public Auth Config Endpoint**: `GET /api/auth/me` safely exposes client-safe Firebase configuration parameters dynamically at runtime without leaking server secrets
 
 ## [2.8.0] - 2026-09-30
 

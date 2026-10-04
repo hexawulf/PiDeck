@@ -30,6 +30,7 @@ import { servicesHandler } from "./routes/services";
 import { registerFleetRoutes } from "./routes/fleet";
 import { schemaReady, schemaState } from "./db-schema";
 import { adminPasswordIsDefault } from "./storage";
+import { getFirebasePublicConfig, isFirebaseEnabled, verifyFirebaseLogin } from "./services/firebase-auth";
 
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
@@ -99,7 +100,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Mark ONLY the login POST to bypass any stray guards mounted elsewhere.
   app.use((req, _res, next) => {
     const url = (req.originalUrl || req.url || "").toLowerCase();
-    if (req.method === "POST" && (url.startsWith("/api/auth/login") || url.startsWith("/auth/login"))) {
+    if (
+      req.method === "POST" &&
+      (url.startsWith("/api/auth/login") || url.startsWith("/auth/login") || url.startsWith("/api/auth/firebase-login"))
+    ) {
       (req as any).__loginBypass = true;
     }
     next();
@@ -171,6 +175,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Non-POST /api/auth/login → 405 (match with/without trailing slash)
   app.all(["/api/auth/login", "/api/auth/login/"], (_req, res) => res.sendStatus(405));
 
+  app.post("/api/auth/firebase-login", rateLimitLogin, async (req, res) => {
+    try {
+      const { idToken } = z.object({ idToken: z.string().min(1) }).parse(req.body);
+      const identity = await verifyFirebaseLogin(idToken);
+
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error("Session regenerate error:", err);
+          return res.status(500).json({ message: "Session regeneration failed" });
+        }
+
+        (req.session as any).authenticated = true;
+        (req.session as any).userId = 1;
+        (req.session as any).authMethod = "google-firebase";
+        (req.session as any).email = identity.email;
+
+        req.session.save((err) => {
+          if (err) {
+            console.error("Session save error:", err);
+            return res.status(500).json({ message: "Session save failed" });
+          }
+          res.json({
+            message: "Login successful",
+            authenticated: true,
+            userId: 1,
+            email: identity.email,
+          });
+        });
+      });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid input: idToken is required" });
+      }
+      const status = typeof error?.status === "number" ? error.status : 401;
+      return res.status(status).json({ message: error?.message || "Firebase login failed" });
+    }
+  });
+
+  app.all(["/api/auth/firebase-login", "/api/auth/firebase-login/"], (_req, res) => res.sendStatus(405));
+
   // Optional: block non-GET verb misuse on /api/auth/me (helps avoid compat fallthrough)
   app.all("*", (req: any, res: any, next: any) => {
     const p = req.path;
@@ -194,17 +238,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const transport = { secureCookie: cookieSecure(), insecureHttp: insecureHttp() };
     // Pending schema migrations (M0): a banner tells the operator to run --update.
     const maintenance = { dbMigrationsPending: schemaState().checked && !schemaReady() };
+    const firebase = getFirebasePublicConfig();
     if ((req.session as any)?.authenticated) {
       // historyHours: how far back history goes (PIDECK_HISTORY_HOURS), so charts offer 3d/7d only when kept.
-      res.json({ authenticated: true, userId: (req.session as any).userId, transport, maintenance, defaultPassword: adminPasswordIsDefault(), historyHours: runtime.historyHours });
+      res.json({
+        authenticated: true,
+        userId: (req.session as any).userId,
+        email: (req.session as any).email,
+        authMethod: (req.session as any).authMethod || "password",
+        transport,
+        maintenance,
+        defaultPassword: adminPasswordIsDefault(),
+        historyHours: runtime.historyHours,
+        firebase,
+      });
     } else {
-      res.json({ authenticated: false, transport, maintenance });
+      res.json({ authenticated: false, transport, maintenance, firebase });
     }
   });
 
   // --- Auth middleware & wrapper ---
   const requireAuth = (req: any, res: any, next: any) => {
-    if (req.__loginBypass) return next(); // hard bypass for POST /api/auth/login
+    if (req.__loginBypass) return next(); // hard bypass for POST /api/auth/login or /api/auth/firebase-login
     if (!(req.session as any)?.authenticated) {
       return res.status(401).json({ message: "Authentication required" });
     }
@@ -213,7 +268,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const requireAuthUnlessLogin = (req: any, res: any, next: any) => {
     const url = (req.originalUrl || req.url || "").toLowerCase();
-    if (url.startsWith("/api/auth/login") || url.startsWith("/auth/login")) {
+    if (
+      url.startsWith("/api/auth/login") ||
+      url.startsWith("/auth/login") ||
+      url.startsWith("/api/auth/firebase-login")
+    ) {
       return next();
     }
     return requireAuth(req, res, next);

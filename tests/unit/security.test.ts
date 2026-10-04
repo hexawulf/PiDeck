@@ -31,4 +31,11 @@ describe("cspDirectives", () => {
     expect(d["frame-ancestors"]).toEqual(["'none'"]);
     expect(d["report-uri"]).toEqual(["/csp-report"]);
   });
+
+  it("includes Firebase domains when firebase option is true", () => {
+    const d = cspDirectives(["'sha256-abc'"], { firebase: true });
+    expect(d["connect-src"]).toContain("https://identitytoolkit.googleapis.com");
+    expect(d["frame-src"]).toContain("https://accounts.google.com");
+    expect(d["img-src"]).toContain("https://*.googleusercontent.com");
+  });
 });

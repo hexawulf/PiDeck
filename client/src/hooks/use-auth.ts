@@ -2,9 +2,19 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 
+export interface FirebaseClientConfig {
+  enabled: boolean;
+  apiKey?: string;
+  authDomain?: string;
+  projectId?: string;
+  appId?: string;
+}
+
 interface AuthStatus {
   authenticated: boolean;
   userId?: number;
+  email?: string;
+  authMethod?: string;
   /** How the session cookie is sent (see components/transport-notice.tsx). */
   transport?: { secureCookie: boolean; insecureHttp: boolean };
   /** Schema migrations are pending (hub serves anyway; see server/db-schema.ts). */
@@ -13,6 +23,8 @@ interface AuthStatus {
   defaultPassword?: boolean;
   /** PIDECK_HISTORY_HOURS on the hub (2.6+): charts offer 3d/7d only when that much is kept. */
   historyHours?: number;
+  /** Firebase public client configuration */
+  firebase?: FirebaseClientConfig;
 }
 
 export function useAuth() {
@@ -34,6 +46,21 @@ export function useAuth() {
       return res.json();
     },
     onSuccess: (data: { authenticated: boolean; userId?: number }) => {
+      if (data?.authenticated) {
+        queryClient.setQueryData(["/api/auth/me"], data);
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      }
+      setLocation("/dashboard");
+    },
+  });
+
+  const firebaseLoginMutation = useMutation({
+    mutationFn: async (idToken: string) => {
+      const res = await apiRequest("POST", "/api/auth/firebase-login", { idToken });
+      return res.json();
+    },
+    onSuccess: (data: { authenticated: boolean; userId?: number; email?: string }) => {
       if (data?.authenticated) {
         queryClient.setQueryData(["/api/auth/me"], data);
       } else {
@@ -68,12 +95,15 @@ export function useAuth() {
     isLoading,
     isAuthenticated: user?.authenticated === true,
     login: loginMutation.mutateAsync,
+    firebaseLogin: firebaseLoginMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,
     changePassword: changePasswordMutation.mutateAsync,
     isLoginPending: loginMutation.isPending,
+    isFirebaseLoginPending: firebaseLoginMutation.isPending,
     isLogoutPending: logoutMutation.isPending,
     isChangingPassword: changePasswordMutation.isPending,
     loginError: loginMutation.error?.message,
+    firebaseLoginError: firebaseLoginMutation.error?.message,
     changePasswordError: changePasswordMutation.error?.message,
   };
 }

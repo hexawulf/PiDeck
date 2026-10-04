@@ -33,15 +33,38 @@ export function inlineScriptHashes(html: string): string[] {
   return hashes;
 }
 
-export function cspDirectives(scriptHashes: string[]): Record<string, string[]> {
+export const FIREBASE_CSP = {
+  connect: [
+    "https://*.googleapis.com",
+    "https://*.firebaseio.com",
+    "https://identitytoolkit.googleapis.com",
+    "https://securetoken.googleapis.com",
+  ],
+  frame: ["https://*.firebaseapp.com", "https://accounts.google.com"],
+  img: ["https://*.googleusercontent.com"],
+};
+
+export function cspDirectives(scriptHashes: string[], opts?: { firebase?: boolean }): Record<string, string[]> {
+  const allowFirebase = opts?.firebase ?? (process.env.FIREBASE_ENABLED === "true" || process.env.FIREBASE_ENABLED === "1");
+  const connectSrc = ["'self'", CLOUDFLARE_INSIGHTS.connect];
+  const frameSrc = ["'self'"];
+  const imgSrc = ["'self'", "data:"];
+
+  if (allowFirebase) {
+    connectSrc.push(...FIREBASE_CSP.connect);
+    frameSrc.push(...FIREBASE_CSP.frame);
+    imgSrc.push(...FIREBASE_CSP.img);
+  }
+
   return {
     "default-src": ["'self'"],
     "script-src": ["'self'", ...scriptHashes, CLOUDFLARE_INSIGHTS.script],
     // Radix (popper positioning) and Recharts write inline style attributes.
     "style-src": ["'self'", "'unsafe-inline'"],
-    "img-src": ["'self'", "data:"],
+    "img-src": imgSrc,
     "font-src": ["'self'", "data:"],
-    "connect-src": ["'self'", CLOUDFLARE_INSIGHTS.connect],
+    "connect-src": connectSrc,
+    "frame-src": frameSrc,
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],
