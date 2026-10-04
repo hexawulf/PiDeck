@@ -1,4 +1,5 @@
 import { exec } from "child_process";
+import os from "os";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
@@ -354,12 +355,45 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
   }
 
   private static async getIPAddress(): Promise<string> {
+    // 1. Kernel routing table for primary outbound route (picks primary NIC on multi-NIC hosts like DS920+)
     try {
-      const { stdout } = await execAsync("hostname -I | awk '{print $1}'");
-      return stdout.trim() || "127.0.0.1";
+      const { stdout } = await execAsync("ip route get 1.1.1.1 2>/dev/null");
+      const m = stdout.match(/\bsrc\s+(\d+\.\d+\.\d+\.\d+)\b/);
+      if (m && m[1] !== "127.0.0.1") return m[1];
     } catch {
-      return "127.0.0.1";
+      // ignore and try next
     }
+
+    // 2. Inspect Node network interfaces (prioritizing primary/physical NICs)
+    try {
+      const ifaces = os.networkInterfaces();
+      const names = Object.keys(ifaces).sort((a, b) => {
+        if (a === "eth0") return -1;
+        if (b === "eth0") return 1;
+        return a.localeCompare(b);
+      });
+      for (const name of names) {
+        if (/^(lo|docker|br-|veth|tun|tap)/i.test(name)) continue;
+        for (const addr of ifaces[name] || []) {
+          if (addr.family === "IPv4" && !addr.internal && addr.address !== "127.0.0.1") {
+            return addr.address;
+          }
+        }
+      }
+    } catch {
+      // ignore and try next
+    }
+
+    // 3. Fallback: hostname -I (standard Debian/Ubuntu)
+    try {
+      const { stdout } = await execAsync("hostname -I 2>/dev/null");
+      const m = stdout.match(/(\d+\.\d+\.\d+\.\d+)/);
+      if (m && m[1] !== "127.0.0.1") return m[1];
+    } catch {
+      // ignore
+    }
+
+    return "127.0.0.1";
   }
 
   static async getLogFiles(): Promise<LogFile[]> {
