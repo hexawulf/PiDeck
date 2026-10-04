@@ -5,6 +5,11 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.1] - 2026-10-04
+
+### Fixed
+- **CSP**: Added `https://apis.google.com` and `https://*.firebaseapp.com` to `connect-src` in Content Security Policy to prevent Google OAuth popup telemetry pings from being blocked during Sign in with Google (`server/security.ts`).
+
 ## [2.9.0] - 2026-10-04
 
 Google Firebase Authentication (plan: [docs/plans/firebase-google-auth.md](./docs/plans/firebase-google-auth.md)): single-sign-on (SSO) via Google with hardware-backed MFA / Passkeys, strictly restricted to confirmed Google accounts on the server allowlist, with local password break-glass emergency login retained for offline / WAN-down resilience.

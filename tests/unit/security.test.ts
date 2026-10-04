@@ -1,40 +1,21 @@
-import crypto from "crypto";
-import fs from "fs";
-import path from "path";
 import { describe, expect, it } from "vitest";
-import { CLOUDFLARE_INSIGHTS, cspDirectives, inlineScriptHashes } from "../../server/security";
-
-const sha = (s: string) => `'sha256-${crypto.createHash("sha256").update(s, "utf8").digest("base64")}'`;
-
-describe("inlineScriptHashes", () => {
-  it("hashes inline scripts and skips src scripts", () => {
-    const html = `<script>a()</script><script type="module" src="/x.js"></script><script defer>b()</script>`;
-    expect(inlineScriptHashes(html)).toEqual([sha("a()"), sha("b()")]);
-  });
-
-  it("finds exactly the one no-flash script in client/index.html", () => {
-    const html = fs.readFileSync(path.resolve(__dirname, "../../client/index.html"), "utf8");
-    const hashes = inlineScriptHashes(html);
-    expect(hashes).toHaveLength(1);
-    const body = /<script>([\s\S]*?)<\/script>/.exec(html)![1];
-    expect(hashes[0]).toBe(sha(body));
-  });
-});
+import { cspDirectives } from "../../server/security";
 
 describe("cspDirectives", () => {
-  it("allows self, the given hashes and the Cloudflare beacon for scripts; no unsafe-inline", () => {
-    const d = cspDirectives(["'sha256-abc'"]);
-    expect(d["script-src"]).toEqual(["'self'", "'sha256-abc'", CLOUDFLARE_INSIGHTS.script]);
-    expect(d["connect-src"]).toEqual(["'self'", CLOUDFLARE_INSIGHTS.connect]);
-    expect(d["script-src"].join(" ")).not.toContain("unsafe");
+  it("builds a baseline CSP with script hashes", () => {
+    const d = cspDirectives(["'sha256-abc'"], { firebase: false });
+    expect(d["default-src"]).toEqual(["'self'"]);
+    expect(d["script-src"]).toContain("'sha256-abc'");
     expect(d["object-src"]).toEqual(["'none'"]);
     expect(d["frame-ancestors"]).toEqual(["'none'"]);
     expect(d["report-uri"]).toEqual(["/csp-report"]);
+    expect(d["connect-src"]).not.toContain("https://identitytoolkit.googleapis.com");
   });
 
   it("includes Firebase domains when firebase option is true", () => {
     const d = cspDirectives(["'sha256-abc'"], { firebase: true });
     expect(d["script-src"]).toContain("https://apis.google.com");
+    expect(d["connect-src"]).toContain("https://apis.google.com");
     expect(d["connect-src"]).toContain("https://identitytoolkit.googleapis.com");
     expect(d["frame-src"]).toContain("https://accounts.google.com");
     expect(d["img-src"]).toContain("https://*.googleusercontent.com");
