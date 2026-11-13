@@ -50,10 +50,12 @@ export function useAuth() {
     },
     onSuccess: (data: { authenticated: boolean; userId?: number }) => {
       if (data?.authenticated) {
-        queryClient.setQueryData(["/api/auth/me"], data);
-      } else {
-        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+        // Signed in at once (the route guard reads this), keeping what /me
+        // said before; then refetch /me for the rest (default-password
+        // warning, migration banner, history hours) (PD-18).
+        queryClient.setQueryData<AuthStatus>(["/api/auth/me"], (old) => ({ ...(old ?? {}), ...data }) as AuthStatus);
       }
+      void queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       setLocation("/dashboard");
     },
   });
@@ -65,10 +67,12 @@ export function useAuth() {
     },
     onSuccess: (data: { authenticated: boolean; userId?: number; email?: string }) => {
       if (data?.authenticated) {
-        queryClient.setQueryData(["/api/auth/me"], data);
-      } else {
-        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+        // Signed in at once (the route guard reads this), keeping what /me
+        // said before; then refetch /me for the rest (default-password
+        // warning, migration banner, history hours) (PD-18).
+        queryClient.setQueryData<AuthStatus>(["/api/auth/me"], (old) => ({ ...(old ?? {}), ...data }) as AuthStatus);
       }
+      void queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       setLocation("/dashboard");
     },
   });

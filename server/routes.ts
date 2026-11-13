@@ -22,6 +22,7 @@ import { unavailable } from "./services/unavailable";
 import { loginSchema } from "@shared/schema";
 import { clientKey, rateLimitLogin } from "./middleware/rateLimitLogin";
 import { authLogLine, loginLockout } from "./services/login-lockout";
+import { checkSession } from "./session-policy";
 import { requireSameOrigin } from "./middleware/sameOrigin";
 import { envPasswordMatches } from "./services/env-password";
 import { cookieSecure, insecureHttp } from "./config";
@@ -117,6 +118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Set session data after regeneration
         (req.session as any).authenticated = true;
         (req.session as any).userId = validationResult.user?.id ?? 1;
+        (req.session as any).createdAt = Date.now(); // absolute lifetime (PD-18)
 
         req.session.save((err) => {
           if (err) {
@@ -162,6 +164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         (req.session as any).authenticated = true;
         (req.session as any).userId = 1;
+        (req.session as any).createdAt = Date.now(); // absolute lifetime (PD-18)
         (req.session as any).authMethod = "google-firebase";
         (req.session as any).email = identity.email;
 
@@ -197,6 +200,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return next();
   });
 
+  /**
+   * PD-18: a session past its absolute lifetime, or a Google session whose
+   * email left the allowlist, is ended here. Returns true if it still counts.
+   */
+  const sessionStillValid = (req: any): boolean => {
+    const v = checkSession(req.session);
+    if (v.ok) return true;
+    const s = req.session;
+    console.warn(`[auth] session ended reason=${v.reason}${s?.email ? ` email=${String(s.email).slice(0, 120)}` : ""} ip=${clientKey(req)}`);
+    s.authenticated = false;
+    s.destroy?.(() => {});
+    return false;
+  };
+
   app.post("/api/auth/logout", (req, res) => {
     req.session.destroy((err) => {
       if (err) {
@@ -214,7 +231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Pending schema migrations (M0): a banner tells the operator to run --update.
     const maintenance = { dbMigrationsPending: schemaState().checked && !schemaReady() };
     const firebase = getFirebasePublicConfig();
-    if ((req.session as any)?.authenticated) {
+    if ((req.session as any)?.authenticated && sessionStillValid(req)) {
       // historyHours: how far back history goes (PIDECK_HISTORY_HOURS), so charts offer 3d/7d only when kept.
       res.json({
         authenticated: true,
@@ -235,7 +252,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // --- Auth middleware & wrapper ---
   const requireAuth = (req: any, res: any, next: any) => {
     if (req.__loginBypass) return next(); // hard bypass for POST /api/auth/login or /api/auth/firebase-login
-    if (!(req.session as any)?.authenticated) {
+    if (!(req.session as any)?.authenticated || !sessionStillValid(req)) {
       return res.status(401).json({ message: "Authentication required" });
     }
     next();
@@ -419,6 +436,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { storage, markAdminPasswordChanged } = await import("./storage");
       await storage.updateUser(user);
       markAdminPasswordChanged();
+
+      // Every other session ends with the old password (PD-18); this one stays.
+      const { rowCount } = await pool.query("DELETE FROM user_sessions WHERE sid <> $1", [req.sessionID]);
+      console.log(`[auth] password changed; ended ${rowCount ?? 0} other session(s) ip=${clientKey(req)}`);
 
       res.json({ message: "Password changed successfully." });
     } catch (error) {
