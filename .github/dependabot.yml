@@ -1,0 +1,21 @@
+# Weekly dependency updates. Minor and patch updates arrive as one grouped PR;
+# majors come one by one. Security updates open as soon as an advisory is published.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Pinned on purpose: the exact versions the firebase 12.19 bundle shipped (see CHANGELOG 2.9.4).
+      - dependency-name: "@firebase/app"
+        update-types: [version-update:semver-major]
+      - dependency-name: "@firebase/auth"
+        update-types: [version-update:semver-major]

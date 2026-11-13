@@ -163,7 +163,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid input", errors: error.errors });
+        return res.status(400).json({ message: "Invalid input", errors: error.issues });
       }
       console.error("Login error:", error);
       res.status(500).json({ message: "Internal server error" });
@@ -439,7 +439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Password changed successfully." });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid input", errors: error.errors });
+        return res.status(400).json({ message: "Invalid input", errors: error.issues });
       }
       console.error("Change password error:", error);
       res.status(500).json({ message: "Failed to change password." });

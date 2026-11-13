@@ -1,10 +1,10 @@
-import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
+import { initializeApp, getApps, type FirebaseApp } from "@firebase/app";
 import {
   getAuth,
   signInWithPopup,
   GoogleAuthProvider,
   type Auth,
-} from "firebase/auth";
+} from "@firebase/auth";
 import type { FirebaseClientConfig } from "@/hooks/use-auth";
 
 let appInstance: FirebaseApp | null = null;

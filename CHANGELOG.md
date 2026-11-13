@@ -5,6 +5,21 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.4] - 2026-11-13
+
+The rest of PD-02 from the 2026-11-13 audit: `npm audit --omit=dev` now reports 0 advisories (was 11 after 2.9.3, 25 before).
+
+### Security
+- **zod 4.6.7** (was 3.25): fixes the memory-exhaustion advisory, which has no 3.x fix. With it `drizzle-zod` 0.8.3 and `@hookform/resolvers` 5.9.2. The only code change: validation errors are read from `ZodError.issues` (`.errors` is gone in zod 4); the `errors` field of the 400 responses is unchanged.
+- **`firebase` replaced by `@firebase/app` 0.16.2 and `@firebase/auth` 1.13.6**, the exact versions `firebase` 12.19.0 shipped. The login page only ever used these two; the meta package also installed Firestore with a vulnerable `@grpc/grpc-js` that has no fixed release upstream.
+- **`firebase-admin` 14.5.1** plus two npm overrides for its optional Firestore client, which PiDeck never loads: `google-gax@5` gets `rimraf` 6.1.4 (and with it fixed `glob` and `minimatch`), and `gaxios` 7.0–7.3.0 resolves to 7.3.1.
+
+### Added
+- **Dependabot** (`.github/dependabot.yml`): weekly npm updates, minor and patch grouped into one PR.
+
+### Known
+- 6 moderate advisories remain in development tools only (`esbuild` inside drizzle-kit, `postcss-selector-parser` inside `@tailwindcss/typography`); their fixes are breaking downgrades.
+
 ## [2.9.3] - 2026-11-13
 
 Fixes from the 2026-11-13 audit (PD-01, PD-02, PD-03, PD-10).
