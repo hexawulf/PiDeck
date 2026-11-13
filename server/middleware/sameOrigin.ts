@@ -57,7 +57,7 @@ export function requireSameOrigin(env: NodeJS.ProcessEnv = process.env) {
     });
     if (ok) return next();
     const origin = String(first(req.headers.origin) ?? "-").replace(/[^\x21-\x7e]/g, "?").slice(0, 120);
-    console.warn(`[security] refused cross-origin ${req.method} ${req.path.slice(0, 80)} origin=${origin} ip=${req.ip ?? "?"}`);
+    console.warn(`[security] refused cross-origin ${req.method} ${(req.originalUrl || req.path).split("?")[0].slice(0, 80)} origin=${origin} ip=${req.ip ?? "?"}`);
     return res.status(403).json({ message: "Cross-origin request refused" });
   };
 }
