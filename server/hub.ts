@@ -16,6 +16,7 @@ import { startSampler } from "./services/sampler";
 import { initializeStorage, pool } from "./storage";
 import { checkSchema, schemaReady, schemaState } from "./db-schema";
 import { installCsp } from "./security";
+import { throttleTouch } from "./session-touch";
 import { cookieSecure, corsOrigins, insecureHttp, trustProxy } from "./config";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,18 +41,21 @@ app.set("trust proxy", TRUST_PROXY);
 app.disable("x-powered-by");
 app.use(express.json()); // JSON only: no form posts (a cross-site form can't send JSON)
 
-// ---------- sessions (before anything that uses req.session) ----------
+// ---------- sessions ----------
+// Only /api uses req.session: mounted there, the page, its assets and
+// /healthz cost no database query. Touches are throttled (session-touch.ts).
 app.use(
+  "/api",
   session({
     name: "pideck.sid",
     secret: SESSION_SECRET,
-    store: new PgStore({
+    store: throttleTouch(new PgStore({
       pool,
       createTableIfMissing: true,
       tableName: "user_sessions",
       ttl: 24 * 60 * 60,
       pruneSessionInterval: 15 * 60,
-    }),
+    })),
     resave: false,
     saveUninitialized: false,
     rolling: true,
