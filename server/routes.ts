@@ -1,11 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
-import crypto from "node:crypto";
-import fs from "node:fs";
 
 import { AuthService } from "./services/auth";
-import { SystemService } from "./services/system";
+import { Pm2ActionError, SystemService } from "./services/system";
 
 import nvmeRouter from "./routes/nvme";
 import systemRouter, { rebootCheckHandler } from "./routes/system";
@@ -22,6 +20,7 @@ import { unavailable } from "./services/unavailable";
 
 import { loginSchema } from "@shared/schema";
 import { rateLimitLogin } from "./middleware/rateLimitLogin";
+import { requireSameOrigin } from "./middleware/sameOrigin";
 import { envPasswordMatches } from "./services/env-password";
 import { cookieSecure, insecureHttp } from "./config";
 import { hubRuntime } from "./runtime";
@@ -55,6 +54,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     next();
   });
+
+  // CSRF guard: every state-changing /api request must come from PiDeck's own
+  // origin (see middleware/sameOrigin.ts). Before all routes, login included.
+  app.use("/api", requireSameOrigin());
 
   // Health (public)
   app.get("/api/health", async (_req, res) => {
@@ -110,11 +113,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- Auth routes (OPEN): must be defined BEFORE protected mounts ---
-
-  app.get("/api/auth/csrf", (_req, res) => {
-    const token = crypto.randomBytes(32).toString("hex");
-    res.json({ token });
-  });
 
   app.post("/api/auth/login", rateLimitLogin, async (req, res) => {
     try {
@@ -367,25 +365,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/pm2/processes/:name/restart", async (req, res) => {
-    try {
-      await SystemService.restartPM2Process(req.params.name);
-      res.json({ message: "Process restarted successfully" });
-    } catch (error) {
-      console.error("Restart PM2 process error:", error);
-      res.status(500).json({ message: "Failed to restart process" });
-    }
-  });
-
-  app.post("/api/pm2/processes/:name/stop", async (req, res) => {
-    try {
-      await SystemService.stopPM2Process(req.params.name);
-      res.json({ message: "Process stopped successfully" });
-    } catch (error) {
-      console.error("Stop PM2 process error:", error);
-      res.status(500).json({ message: "Failed to stop process" });
-    }
-  });
+  // 400 bad name · 404 not a pm2 process · 409 PiDeck stopping itself (services/system.ts).
+  for (const action of ["restart", "stop"] as const) {
+    app.post(`/api/pm2/processes/:name/${action}`, async (req, res) => {
+      try {
+        await SystemService.pm2Action(action, req.params.name);
+        res.json({ message: action === "stop" ? "Process stopped successfully" : "Process restarted successfully" });
+      } catch (error) {
+        if (error instanceof Pm2ActionError) return res.status(error.status).json({ message: error.message });
+        console.error(`${action} PM2 process error:`, error);
+        res.status(500).json({ message: `Failed to ${action} process` });
+      }
+    });
+  }
 
   // Cron helpers (protected)
   app.get("/api/cron/jobs", async (_req, res) => {

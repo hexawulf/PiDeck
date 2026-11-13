@@ -5,6 +5,21 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.3] - 2026-11-13
+
+Fixes from the 2026-11-13 audit (PD-01, PD-10).
+
+### Security
+- **Cross-origin requests refused (CSRF)**: every state-changing `/api` request (system update, Docker and pm2 actions, cron run, login, logout, password change) must now come from PiDeck's own origin. The check compares the `Origin` header's host with the request's `Host` (`Sec-Fetch-Site` when there is no `Origin`); origins in `PIDECK_CORS_ORIGIN` stay allowed, and clients that send neither header (curl, `scripts/install.sh --check-login`) are unaffected. A refused request gets `403` and one `[security]` log line (`server/middleware/sameOrigin.ts`).
+- **Session cookie is `SameSite=Strict`** (was `Lax`), and the server no longer parses form-encoded bodies.
+- **pm2 actions take real process names only**: `POST /api/pm2/processes/:name/(stop|restart)` answers `400` for `all` (pm2 would stop every app on the host), `404` for a name pm2 doesn't run, and `409` when asked to stop PiDeck itself. pm2 and docker now run without a shell (`execFile`).
+
+### Changed
+- **Stop asks first**: stopping a container or a pm2 process on the Apps tab goes through the confirmation dialog.
+
+### Removed
+- `GET /api/auth/csrf`: it issued a token nothing ever checked.
+
 ## [2.9.2] - 2026-10-04
 
 ### Fixed

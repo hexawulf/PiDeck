@@ -1,10 +1,11 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useDocker, useContainerAction, type ContainerAction } from "@/hooks/use-docker";
 import { usePm2, useProcessAction, type ProcessAction } from "@/hooks/use-pm2";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { isUnavailable } from "@/widgets/schemas";
 import { HostProblemNotice, UnavailableNotice } from "@/widgets/WidgetFrame";
 import { useHost } from "@/hosts/HostProvider";
@@ -44,6 +45,8 @@ export default function AppMonitor() {
   const isProcessActionPending = processAction.isPending;
   
   const { toast } = useToast();
+  // Stop always asks first (one mis-click must not take a production app down).
+  const [stopTarget, setStopTarget] = useState<{ kind: "container" | "process"; id: string; name: string } | null>(null);
 
   const handleContainerAction = async (action: ContainerAction, id: string, name: string) => {
     try {
@@ -74,6 +77,16 @@ export default function AppMonitor() {
         description: `Failed to ${action} process ${name}`,
         variant: "destructive",
       });
+    }
+  };
+
+  const confirmStop = async () => {
+    if (!stopTarget) return;
+    try {
+      if (stopTarget.kind === "container") await handleContainerAction("stop", stopTarget.id, stopTarget.name);
+      else await handleProcessAction("stop", stopTarget.name);
+    } finally {
+      setStopTarget(null);
     }
   };
 
@@ -122,6 +135,21 @@ export default function AppMonitor() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        open={stopTarget !== null}
+        onOpenChange={(open) => { if (!open) setStopTarget(null); }}
+        title={stopTarget ? `Stop ${stopTarget.name}?` : "Stop?"}
+        description={
+          stopTarget?.kind === "container"
+            ? "Stops this Docker container on this host. It stays stopped until it is started again."
+            : "Stops this pm2 process on this host. It stays stopped until it is restarted."
+        }
+        confirmLabel="Stop"
+        pendingLabel="Stopping…"
+        destructive
+        pending={isContainerActionPending || isProcessActionPending}
+        onConfirm={() => void confirmStop()}
+      />
     <Suspense fallback={<Skeleton className="h-40 w-full" />}>
       <ServicesCard />
     </Suspense>
@@ -221,7 +249,8 @@ export default function AppMonitor() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleContainerAction('stop', container.id, container.name)}
+                            onClick={() => setStopTarget({ kind: "container", id: container.id, name: container.name })}
+                            aria-label={`Stop container ${container.name}`}
                             disabled={isContainerActionPending}
                             className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
                           >
@@ -325,7 +354,8 @@ export default function AppMonitor() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleProcessAction('stop', process.name)}
+                      onClick={() => setStopTarget({ kind: "process", id: process.name, name: process.name })}
+                      aria-label={`Stop process ${process.name}`}
                       disabled={isProcessActionPending}
                       className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
                     >

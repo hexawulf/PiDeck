@@ -38,8 +38,7 @@ app.set("trust proxy", TRUST_PROXY);
 
 // Parsers & hardening
 app.disable("x-powered-by");
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.json()); // JSON only: no form posts (a cross-site form can't send JSON)
 
 // ---------- sessions (before anything that uses req.session) ----------
 app.use(
@@ -61,7 +60,9 @@ app.use(
       httpOnly: true,
       // Secure in production; PIDECK_INSECURE_HTTP=1 lets a plain-HTTP LAN install log in.
       secure: cookieSecure(),
-      sameSite: "lax",
+      // Strict: never sent on requests another site starts. The SPA shell is
+      // public and its own /api calls are same-site, so links into PiDeck still work.
+      sameSite: "strict",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
       path: "/",
       ...(SESSION_COOKIE_DOMAIN ? { domain: SESSION_COOKIE_DOMAIN } : {}),

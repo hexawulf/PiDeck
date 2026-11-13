@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { exec, execFile } from "child_process";
 import os from "os";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -19,6 +19,19 @@ import type {
 
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+/** A refused pm2 action: 400 bad name, 404 unknown process, 409 PiDeck stopping itself. */
+export class Pm2ActionError extends Error {
+  constructor(readonly status: 400 | 404 | 409, message: string) {
+    super(message);
+  }
+}
+const PM2_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/;
+/** pm2 reads "all" as every process on the host. */
+const PM2_RESERVED = new Set(["all"]);
+/** This process's pm2 name (pm2 exports `name` and `pm_id` to its apps), if it runs under pm2. */
+export const pm2SelfName = (env: NodeJS.ProcessEnv = process.env) => (env.pm_id !== undefined && env.name ? env.name : undefined);
 
 // Disk and network rates are deltas of kernel counters since the previous
 // reading. Each caller keeps its own baseline: the 60s sampler gets per-minute
@@ -525,7 +538,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       throw new Error("Invalid container ID format");
     }
     try {
-      await execAsync(`docker restart ${containerId}`);
+      await execFileAsync("docker", ["restart", containerId], { timeout: 60_000 });
     } catch (error) {
       console.error("Error restarting Docker container:", error);
       throw new Error("Failed to restart container");
@@ -537,7 +550,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       throw new Error("Invalid container ID format");
     }
     try {
-      await execAsync(`docker stop ${containerId}`);
+      await execFileAsync("docker", ["stop", containerId], { timeout: 60_000 });
     } catch (error) {
       console.error("Error stopping Docker container:", error);
       throw new Error("Failed to stop container");
@@ -549,42 +562,49 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       throw new Error("Invalid container ID format");
     }
     try {
-      await execAsync(`docker start ${containerId}`);
+      await execFileAsync("docker", ["start", containerId], { timeout: 60_000 });
     } catch (error) {
       console.error("Error starting Docker container:", error);
       throw new Error("Failed to start container");
     }
   }
 
-  private static isValidProcessNameOrId(nameOrId: string): boolean {
-    // Allow alphanumeric, hyphens, underscores. Commonly used for names.
-    // PM2 also allows numeric IDs.
-    return /^[a-zA-Z0-9_.-]+$/.test(nameOrId);
-  }
-
-  static async restartPM2Process(processName: string): Promise<void> {
-    if (!this.isValidProcessNameOrId(processName)) {
-      console.error(`Invalid PM2 process name/ID for restart: ${processName}`);
-      throw new Error("Invalid process name or ID format");
+  /**
+   * `pm2 restart|stop <name>` for one process the daemon actually runs.
+   * Refused: anything that isn't a current process name ("all" above all,
+   * which pm2 reads as every app on the host), and stopping PiDeck itself
+   * (the dashboard would be gone until someone uses ssh).
+   */
+  static async pm2Action(
+    action: "restart" | "stop",
+    name: string,
+    deps: { list?: () => Promise<string[]>; run?: (args: string[]) => Promise<unknown>; self?: string | undefined } = {},
+  ): Promise<void> {
+    const list = deps.list ?? (async () => {
+      const { stdout } = await execFileAsync("pm2", ["jlist"], { maxBuffer: 16 * 1024 * 1024 });
+      return (JSON.parse(stdout || "[]") as { name?: unknown }[]).map((p) => String(p.name ?? "")).filter(Boolean);
+    });
+    const run = deps.run ?? ((args: string[]) => execFileAsync("pm2", args, { timeout: 30_000 }));
+    const self = "self" in deps ? deps.self : pm2SelfName();
+    if (!PM2_NAME_RE.test(name) || PM2_RESERVED.has(name.toLowerCase())) {
+      throw new Pm2ActionError(400, "Invalid process name");
+    }
+    let names: string[];
+    try {
+      names = await list();
+    } catch (error) {
+      console.error("Error listing PM2 processes:", error);
+      throw new Error("Failed to list processes");
+    }
+    if (!names.includes(name)) throw new Pm2ActionError(404, "No such pm2 process");
+    if (action === "stop" && self && name === self) {
+      throw new Pm2ActionError(409, "PiDeck can't stop itself (use pm2 on the host)");
     }
     try {
-      await execAsync(`pm2 restart ${processName}`);
+      await run([action, name]);
     } catch (error) {
-      console.error("Error restarting PM2 process:", error);
-      throw new Error("Failed to restart process");
-    }
-  }
-
-  static async stopPM2Process(processName: string): Promise<void> {
-    if (!this.isValidProcessNameOrId(processName)) {
-      console.error(`Invalid PM2 process name/ID for stop: ${processName}`);
-      throw new Error("Invalid process name or ID format");
-    }
-    try {
-      await execAsync(`pm2 stop ${processName}`);
-    } catch (error) {
-      console.error("Error stopping PM2 process:", error);
-      throw new Error("Failed to stop process");
+      console.error(`Error running pm2 ${action}:`, error);
+      throw new Error(`Failed to ${action} process`);
     }
   }
 
