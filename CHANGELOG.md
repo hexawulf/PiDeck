@@ -5,6 +5,14 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.5] - 2026-11-13
+
+PD-19 and PD-20 from the 2026-11-13 audit.
+
+### Fixed
+- **The temperature alert no longer flaps** (PD-19). It opens after two samples in a row above 70 °C and resolves only at or below 67 °C; in between nothing changes. A host hovering around 70 °C opened and resolved an alert, with a toast, every minute.
+- **One slow request no longer marks a remote host offline** (PD-20). When a single proxied request runs out of time (for example a slow `ufw status`), the hub answers 504 and the card says "<host> didn't answer in time; trying again". The host's status is left to the regular status check, which (like the sampler) still treats a host that doesn't answer as offline. Refused connections are offline as before.
+
 ## [2.10.4] - 2026-11-13
 
 PD-21 from the 2026-11-13 audit.
