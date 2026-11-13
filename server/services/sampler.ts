@@ -25,7 +25,7 @@ import { hubRuntime, type HubRuntime, type LastSample } from "../runtime";
 import type { SampleOutcome } from "../hosts";
 import { isRawCounters, ratesBetween, readCounters, type RawCounters } from "./counters";
 import { historyStore, utcCutoff, type HistoryPoint, type HistoryStore } from "./history";
-import { offlineMessage, serviceAlertType, serviceMessage, TEMPERATURE_THRESHOLD, temperatureMessage } from "./alerts";
+import { offlineMessage, serviceAlertType, serviceMessage, temperatureMessage, temperatureVerdict } from "./alerts";
 import { parseCompactServices, type CompactService } from "./systemd";
 
 export const SAMPLE_INTERVAL_MS = 60_000;
@@ -155,6 +155,7 @@ export function createSampleTick({
   const { hostHub, alerts, lastSample } = runtime;
   const prev = new Map<string, RawCounters>();
   const failingSince = new Map<string, number>(); // first failed poll of the current streak
+  const hotStreak = new Map<string, number>(); // host → samples in a row above the temperature threshold
   const serviceDownSince = new Map<string, number>(); // host \0 alert type → first non-ok sample of the streak
   const serviceMinutes = runtime.serviceMinutes ?? 3;
   const lastServices = runtime.lastServices ?? new Map<string, CompactService[]>();
@@ -168,9 +169,16 @@ export function createSampleTick({
   }
 
   async function evaluateAlerts(p: Poll, t: number) {
-    // Temperature: only when this tick read the host; otherwise unknown (no change).
+    // Temperature: only when this tick read the host; otherwise unknown (no
+    // change, and the hot streak is kept). Hysteresis: see temperatureVerdict.
     const temp = p.counters?.temperature;
-    await alerts.evaluate(p.id, "temperature", p.counters ? typeof temp === "number" && temp > TEMPERATURE_THRESHOLD : null, {
+    let active: boolean | null = null;
+    if (p.counters) {
+      const v = temperatureVerdict(temp, hotStreak.get(p.id) ?? 0);
+      hotStreak.set(p.id, v.hotStreak);
+      active = v.active;
+    }
+    await alerts.evaluate(p.id, "temperature", active, {
       severity: "warning",
       message: typeof temp === "number" ? temperatureMessage(temp) : "",
     });

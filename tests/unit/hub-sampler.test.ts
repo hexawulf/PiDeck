@@ -169,6 +169,8 @@ describe("hub sampler: alerts per host", () => {
     await s.run(1);
     s.agentTemp.good = 75;
     await s.run(1);
+    expect(open(s)).toEqual([]); // one hot sample is not enough (PD-19)
+    await s.run(1);
     expect(open(s)).toEqual([expect.objectContaining({ hostId: "good", type: "temperature", severity: "warning", message: "Temperature above 70 °C (75.0 °C)" })]);
     s.agentTemp.good = 78;
     await s.run(1);
@@ -177,6 +179,27 @@ describe("hub sampler: alerts per host", () => {
     await s.run(1);
     expect(open(s)).toEqual([]);
     expect(s.store.rows[0].resolvedAt).not.toBeNull();
+  });
+
+  it("temperature hysteresis: a host hovering around 70 °C does not flap (PD-19)", async () => {
+    const s = setup({ good: "good" });
+    s.agentTemp.good = 71;
+    await s.run(2);
+    expect(open(s)).toHaveLength(1);
+    for (const t of [69, 70, 71, 68.5, 70]) { // dips that stay above 67 °C keep it open
+      s.agentTemp.good = t;
+      await s.run(1);
+      expect(open(s), `${t} °C`).toHaveLength(1);
+    }
+    s.agentTemp.good = 67;
+    await s.run(1);
+    expect(open(s)).toEqual([]);
+    for (const t of [71, 69, 71]) { // hot samples not in a row don't reopen it
+      s.agentTemp.good = t;
+      await s.run(1);
+      expect(open(s), `${t} °C`).toEqual([]);
+    }
+    expect(s.store.rows).toHaveLength(1);
   });
 
   it("offline alert after N minutes of continuous failure, since the last seen time; resolves when back", async () => {

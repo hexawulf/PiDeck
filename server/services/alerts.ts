@@ -35,6 +35,24 @@ export interface AlertStore {
 }
 
 export const TEMPERATURE_THRESHOLD = 70; // °C, the rule PiDeck has always had
+// Hysteresis (PD-19): open after this many samples in a row above the
+// threshold, resolve only at or below TEMPERATURE_RESOLVE_AT. In between,
+// nothing changes, so a host hovering around 70 °C doesn't flap every minute.
+export const TEMPERATURE_OPEN_SAMPLES = 2;
+export const TEMPERATURE_RESOLVE_AT = 67; // °C
+
+/**
+ * One temperature sample → evaluate() input, given how many hot samples in a
+ * row came before it. Returns the new streak too.
+ */
+export function temperatureVerdict(temp: unknown, hotStreak: number): { active: boolean | null; hotStreak: number } {
+  if (typeof temp !== "number" || !Number.isFinite(temp)) return { active: false, hotStreak: 0 }; // no sensor
+  if (temp > TEMPERATURE_THRESHOLD) {
+    const streak = hotStreak + 1;
+    return { active: streak >= TEMPERATURE_OPEN_SAMPLES ? true : null, hotStreak: streak };
+  }
+  return { active: temp <= TEMPERATURE_RESOLVE_AT ? false : null, hotStreak: 0 };
+}
 
 async function lazy() {
   const [{ alerts }, { and, eq, gte, isNull, isNotNull, lt, or, asc }] = await Promise.all([import("@shared/schema"), import("drizzle-orm")]);
