@@ -38,16 +38,17 @@ export function formatLastSeen(iso: string | null, now = Date.now()): string {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-export type HostProblem ={ kind: "offline" | "auth" | "bad"; lastSeen: string | null };
+export type HostProblem = { kind: "offline" | "auth" | "bad" | "timeout"; lastSeen: string | null };
 
 /**
  * The hub answers 502 {offline|auth|badResponse} when it can't get a good
- * answer from an agent; getQueryFn turns that into Error("502: <body>").
+ * answer from an agent, and 504 {timeout} when one request took too long
+ * (the host stays online); getQueryFn turns that into Error("502: <body>").
  * Returns what went wrong, or null for any other error.
  */
 export function hostProblemOf(error: unknown): HostProblem | null {
   const msg = error instanceof Error ? error.message : "";
-  if (!msg.startsWith("502: ")) return null;
+  if (!msg.startsWith("502: ") && !msg.startsWith("504: ")) return null;
   let body: unknown;
   try {
     body = JSON.parse(msg.slice(5));
@@ -55,11 +56,12 @@ export function hostProblemOf(error: unknown): HostProblem | null {
     return null;
   }
   if (!body || typeof body !== "object") return null;
-  const b = body as { offline?: unknown; auth?: unknown; badResponse?: unknown; lastSeen?: unknown };
+  const b = body as { offline?: unknown; auth?: unknown; badResponse?: unknown; timeout?: unknown; lastSeen?: unknown };
   const lastSeen = typeof b.lastSeen === "string" ? b.lastSeen : null;
   if (b.offline === true) return { kind: "offline", lastSeen };
   if (b.auth === true) return { kind: "auth", lastSeen: null };
   if (b.badResponse === true) return { kind: "bad", lastSeen: null };
+  if (b.timeout === true) return { kind: "timeout", lastSeen: null };
   return null;
 }
 

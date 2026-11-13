@@ -196,7 +196,7 @@ export function QueryState<T>({
   return <>{children(data)}</>;
 }
 
-/** A remote host the hub can't read: offline, bad token, or a bad answer. Calm, not a red error card. */
+/** A remote host the hub can't read: offline, bad token, a bad or a too slow answer. Calm, not a red error card. */
 export function HostProblemNotice({ problem }: { problem: HostProblem }) {
   const host = useHost();
   const summary = useHostSummary(host.id);
@@ -207,7 +207,9 @@ export function HostProblemNotice({ problem }: { problem: HostProblem }) {
       ? `${label} is offline (last seen ${formatLastSeen(lastSeen)})`
       : problem.kind === "auth"
         ? `Can't authenticate to ${label}, check its token.`
-        : `Bad response from ${label}`;
+        : problem.kind === "timeout"
+          ? `${label} didn't answer in time; trying again.`
+          : `Bad response from ${label}`;
   return (
     <div role="status" className="flex items-start gap-2 text-pi-text-muted" data-host-problem={problem.kind}>
       <CloudOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />

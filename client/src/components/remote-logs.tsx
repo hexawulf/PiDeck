@@ -207,7 +207,9 @@ export default function RemoteLogs() {
           ? `${label} is offline (last seen ${formatLastSeen(hostProblem.lastSeen)}).`
           : hostProblem?.kind === "auth"
             ? `Can't authenticate to ${label}: check its token.`
-            : `Couldn't list ${label}'s logs: ${problemMessage(list.error).message}`}
+            : hostProblem?.kind === "timeout"
+              ? `${label} didn't answer in time; trying again.`
+              : `Couldn't list ${label}'s logs: ${problemMessage(list.error).message}`}
       </div>
     );
   }

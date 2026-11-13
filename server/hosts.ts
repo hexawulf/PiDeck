@@ -42,6 +42,8 @@ export type SampleOutcome =
 type Outcome =
   | { kind: "ok"; body: unknown }
   | { kind: "offline" }
+  /** No (full) answer within the timeout: the agent may be up but slow (PD-20). */
+  | { kind: "timeout" }
   | { kind: "auth" }
   | { kind: "bad" }
   /** Remote logs only: the agent's own 400/404/409/503 (bad filter, no such source, unreadable, Docker down). */
@@ -148,7 +150,8 @@ export function createHostHub({
         return { kind: "bad" };
       }
     } catch {
-      return { kind: "offline" }; // refused, DNS, reset, timeout (abort), redirect
+      // Our own abort = too slow; anything else (refused, DNS, reset, redirect) = unreachable.
+      return ctrl.signal.aborted ? { kind: "timeout" } : { kind: "offline" };
     } finally {
       clearTimeout(timer);
     }
@@ -178,6 +181,7 @@ export function createHostHub({
       s.logs = body?.capabilities?.logs === true;
       s.services = body?.capabilities?.services === true;
     } else {
+      // The status check is the authority: a timeout here does mean offline.
       s.status = out.kind === "auth" ? "auth-error" : "offline";
     }
   }
@@ -234,7 +238,8 @@ export function createHostHub({
       if (s.status === "offline" && now() - s.checkedAt < 1_000) return { kind: "offline" }; // info just failed
       if (s.status === "auth-error" && now() - s.checkedAt < 1_000) return { kind: "auth" };
       if (s.history === "unsupported") return { kind: "unsupported" };
-      const out = await agentGet(host, "/api/agent/sample", host.timeoutMs ?? sampleTimeoutMs);
+      const got = await agentGet(host, "/api/agent/sample", host.timeoutMs ?? sampleTimeoutMs);
+      const out = got.kind === "timeout" ? ({ kind: "offline" } as const) : got; // the sampler counts both as a missed poll
       if (out.kind === "ok") seen(id);
       else if (out.kind === "offline") s.status = "offline";
       else if (out.kind === "auth") s.status = "auth-error";
@@ -268,6 +273,10 @@ export function createHostHub({
         case "offline":
           s.status = "offline";
           return { status: 502, body: { offline: true, host: id, lastSeen: iso(s.lastSeen) } };
+        case "timeout":
+          // One slow request (e.g. a 15 s `ufw status` behind a 5 s proxy budget)
+          // says nothing about the host: leave its status to check() (PD-20).
+          return { status: 504, body: { timeout: true, host: id } };
         default:
           return { status: 502, body: { badResponse: true, host: id } };
       }

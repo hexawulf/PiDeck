@@ -52,6 +52,7 @@ describe("hostProblemOf", () => {
       .toEqual({ kind: "offline", lastSeen: "2026-09-28T10:00:00.000Z" });
     expect(hostProblemOf(new Error('502: {"auth":true,"host":"p"}'))).toEqual({ kind: "auth", lastSeen: null });
     expect(hostProblemOf(new Error('502: {"badResponse":true}'))).toEqual({ kind: "bad", lastSeen: null });
+    expect(hostProblemOf(new Error('504: {"timeout":true,"host":"p"}'))).toEqual({ kind: "timeout", lastSeen: null });
   });
   it("ignores everything else", () => {
     for (const e of [new Error("500: {}"), new Error("502: <html>"), new Error('502: {"x":1}'), new TypeError("Failed"), null, "502"]) {

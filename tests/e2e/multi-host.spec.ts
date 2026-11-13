@@ -92,6 +92,21 @@ test.describe("multi-host", () => {
     await expect(page.locator("[data-host-problem]")).toHaveCount(0);
   });
 
+  test("one slow answer: 'didn't answer in time', not offline (PD-20)", async ({ page }) => {
+    await page.goto("/h/e2e-agent/dashboard");
+    await expect(card(page, "ram")).toContainText(/GB|MB/);
+    await page.route("**/api/hosts/e2e-agent/metrics/ram", (route) =>
+      route.fulfill({ status: 504, json: { timeout: true, host: "e2e-agent" } }),
+    );
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(card(page, "ram").getByText("E2E agent didn't answer in time; trying again.")).toBeVisible();
+    await expect(card(page, "ram").locator('[data-host-problem="timeout"]')).toBeVisible();
+    await expect(page.locator('[data-host-problem="offline"]')).toHaveCount(0);
+    await page.unroute("**/api/hosts/e2e-agent/metrics/ram");
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(card(page, "ram")).toContainText(/GB|MB/);
+  });
+
   test("wrong token: every card says so", async ({ page }) => {
     await page.goto("/h/e2e-badtoken/dashboard");
     await expect(card(page, "cpu").getByText("Can't authenticate to e2e-badtoken, check its token.")).toBeVisible();

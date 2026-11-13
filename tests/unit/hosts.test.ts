@@ -132,10 +132,20 @@ describe("GET /api/hosts/:id/* (proxy)", () => {
     expect(r).toEqual({ status: 502, body: { offline: true, host: "piapps2", lastSeen: new Date(1_000_000).toISOString() } });
     expect((await h.list())[1].status).toBe("offline");
   });
-  it("maps a timeout (headers or body) to offline", async () => {
+  it("maps a timeout (headers or body) to 504 {timeout} and leaves the host online (PD-20)", async () => {
     const slowBody = () => new Response(new ReadableStream({ start() { /* never sends */ } }), { headers: { "content-type": "application/json" } });
-    const { h } = hub(async () => slowBody());
-    expect((await h.proxy("piapps2", "/api/hosts/piapps2/metrics/ram")).body).toMatchObject({ offline: true });
+    const hanging = (init: RequestInit) =>
+      new Promise<Response>((_r, reject) => init.signal!.addEventListener("abort", () => reject(new Error("aborted"))));
+    for (const slow of [async () => slowBody(), hanging]) {
+      const { h } = hub(async (url, init) => (url.endsWith("/api/agent/info") ? json({ version: "2.4.0" }) : slow(init)));
+      expect((await h.list())[1].status).toBe("online");
+      expect(await h.proxy("piapps2", "/api/hosts/piapps2/metrics/firewall-status")).toEqual({ status: 504, body: { timeout: true, host: "piapps2" } });
+      expect((await h.list())[1].status).toBe("online");
+    }
+  });
+  it("the status check still calls a host that doesn't answer in time offline", async () => {
+    const { h } = hub(async () => new Response(new ReadableStream({ start() {} }), { headers: { "content-type": "application/json" } }));
+    expect((await h.list())[1].status).toBe("offline");
   });
   it("maps 401/403/429 to 502 {auth}", async () => {
     for (const status of [401, 403, 429]) {
