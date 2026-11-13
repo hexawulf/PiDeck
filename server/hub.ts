@@ -165,7 +165,7 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
   server.listen({ port: PORT, host: "0.0.0.0" }, () => log(`serving on port ${PORT}`));
 
   // Graceful stop for pm2 reload / Ctrl-C: stop sampling, stop accepting
-  // connections, exit. Open SSE log streams would hold server.close(), so
+  // connections, exit. Keep-alive connections can hold server.close(), so
   // exit anyway after 1.5s (pm2's kill_timeout default is 1.6s).
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.once(signal, () => {

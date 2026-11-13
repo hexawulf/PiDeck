@@ -279,23 +279,4 @@ r.get('/:id', async (req, res) => {
   }
 });
 
-// GET /api/hostlogs/:id/follow - SSE live tail (placeholder for now)
-r.get('/:id/follow', async (_req, res) => {
-  try {
-    const id = _req.params.id;
-    const log = await getLogById(id);
-    
-    if (!log) {
-      return res.status(404).json({ message: 'Log not found' });
-    }
-    
-    // For now, return a simple message since SSE implementation is complex
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.send('Live tail functionality will be implemented in a future update');
-  } catch (error) {
-    console.error('Error setting up live tail:', error);
-    res.status(500).json({ message: 'Failed to set up live tail' });
-  }
-});
-
 export default r;

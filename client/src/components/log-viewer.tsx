@@ -28,6 +28,9 @@ import {
   PinOff,
 } from "lucide-react";
 
+/** Follow refresh interval for local logs. */
+export const FOLLOW_MS = 3000;
+
 
 type DateFilter = "all" | "24h" | "7d" | "30d";
 
@@ -118,7 +121,10 @@ export default function LogViewer() {
     () => new Set(CATEGORY_ORDER)
   );
 
-  const eventSourceRef = useRef<EventSource | null>(null);
+  // Follow = poll the tail every FOLLOW_MS (the same way remote logs refresh).
+  // `requestSeq` drops answers that arrive after a newer request or for a log
+  // that is no longer selected.
+  const requestSeq = useRef(0);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Persist sidebar state
@@ -143,13 +149,16 @@ export default function LogViewer() {
     if (log && !selectedLog) handleLogSelect(log);
   }, [logs, search]);
 
-  // Cleanup EventSource
+  // While following: refresh quietly, skipping ticks while the tab is hidden.
   useEffect(() => {
-    return () => {
-      eventSourceRef.current?.close();
-      eventSourceRef.current = null;
-    };
-  }, []);
+    if (!isFollowing || !selectedLog) return;
+    const id = selectedLog.id;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      void fetchLogContent(id, true);
+    }, FOLLOW_MS);
+    return () => clearInterval(timer);
+  }, [isFollowing, selectedLog?.id, searchFilter, tailLines]);
 
   // Auto-scroll when following
   useEffect(() => {
@@ -213,8 +222,6 @@ export default function LogViewer() {
   };
 
   const handleLogSelect = async (log: LogEntry, grep = searchFilter) => {
-    eventSourceRef.current?.close();
-    eventSourceRef.current = null;
     setIsFollowing(false);
     setSelectedLog(log);
     setLogContent([]);
@@ -223,41 +230,46 @@ export default function LogViewer() {
     await fetchLogContent(log.id, false, grep);
   };
 
-  const fetchLogContent = async (logId: string, follow: boolean, grep = searchFilter) => {
-    setIsLoading(true);
-    setError(null);
+  /** Load the tail. `quiet` (a follow tick): no spinner, and a failed read keeps what is shown. */
+  const fetchLogContent = async (logId: string, quiet: boolean, grep = searchFilter) => {
+    const seq = ++requestSeq.current;
+    if (!quiet) {
+      setIsLoading(true);
+      setError(null);
+    }
     try {
-      if (follow) {
-        setError("Live tail functionality is not yet available with the new API");
+      const params = new URLSearchParams({ tail: tailLines });
+      if (grep) params.append("grep", grep);
+      const response = await fetch(`/api/hostlogs/${logId}?${params.toString()}`, {
+        credentials: "include",
+      });
+      if (response.status === 404) markLogMissing(logId); // pins show it as stale
+      else if (response.ok) markLogPresent(logId);
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      const text = await response.text();
+      if (seq !== requestSeq.current) return; // a newer request (another log, filter or tick) owns the view
+      setLogContent(text ? text.split("\n").filter((l: string) => l.trim()) : []);
+      setError(null);
+    } catch (err) {
+      if (seq !== requestSeq.current) return;
+      if (quiet) {
+        // The file went away or the session ended: stop following and say why.
         setIsFollowing(false);
       } else {
-        const params = new URLSearchParams({ tail: tailLines });
-        if (grep) params.append("grep", grep);
-        const response = await fetch(`/api/hostlogs/${logId}?${params.toString()}`, {
-          credentials: "include",
-        });
-        if (response.status === 404) markLogMissing(logId); // pins show it as stale
-        else if (response.ok) markLogPresent(logId);
-        if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-        const text = await response.text();
-        setLogContent(text ? text.split("\n").filter((l: string) => l.trim()) : []);
+        console.error("Error fetching log:", err);
       }
-    } catch (err) {
-      console.error("Error fetching log:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch log content");
     } finally {
-      setIsLoading(false);
+      if (!quiet && seq === requestSeq.current) setIsLoading(false);
     }
   };
 
   const handleFollowToggle = () => {
     if (isFollowing) {
-      eventSourceRef.current?.close();
-      eventSourceRef.current = null;
       setIsFollowing(false);
     } else if (selectedLog) {
-      setLogContent([]);
-      fetchLogContent(selectedLog.id, true);
+      setIsFollowing(true);
+      void fetchLogContent(selectedLog.id, true); // newest lines now, then every FOLLOW_MS
     }
   };
 
@@ -271,13 +283,7 @@ export default function LogViewer() {
   const handleApplyFilters = () => {
     if (!selectedLog) return;
     setLogContent([]);
-    if (isFollowing) {
-      eventSourceRef.current?.close();
-      eventSourceRef.current = null;
-      fetchLogContent(selectedLog.id, true);
-    } else {
-      fetchLogContent(selectedLog.id, false);
-    }
+    fetchLogContent(selectedLog.id, false); // following continues with the new filter
   };
 
   // --- Render ---
@@ -498,6 +504,8 @@ export default function LogViewer() {
                       variant="outline"
                       onClick={handleFollowToggle}
                       disabled={isLoading}
+                      aria-pressed={isFollowing}
+                      title={isFollowing ? "Stop following" : `Follow: refresh every ${FOLLOW_MS / 1000} s`}
                     >
                       {isFollowing ? "Stop" : "Follow"}
                     </Button>
@@ -530,7 +538,7 @@ export default function LogViewer() {
                     min="10"
                     max="5000"
                   />
-                  <Button onClick={handleApplyFilters} disabled={isFollowing}>
+                  <Button onClick={handleApplyFilters}>
                     <Search className="h-4 w-4 mr-1" />
                     Apply
                   </Button>
