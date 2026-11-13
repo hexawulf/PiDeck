@@ -1,16 +1,17 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { PIDECK_LOGS_DIR, hostLogs } from '../config';
 import { lineFilter, LogFilterError } from '../services/log-filter';
+import { tailFile } from '../services/agent-logs/sources';
+import { redactLine } from '../services/agent-logs/redact';
 
-const execFileAsync = promisify(execFile);
 const r = Router();
 const LARGE_LOG_BYTES = 50 * 1024 * 1024;
-const READ_WINDOW_BYTES = 1024 * 1024;
 const MAX_TAIL_LINES = 5000;
+// The list scans ~/logs (160+ files on piapps), nginx and the configured
+// logs; reads and list refreshes within this window share one scan (PD-16).
+const LIST_CACHE_MS = 5_000;
 const NGINX_LOG_DIR = '/var/log/nginx';
 
 interface LogItem {
@@ -190,41 +191,37 @@ async function getAllLogs(): Promise<LogItem[]> {
   return uniqueLogs.sort((a, b) => new Date(b.mtime).getTime() - new Date(a.mtime).getTime());
 }
 
-// Get log file by ID
-async function getLogById(id: string): Promise<LogItem | null> {
-  const logs = await getAllLogs();
-  return logs.find(log => log.id === id) || null;
-}
+let listCache: { at: number; logs: Promise<LogItem[]> } | null = null;
 
-// Simple tail function for small files
-function tailFile(file: string, n = 500): string {
-  if (!fs.existsSync(file)) return '';
-  const stat = fs.statSync(file);
-  const size = Math.min(stat.size, READ_WINDOW_BYTES); // cap to 1MB
-  const fd = fs.openSync(file, 'r');
-  const buf = Buffer.alloc(size);
-  fs.readSync(fd, buf, 0, size, stat.size - size);
-  fs.closeSync(fd);
-  const lines = buf.toString('utf8').split('\n');
-  return lines.slice(-n).join('\n');
-}
-
-// Tail using system command for large files
-async function tailFileLarge(file: string, n = 1000): Promise<string> {
-  try {
-    const { stdout } = await execFileAsync('tail', ['-n', String(n), file], {
-      maxBuffer: READ_WINDOW_BYTES * 2,
-    });
-    return stdout;
-  } catch {
-    return '';
+/** getAllLogs(), shared for LIST_CACHE_MS (an in-flight scan is shared too). */
+function cachedLogs(fresh = false): Promise<LogItem[]> {
+  const now = Date.now();
+  if (fresh || !listCache || now - listCache.at > LIST_CACHE_MS) {
+    const logs = getAllLogs();
+    const entry = { at: now, logs };
+    listCache = entry;
+    logs.catch(() => { if (listCache === entry) listCache = null; });
   }
+  return listCache!.logs;
+}
+
+/** Test hook: forget the cached list. */
+export function resetLogListCache(): void {
+  listCache = null;
+}
+
+// Get log file by ID. An id missing from the cached list gets one fresh scan
+// before it is called unknown (a log created in the last few seconds).
+async function getLogById(id: string): Promise<LogItem | null> {
+  const hit = (await cachedLogs()).find(log => log.id === id);
+  if (hit) return hit;
+  return (await cachedLogs(true)).find(log => log.id === id) || null;
 }
 
 // GET /api/hostlogs - List all available logs
 r.get('/', async (req, res) => {
   try {
-    const logs = await getAllLogs();
+    const logs = await cachedLogs();
     res.json(logs);
   } catch (error) {
     console.error('Error getting log list:', error);
@@ -258,14 +255,23 @@ r.get('/:id', async (req, res) => {
     }
 
     const tail = Math.min(Math.max(parseInt(String(req.query.tail || 1000), 10) || 1000, 1), MAX_TAIL_LINES);
-    
-    // Use system tail for large files
-    let text = log.large ? await tailFileLarge(validated.path, tail) : tailFile(validated.path, tail);
-    
-    if (keep) {
-      text = text.split('\n').filter(keep).join('\n');
+
+    // The same reader and redaction as the agents (PD-16): whole lines from the
+    // end of the file, secrets replaced before the filter sees them (a filter
+    // must never match a secret's value), and say when older lines were cut.
+    const { lines, truncated } = await tailFile(validated.path, tail);
+    let redacted = 0;
+    const out: string[] = [];
+    for (const line of lines) {
+      const r = redactLine(line);
+      if (keep && !keep(r.text)) continue;
+      redacted += r.count;
+      out.push(r.text);
     }
-    
+    const text = out.join('\n');
+    res.setHeader('X-PiDeck-Truncated', truncated ? '1' : '0');
+    res.setHeader('X-PiDeck-Redacted', String(redacted));
+
     if (req.query.download === '1') {
       const safeName = log.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       res.setHeader('Content-Disposition', `attachment; filename="${safeName}.log"`);

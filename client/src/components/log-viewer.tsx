@@ -26,6 +26,7 @@ import {
   FolderOpen,
   Pin,
   PinOff,
+  ShieldAlert,
 } from "lucide-react";
 
 /** Follow refresh interval for local logs. */
@@ -106,6 +107,8 @@ export default function LogViewer() {
 
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [logContent, setLogContent] = useState<string[]>([]);
+  // From the server's X-PiDeck-* headers (PD-16): secrets replaced, older lines cut.
+  const [readInfo, setReadInfo] = useState<{ redacted: number; truncated: boolean }>({ redacted: 0, truncated: false });
   const [isFollowing, setIsFollowing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -225,6 +228,7 @@ export default function LogViewer() {
     setIsFollowing(false);
     setSelectedLog(log);
     setLogContent([]);
+    setReadInfo({ redacted: 0, truncated: false });
     setError(null);
     localStorage.setItem("logViewer:lastId", log.id);
     await fetchLogContent(log.id, false, grep);
@@ -249,6 +253,10 @@ export default function LogViewer() {
       const text = await response.text();
       if (seq !== requestSeq.current) return; // a newer request (another log, filter or tick) owns the view
       setLogContent(text ? text.split("\n").filter((l: string) => l.trim()) : []);
+      setReadInfo({
+        redacted: Number(response.headers.get("X-PiDeck-Redacted")) || 0,
+        truncated: response.headers.get("X-PiDeck-Truncated") === "1",
+      });
       setError(null);
     } catch (err) {
       if (seq !== requestSeq.current) return;
@@ -487,6 +495,12 @@ export default function LogViewer() {
                 </CardTitle>
                 {selectedLog && (
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {readInfo.redacted > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-pi-warning-soft px-2 py-0.5 text-xs text-pi-text" data-testid="redacted-count"
+                        title="Values that look like secrets are replaced with [REDACTED]">
+                        <ShieldAlert className="h-3 w-3" aria-hidden /> {readInfo.redacted} redacted
+                      </span>
+                    )}
                     <DownloadLogButton lines={logContent} host={hubLabel} source={selectedLog.id} />
                     {(() => {
                       const grep = searchFilter.trim() || undefined; // pins the log with the filter typed right now
@@ -575,6 +589,11 @@ export default function LogViewer() {
                 </div>
               )}
 
+              {readInfo.truncated && logContent.length > 0 && (
+                <p className="mb-2 text-xs text-pi-terminal-muted" data-testid="truncated">
+                  Truncated: only the end of this file was read, so older lines are not shown.
+                </p>
+              )}
               {logContent.map((line, idx) => (
                 <div key={idx} className="leading-relaxed text-pi-terminal-text">
                   <LogLineHighlighter line={line} />

@@ -11,7 +11,7 @@ const LOGS_DIR = process.env.PIDECK_LOGS_DIR || path.join(process.env.HOME || os
 const NAME = `pideck-e2e-grep-${process.pid}.log`;
 const FILE = path.join(LOGS_DIR, NAME);
 const HOST_ID = `home_${NAME.replace(/[^a-zA-Z0-9]/g, "_")}`;
-const LINES = ["alpha start", "run with --help for usage", "-v looks like a flag", "Error: disk full", "omega end"];
+const LINES = ["alpha start", "run with --help for usage", "-v looks like a flag", "Error: disk full", "deploy token=e2e-not-a-real-secret-123", "omega end"];
 
 test.beforeAll(() => {
   fs.mkdirSync(LOGS_DIR, { recursive: true });
@@ -31,5 +31,18 @@ test.describe("hostlogs filter", () => {
     expect(bad.status()).toBe(400);
     expect((await bad.json()).message).toBe("regex too complex");
     expect((await request.get(`/api/hostlogs/${HOST_ID}?grep=${encodeURIComponent("/foo(/")}`)).status()).toBe(400);
+  });
+
+  test("hub logs are redacted like agent logs, and say so (PD-16)", async ({ request }) => {
+    const res = await request.get(`/api/hostlogs/${HOST_ID}`);
+    expect(res.status()).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("deploy token=[REDACTED]");
+    expect(text).not.toContain("e2e-not-a-real-secret-123");
+    expect(res.headers()["x-pideck-redacted"]).toBe("1");
+    expect(res.headers()["x-pideck-truncated"]).toBe("0");
+    // the filter runs on the redacted text: the secret's value never matches
+    const grep = await request.get(`/api/hostlogs/${HOST_ID}?grep=not-a-real-secret`);
+    expect((await grep.text()).trim()).toBe("");
   });
 });
