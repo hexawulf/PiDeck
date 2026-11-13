@@ -12,8 +12,9 @@ test("page, assets and unknown API paths get the right headers", async ({ page }
   expect(h["referrer-policy"]).toBe("strict-origin-when-cross-origin");
   expect(h["cross-origin-opener-policy"]).toBe("same-origin-allow-popups");
   expect(h["cache-control"]).toBe("no-cache");
-  // HSTS follows the Secure cookie; the E2E build serves plain HTTP on :5017.
-  expect(h["strict-transport-security"]).toBeUndefined();
+  // HSTS follows the Secure cookie: the E2E build runs as production without
+  // PIDECK_INSECURE_HTTP, so it is sent (browsers ignore it over plain HTTP).
+  expect(h["strict-transport-security"]).toBe("max-age=15552000");
 
   const entry = (await home.text()).match(/<script[^>]+src="(\/assets\/[^"]+\.js)"/)?.[1];
   expect(entry, "entry script in index.html").toBeTruthy();
