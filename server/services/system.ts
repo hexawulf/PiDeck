@@ -5,6 +5,7 @@ import fs from "fs/promises";
 import path from "path";
 import { PIDECK_LOGS_DIR } from "../config";
 import { classifyCommandFailure } from "./unavailable";
+import { readCrontab, toCronJob } from "./cron";
 import { platform, readHwmonTemperature } from "./platform";
 import { cpuPercentBetween, formatUptime, meminfoMb, parseMeminfo, readCpu, readDisk, readMemory, readNet, type CpuJiffies } from "./proc";
 import type {
@@ -496,35 +497,9 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
     return `${minutes}m`;
   }
 
+  /** The user's crontab as the Cron tab lists it (services/cron.ts parses it). */
   static async getCronJobs(): Promise<CronJob[]> {
-    try {
-      const { stdout } = await execAsync("crontab -l 2>/dev/null || echo ''");
-      const lines = stdout.trim().split("\n").filter(line => line && !line.startsWith("#"));
-      
-      return lines.map(line => {
-        const parts = line.split(" ");
-        const schedule = parts.slice(0, 5).join(" ");
-        const command = parts.slice(5).join(" ");
-        
-        return {
-          schedule,
-          command,
-          description: this.getJobDescription(command),
-          status: "Active"
-        };
-      });
-    } catch (error) {
-      console.error("Error getting cron jobs:", error);
-      return [];
-    }
-  }
-
-  private static getJobDescription(command: string): string {
-    if (command.includes("update")) return "Update script";
-    if (command.includes("backup")) return "Backup routine";
-    if (command.includes("health")) return "Health check";
-    if (command.includes("clean")) return "Cleanup task";
-    return "Scheduled task";
+    return (await readCrontab()).map(toCronJob);
   }
 
   private static isValidContainerId(id: string): boolean {
@@ -603,15 +578,6 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
     } catch (error) {
       console.error(`Error running pm2 ${action}:`, error);
       throw new Error(`Failed to ${action} process`);
-    }
-  }
-
-  static async runCronJob(command: string): Promise<void> {
-    try {
-      await execAsync(command);
-    } catch (error) {
-      console.error("Error running cron job:", error);
-      throw new Error("Failed to execute cron job");
     }
   }
 

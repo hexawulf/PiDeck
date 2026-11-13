@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useCron, useRunCronJob } from "@/hooks/use-cron";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,19 +19,45 @@ export default function CronManager() {
   const isCronJobPending = runCron.isPending;
   const { toast } = useToast();
 
-  const handleRunCronJob = async (command: string, description: string) => {
+  // Run always asks first: one click must not start a backup or a cleaner.
+  const [runTarget, setRunTarget] = useState<{ command: string; description: string } | null>(null);
+
+  /** The server's own words for a failed run ("Cron job failed (exit code 3)"), if it sent any. */
+  const serverMessage = (error: unknown): string | null => {
+    const text = error instanceof Error ? error.message : "";
     try {
-      await runCronJob(command);
-      toast({
-        title: "Success",
-        description: `Cron job "${description}" executed successfully`,
-      });
+      const body = JSON.parse(text.replace(/^\d{3}:\s*/, ""));
+      return typeof body?.message === "string" ? `${body.message}${body.log ? ` — output in ${body.log} (Logs tab)` : ""}` : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const confirmRun = async () => {
+    if (!runTarget) return;
+    const { command, description } = runTarget;
+    try {
+      const res = await runCronJob(command);
+      const body = (await res.json().catch(() => ({}))) as { state?: string; log?: string | null };
+      if (res.status === 202 || body.state === "running") {
+        toast({
+          title: "Still running",
+          description: `"${description}" was started and is still running. Output: ${body.log ?? "its own log"} (Logs tab).`,
+        });
+      } else {
+        toast({
+          title: "Success",
+          description: `Cron job "${description}" executed successfully`,
+        });
+      }
     } catch (error) {
       toast({
         title: "Error",
-        description: `Failed to execute cron job: ${description}`,
+        description: serverMessage(error) ?? `Failed to execute cron job: ${description}`,
         variant: "destructive",
       });
+    } finally {
+      setRunTarget(null);
     }
   };
 
@@ -73,6 +101,22 @@ export default function CronManager() {
   }
 
   return (
+    <>
+      <ConfirmDialog
+        open={runTarget !== null}
+        onOpenChange={(open) => { if (!open) setRunTarget(null); }}
+        title="Run this job now?"
+        description={
+          <>
+            Runs the command once, as cron would, on this host:
+            <code className="mt-2 block max-h-32 overflow-auto break-all rounded bg-pi-darker px-2 py-1 font-mono text-xs text-pi-text">{runTarget?.command}</code>
+          </>
+        }
+        confirmLabel="Run now"
+        pendingLabel="Running…"
+        pending={isCronJobPending}
+        onConfirm={() => void confirmRun()}
+      />
     <Card className="bg-pi-card border-pi-border">
       <CardContent className="p-6">
         <div className="flex items-center justify-between mb-6">
@@ -131,7 +175,8 @@ export default function CronManager() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleRunCronJob(job.command, job.description)}
+                          onClick={() => setRunTarget({ command: job.command, description: job.description })}
+                          aria-label={`Run now: ${job.command.slice(0, 80)}`}
                           disabled={isCronJobPending}
                           className="p-2 h-auto bg-transparent hover:bg-pi-card-hover border-pi-border"
                           title="Run job manually"
@@ -157,5 +202,6 @@ export default function CronManager() {
         )}
       </CardContent>
     </Card>
+    </>
   );
 }

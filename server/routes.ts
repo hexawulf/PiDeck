@@ -17,6 +17,7 @@ import thermalZonesRouter from "./routes/thermalZones";
 import powerStatusRouter from "./routes/powerStatus";
 import { createSystemUpdateHandler, createSystemUpdateStatusHandler } from "./routes/system-update";
 import { updateRunner } from "./services/system-update";
+import { readCrontab, runCronEntry } from "./services/cron";
 import { unavailable } from "./services/unavailable";
 
 import { loginSchema } from "@shared/schema";
@@ -393,19 +394,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Runs one job of the crontab, as cron would (services/cron.ts). The command
+  // must be one the crontab holds right now: nothing else can be run this way.
+  //   200 finished with exit 0 · 500 finished with another exit code ·
+  //   202 still running after 10 s (it keeps going; output in the named log)
   app.post("/api/cron/run", async (req, res) => {
     try {
-      const { command: requestedCommand } = req.body;
-      if (!requestedCommand) {
+      const requestedCommand = req.body?.command;
+      if (typeof requestedCommand !== "string" || !requestedCommand) {
         return res.status(400).json({ message: "Command is required" });
       }
-      const existingJobs = await SystemService.getCronJobs();
-      const isValidCommand = existingJobs.some((job) => job.command === requestedCommand);
-      if (!isValidCommand) {
+      const entry = (await readCrontab()).find((job) => job.command === requestedCommand);
+      if (!entry) {
         return res.status(403).json({ message: "Invalid or not allowed cron command." });
       }
-      await SystemService.runCronJob(requestedCommand);
-      res.json({ message: "Cron job executed successfully" });
+      const result = await runCronEntry(entry);
+      if (result.state === "running") {
+        return res.status(202).json({ message: "Cron job started; it is still running", ...result });
+      }
+      if (result.exitCode === 0) return res.json({ message: "Cron job executed successfully", ...result });
+      res.status(500).json({ message: `Cron job failed (exit code ${result.exitCode ?? "none: killed"})`, ...result });
     } catch (error) {
       console.error("Run cron job error:", error);
       res.status(500).json({ message: "Failed to execute cron job" });
