@@ -15,7 +15,7 @@ import compatRouter from "./routes/compat";
 import { startSampler } from "./services/sampler";
 import { initializeStorage, pool } from "./storage";
 import { checkSchema, schemaReady, schemaState } from "./db-schema";
-import { installCsp } from "./security";
+import { installCsp, installSecurityHeaders } from "./security";
 import { throttleTouch } from "./session-touch";
 import { cookieSecure, corsOrigins, insecureHttp, trustProxy } from "./config";
 
@@ -39,6 +39,9 @@ app.set("trust proxy", TRUST_PROXY);
 
 // Parsers & hardening
 app.disable("x-powered-by");
+// HSTS, nosniff, Referrer-Policy, frame options, … (PD-12). HSTS only when the
+// session cookie is Secure too, i.e. production over HTTPS.
+installSecurityHeaders(app, { https: cookieSecure() });
 app.use(express.json()); // JSON only: no form posts (a cross-site form can't send JSON)
 
 // ---------- sessions ----------
@@ -85,9 +88,12 @@ if (IS_PRODUCTION && insecureHttp()) {
 // ---------- STATIC & SPA: PUBLIC (no auth) ----------
 // Resolve next to the running bundle (dist/index.js → dist/public), same as
 // serveStatic() in ./vite, so an alternate build dir serves its own assets.
+// One static mount (PD-13): hashed /assets for a year, HTML no-cache. Dev
+// serves the client through Vite instead (below).
 const staticDir = path.resolve(__dirname, "public");
+const SERVE_BUILD = app.get("env") !== "development";
 if (IS_PRODUCTION) installCsp(app, staticDir); // before static so index.html gets the header
-app.use(express.static(staticDir));
+if (SERVE_BUILD) serveStatic(app, staticDir);
 
 // Health is public
 app.get("/healthz", (_req, res) => res.sendStatus(204));
@@ -135,19 +141,21 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
   // Register your API routes (includes auth endpoints and protected routes)
   const server = await registerRoutes(app);
 
-  // Dev: Vite; Prod: static already above
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    // serveStatic contains any extra prod wiring (no-op if you want)
-    serveStatic(app);
-  }
-
-  // ---------- SPA fallback (public) ----------
-  app.get("*", (req, res, next) => {
-    if (req.path.startsWith("/api")) return next();
-    res.sendFile(path.join(staticDir, "index.html"));
+  // Unknown API path: JSON 404, never the HTML page (PD-14). Anonymous
+  // callers were already answered 401 by the first protected router.
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ message: "Not found" });
   });
+
+  if (SERVE_BUILD) {
+    // ---------- SPA fallback (public): client-side routes get index.html ----------
+    app.get("*", (_req, res) => {
+      res.setHeader("Cache-Control", "no-cache");
+      res.sendFile(path.join(staticDir, "index.html"));
+    });
+  } else {
+    await setupVite(app, server);
+  }
 
   // ---------- Error handler ----------
   app.use((err: any, req: Request, res: Response, _next: NextFunction) => {

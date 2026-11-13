@@ -79,15 +79,27 @@ export function cspDirectives(scriptHashes: string[], opts?: { firebase?: boolea
   };
 }
 
-/** helmet's other headers (no CSP here: installCsp adds it once the build is known). */
-export function installSecurityHeaders(app: Express): void {
-  app.use(
-    helmet({
-      contentSecurityPolicy: false,
-      crossOriginEmbedderPolicy: false,
-      hsts: false, // nginx/Cloudflare own HSTS for the domain
-    }),
-  );
+/**
+ * helmet's other headers (no CSP here: installCsp adds it once the build is known).
+ * `https`: send HSTS (only when the app is served over HTTPS; a plain-HTTP LAN
+ * install must not get it). No includeSubDomains/preload: those are the
+ * domain owner's call, not this app's.
+ */
+export function securityHeaderOptions(opts: { https: boolean }) {
+  return {
+    contentSecurityPolicy: false as const,
+    crossOriginEmbedderPolicy: false as const,
+    // Google sign-in uses signInWithPopup, which needs to talk to its popup.
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" as const },
+    // Firebase's calls to identitytoolkit must keep the origin in Referer
+    // (the web API key may be restricted by referrer); paths stay private.
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" as const },
+    hsts: opts.https ? { maxAge: 180 * 24 * 60 * 60, includeSubDomains: false } : (false as const),
+  };
+}
+
+export function installSecurityHeaders(app: Express, opts: { https: boolean }): void {
+  app.use(helmet(securityHeaderOptions(opts)));
 }
 
 export function installCsp(app: Express, staticDir: string): void {

@@ -67,42 +67,37 @@ export async function setupVite(app: Express, server: Server) {
   });
 }
 
-export function serveStatic(app: Express) {
-  const distPath = path.resolve(import.meta.dirname, "public");
+/** Cache-Control for a static file: HTML must revalidate (it names the hashed bundles). */
+export function staticCacheControl(filePath: string): string | null {
+  return filePath.endsWith(".html") ? "no-cache" : null;
+}
 
+/**
+ * The built client. Mounted once, before the API routes (the SPA fallback
+ * for unknown page paths is in hub.ts, after them).
+ * - /assets: content-hashed file names, so one year + immutable; a missing
+ *   asset is a plain 404, never index.html (PD-13).
+ * - everything else (index.html, favicon, …): one hour, HTML no-cache.
+ */
+export function serveStatic(app: Express, distPath = path.resolve(import.meta.dirname, "public")) {
   if (!fs.existsSync(distPath)) {
     throw new Error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`,
     );
   }
 
-  // Serve assets with explicit MIME types and caching
   app.use("/assets", express.static(path.join(distPath, "assets"), {
     maxAge: "1y",
     immutable: true,
-    setHeaders: (res, filePath) => {
-      // Ensure correct MIME types for assets
-      if (filePath.endsWith(".js")) {
-        res.setHeader("Content-Type", "application/javascript; charset=UTF-8");
-      } else if (filePath.endsWith(".css")) {
-        res.setHeader("Content-Type", "text/css; charset=UTF-8");
-      } else if (filePath.endsWith(".json")) {
-        res.setHeader("Content-Type", "application/json; charset=UTF-8");
-      }
-    }
+    index: false,
   }));
+  app.use("/assets", (_req, res) => res.sendStatus(404));
 
-  // Serve other static files (fonts, images, etc.)
   app.use(express.static(distPath, {
-    maxAge: "1h"
+    maxAge: "1h",
+    setHeaders: (res, filePath) => {
+      const cc = staticCacheControl(filePath);
+      if (cc) res.setHeader("Cache-Control", cc);
+    },
   }));
-
-  // SPA fallback - ONLY for non-API, non-assets routes
-  app.use("*", (req, res, next) => {
-    // Don't intercept API routes or asset requests
-    if (req.path.startsWith("/api") || req.path.startsWith("/assets")) {
-      return res.sendStatus(404);
-    }
-    res.sendFile(path.resolve(distPath, "index.html"));
-  });
 }

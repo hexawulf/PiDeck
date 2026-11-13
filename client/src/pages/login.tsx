@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,19 @@ import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { DbMigrationBanner } from "@/components/db-migration-banner";
 import { TransportNotice } from "@/components/transport-notice";
-import { signInWithGooglePopup } from "@/lib/firebase";
+
+// The Firebase SDK is its own chunk (PD-13): only this page needs it. It is
+// fetched as soon as Google sign-in is known to be on, so the click handler's
+// await resolves at once and the popup opens within the click's activation.
+type FirebaseModule = typeof import("@/lib/firebase");
+let firebaseModule: Promise<FirebaseModule> | null = null;
+function loadFirebase(): Promise<FirebaseModule> {
+  firebaseModule ??= import("@/lib/firebase").catch((error) => {
+    firebaseModule = null; // let a later click retry a failed chunk load
+    throw error;
+  });
+  return firebaseModule;
+}
 
 function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -41,11 +53,17 @@ export default function Login() {
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
   const { login, firebaseLogin, isLoginPending, isFirebaseLoginPending, user } = useAuth();
   const { toast } = useToast();
+  const firebaseEnabled = user?.firebase?.enabled === true;
+
+  useEffect(() => {
+    if (firebaseEnabled) void loadFirebase().catch(() => {});
+  }, [firebaseEnabled]);
 
   const handleGoogleLogin = async () => {
     if (!user?.firebase?.enabled) return;
     setIsGoogleSigningIn(true);
     try {
+      const { signInWithGooglePopup } = await loadFirebase();
       const idToken = await signInWithGooglePopup(user.firebase);
       await firebaseLogin(idToken);
       toast({ title: "Success", description: "Logged in via Google" });
@@ -107,7 +125,6 @@ export default function Login() {
   };
 
   const isBusy = isLoginPending || isFirebaseLoginPending || isGoogleSigningIn;
-  const firebaseEnabled = user?.firebase?.enabled === true;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pi-darker to-pi-dark">

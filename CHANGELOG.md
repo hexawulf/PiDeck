@@ -5,6 +5,18 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.3] - 2026-11-13
+
+PD-12, PD-13 and PD-14 from the 2026-11-13 audit.
+
+### Security
+- **Security headers are sent** (PD-12). The helmet setup existed but was never installed: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options`, `Cross-Origin-Opener-Policy: same-origin-allow-popups` (Google sign-in uses a popup) and more. `Strict-Transport-Security` (180 days, this host only) is sent when the session cookie is Secure, so never to a plain-HTTP LAN install.
+
+### Fixed
+- **Hashed assets are cached for a year** (PD-13). A plain static mount ran before the `/assets` handler, so bundles left the origin with `max-age=0`. There is one static mount now: `/assets` one year and `immutable`, HTML `no-cache`, other files one hour. A missing asset is a 404 instead of the page.
+- **The Firebase SDK loads only on the login page** (PD-13), as its own chunk, fetched as soon as Google sign-in is known to be on. The main bundle is about 95 KB smaller.
+- **An unknown `/api/...` path answers a JSON 404** (PD-14) instead of the HTML page with 200. The two SPA fallbacks are now one.
+
 ## [2.10.2] - 2026-11-13
 
 ### Fixed
