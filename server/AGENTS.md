@@ -299,11 +299,22 @@ rg -n "'/api/" server/routes
 - `/api/system/info` is read-only; disk/network rates are deltas against a per-caller baseline
   (`createRateBaseline()`), so the sampler and browser polls don't share one.
 
-### System update guard
-`POST /api/system/update` (`server/routes/system-update.ts`) runs `sudo apt-get update && upgrade -y`.
-`PIDECK_DISABLE_SYSTEM_UPDATE=1` makes it answer `409 { message: "System update disabled in this environment" }`
+### System update (background job)
+`POST /api/system/update` (`server/routes/system-update.ts`) starts `sudo -n apt-get update && sudo -n apt-get upgrade -y`
+through `server/services/system-update.ts` and answers `202 { state: "running", log }`; `GET` reports
+`idle | running | succeeded | failed` from the newest `~/logs/pideck-system-update-*.log` (first line: pid, last line: exit
+code). The job is its own session (`setsid --fork`), stdin closed, so a PiDeck restart doesn't kill apt and a package
+prompt fails instead of hanging. One run at a time (`409`). The two sudo commands are exactly what
+`deploy/sudoers.d/pideck.template` allows: don't add options.
+`PIDECK_DISABLE_SYSTEM_UPDATE=1` makes the POST answer `409 { message: "System update disabled in this environment" }`
 without running anything. `scripts/e2e-server.sh` sets it (the E2E build shares the prod host); E2E specs also
 stub the endpoint with `page.route`.
+
+### Cron tab
+`server/services/cron.ts`: `parseCrontab` (variables, `@reboot`, any whitespace) and `runCronEntry`, which starts a job the
+way cron would: its shell, cron's small environment plus the crontab's variables (never PiDeck's), the `%` rule, output to
+`~/logs/pideck-cron-run-*.log`. `POST /api/cron/run` accepts only a command the crontab holds right now and answers
+200 / 500 with the exit code, or 202 when the job is still running after 10 s.
 
 ### Log filters
 User `?grep=` values go through `server/services/log-filter.ts`: literal by default, regex only for
@@ -312,7 +323,7 @@ User `?grep=` values go through `server/services/log-filter.ts`: literal by defa
 ## Common Gotchas
 - **Route registration**: New routes must be imported in `server/routes.ts`
 - **Error handling**: Always return JSON errors, never throw unhandled exceptions
-- **Shell commands**: Use `exec()` not `execSync()` to avoid blocking
+- **Shell commands**: prefer `/proc`, `/sys` and `os.*`; otherwise `execFile()` with an argument list (no shell string), never `execSync()`
 - **Sessions**: Require `express-session` setup in `server/index.ts` (already configured)
 - **Database**: Schema changes need a new migration (`npm run db:generate`, then `npm run db:migrate`)
 - **CORS**: off by default (same-origin UI); `PIDECK_CORS_ORIGIN` lists extra origins (`corsOrigins()` in `server/config.ts`)

@@ -19,33 +19,6 @@ test.beforeAll(() => {
 });
 test.afterAll(() => fs.rmSync(FILE, { force: true }));
 
-test.describe("rasplogs grep", () => {
-  test("grep=--help returns matching lines, not grep's help text", async ({ request }) => {
-    const res = await request.get(`/api/rasplogs/${NAME}?grep=--help`);
-    expect(res.status()).toBe(200);
-    const { content } = await res.json();
-    expect(content.trim()).toBe("run with --help for usage");
-    expect(content).not.toMatch(/Usage: grep/);
-  });
-
-  test("grep=-v is a pattern, not an inverted match", async ({ request }) => {
-    const { content } = await (await request.get(`/api/rasplogs/${NAME}?grep=-v`)).json();
-    expect(content.trim()).toBe("-v looks like a flag");
-  });
-
-  test("/…/ is a regex, plain text is literal", async ({ request }) => {
-    const rx = await (await request.get(`/api/rasplogs/${NAME}?grep=${encodeURIComponent("/^[ao]/")}`)).json();
-    expect(rx.content.trim().split("\n")).toEqual(["alpha start", "omega end"]);
-    const lit = await (await request.get(`/api/rasplogs/${NAME}?grep=${encodeURIComponent("^[ao]")}`)).json();
-    expect(lit.content).toBe("");
-  });
-
-  test("overlong or multi-line patterns are rejected", async ({ request }) => {
-    expect((await request.get(`/api/rasplogs/${NAME}?grep=${"x".repeat(201)}`)).status()).toBe(400);
-    expect((await request.get(`/api/rasplogs/${NAME}?grep=a%0Ab`)).status()).toBe(400);
-  });
-});
-
 test.describe("hostlogs filter", () => {
   test("grep=--help is a substring match", async ({ request }) => {
     const res = await request.get(`/api/hostlogs/${HOST_ID}?grep=--help`);

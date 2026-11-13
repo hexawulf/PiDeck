@@ -5,6 +5,36 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-11-13
+
+The seven medium findings of the 2026-11-13 audit (PD-04 to PD-09, PD-11). With 2.9.3 and 2.9.4, every high and medium finding is closed.
+
+### Changed
+- **Metrics come from `/proc` and `/sys`** (`server/services/proc.ts`), for the live tiles and the history sampler alike:
+  - **Disk I/O counts whole physical disks only.** Partitions, zram, md and dm were added on top before, so the rates were about double.
+  - **Network counts physical interfaces only.** Bridges, veths, `docker0` and WireGuard repeated the same traffic two or three times.
+  - **The CPU tile shows busy time** (everything but idle and iowait), the measure the history chart always used. It showed user time only, from one sample of `top`.
+  - Memory is `MemTotal − MemAvailable` everywhere; hostname, kernel, architecture and uptime come from Node; the OS name and primary IP are cached.
+  - One dashboard poll starts 1 process (`ps`) instead of about 25.
+- **History keeps its row when one counter misbehaves**: a counter going backwards drops only that metric for the interval. Before, a container restart (its veth disappearing) left a one-minute hole in every chart.
+- **Sessions cost less**: the session middleware covers `/api` only, and the store is touched at most once a minute per session instead of on every request.
+- **Update system runs in the background**: the request returns at once, the output goes to `~/logs/pideck-system-update-<stamp>.log` (visible on the Logs tab), and the dashboard reports the result when it ends. The job survives a PiDeck restart, cannot hang on a package question (it fails for that package instead), has no output limit, and only one can run at a time. `GET /api/system/update` reports its state.
+- **Cron › Run asks first** and starts the job the way cron would: cron's shell and environment plus the crontab's variables (not PiDeck's environment, which holds secrets), `%` handled as cron does, output to `~/logs/pideck-cron-run-<stamp>.log`. A job still running after 10 s is reported as started, not as failed.
+- **About**: the version links to its GitHub release tag and the release date comes from `package.json` (`releaseDate`); it had said "September 2026" since 2.0.
+
+### Fixed
+- **Crontab parsing**: tabs and repeated spaces, leading whitespace, `NAME=value` lines (no longer listed as jobs) and `@reboot`-style schedules.
+- **Follow on the hub's Logs tab works**: it refreshes the tail every 3 seconds (paused while the tab is hidden). It was a stub that showed "not yet available".
+- **Switching logs quickly** can no longer show the previous log's content (late answers are dropped).
+- **Process names with spaces** ("npm run build") no longer shift the CPU and memory columns of the process lists.
+
+### Removed
+- `server/routes/rasplogs.ts` (`/api/rasplogs/*`), unused by the UI since the Logs tab moved to `/api/hostlogs`, and the `/api/hostlogs/:id/follow` placeholder. This also closes PD-15 (a loose path check in those routes).
+
+### Upgrade notes
+- **Agents**: the disk and network fix is in the code that reads the counters, so a remote host's history is corrected once its agent runs 2.10.0. A 2.9.x agent keeps working with a 2.10.0 hub and simply reports the old sums.
+- History rows written before the update keep their old (higher) disk and network values; expect a visible step in those two charts.
+
 ## [2.9.4] - 2026-11-13
 
 The rest of PD-02 from the 2026-11-13 audit: `npm audit --omit=dev` now reports 0 advisories (was 11 after 2.9.3, 25 before).

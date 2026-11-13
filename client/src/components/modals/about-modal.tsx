@@ -11,8 +11,20 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 
 // Injected by vite.config.ts from package.json; absent under vitest.
 declare const __APP_VERSION__: string;
+declare const __RELEASE_DATE__: string;
 const APP_VERSION = typeof __APP_VERSION__ === "undefined" ? "dev" : __APP_VERSION__;
-const RELEASE_DATE = "September 2026";
+const RELEASE_ISO = typeof __RELEASE_DATE__ === "undefined" ? "" : __RELEASE_DATE__;
+const REPO_URL = "https://github.com/hexawulf/PiDeck";
+
+/** "2026-11-13" → "13 November 2026" (no Date parsing: the string is a calendar day, not an instant). */
+export function formatReleaseDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const month = m ? months[Number(m[2]) - 1] : undefined;
+  return m && month ? `${Number(m[3])} ${month} ${m[1]}` : "unknown";
+}
+/** The GitHub release for a version: tags are "v" + the package version. */
+export const releaseUrl = (version: string) => `${REPO_URL}/releases/tag/v${version}`;
 
 function Diagnostics() {
   const prefs = useUiPrefs();
@@ -80,14 +92,15 @@ export default function AboutModal() {
             <h2 className="font-bold mb-1">Tech Stack</h2>
             <ul className="list-disc list-inside space-y-1">
               <li>Backend: Node.js, Express.js, TypeScript</li>
-              <li>Shell Integration: child_process</li>
+              <li>Metrics: /proc and /sys, read directly</li>
               <li>Frontend: React 18, Vite, TypeScript</li>
               <li>Styling: TailwindCSS, Shadcn/ui</li>
               <li>State Management: TanStack Query, zod-validated widgets</li>
               <li>Charts: Recharts</li>
               <li>Routing: Wouter (deep-linkable tabs)</li>
               <li>Database: PostgreSQL + Drizzle ORM</li>
-              <li>Auth: Session-based authentication</li>
+              <li>Auth: Google sign-in (Firebase) or admin password, session cookie</li>
+              <li>Multi-host: read-only agents over LAN or WireGuard</li>
             </ul>
           </div>
           <div>
@@ -100,17 +113,26 @@ export default function AboutModal() {
           <div>
             <h2 className="font-bold mb-1">GitHub Repo</h2>
             <a
-              href="https://github.com/hexawulf/PiDeck"
+              href={REPO_URL}
               className="underline break-all"
               target="_blank"
               rel="noopener noreferrer"
             >
-              https://github.com/hexawulf/PiDeck
+              {REPO_URL}
             </a>
           </div>
           <div>
-            <p>Version: v{APP_VERSION}</p>
-            <p>Release Date: {RELEASE_DATE}</p>
+            <p>
+              Version:{" "}
+              {APP_VERSION === "dev" ? (
+                "dev"
+              ) : (
+                <a href={releaseUrl(APP_VERSION)} className="underline" target="_blank" rel="noopener noreferrer" data-testid="about-version">
+                  v{APP_VERSION}
+                </a>
+              )}
+            </p>
+            <p data-testid="about-release-date">Release Date: {formatReleaseDate(RELEASE_ISO)}</p>
           </div>
           <Diagnostics />
         </div>

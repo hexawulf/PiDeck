@@ -12,7 +12,8 @@ const __dirname = path.dirname(__filename);
 export default defineConfig({
   appType: "spa",
   // package.json is the single source of truth for the version shown in About.
-  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+  // …and for its release date (package.json "releaseDate"; tests/unit/release.test.ts ties both to the changelog).
+  define: { __APP_VERSION__: JSON.stringify(pkg.version), __RELEASE_DATE__: JSON.stringify(pkg.releaseDate) },
   root: path.resolve(__dirname, "client"),
   plugins: [react()],
   resolve: {
