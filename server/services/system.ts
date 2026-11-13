@@ -2,15 +2,12 @@ import { exec, execFile } from "child_process";
 import os from "os";
 import { promisify } from "util";
 import fs from "fs/promises";
-import path from "path";
-import { PIDECK_LOGS_DIR } from "../config";
 import { classifyCommandFailure } from "./unavailable";
 import { readCrontab, toCronJob } from "./cron";
 import { platform, readHwmonTemperature } from "./platform";
 import { cpuPercentBetween, formatUptime, meminfoMb, parseMeminfo, readCpu, readDisk, readMemory, readNet, type CpuJiffies } from "./proc";
 import type {
   SystemInfo,
-  LogFile,
   PM2Process,
   CronJob,
   DiskIO,
@@ -406,62 +403,6 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
     }
 
     return "127.0.0.1";
-  }
-
-  static async getLogFiles(): Promise<LogFile[]> {
-    try {
-      const logDir = PIDECK_LOGS_DIR;
-      
-      try {
-        await fs.access(logDir);
-      } catch {
-        // Create directory if it doesn't exist
-        await fs.mkdir(logDir, { recursive: true });
-        return [];
-      }
-
-      const files = await fs.readdir(logDir);
-      const logFiles = files.filter(file => file.endsWith(".log"));
-      
-      const logFileInfos: LogFile[] = [];
-      
-      for (const file of logFiles) {
-        const filePath = path.join(logDir, file);
-        try {
-          const stats = await fs.stat(filePath);
-          const sizeKB = Math.round(stats.size / 1024 * 10) / 10;
-          logFileInfos.push({
-            name: file,
-            path: filePath,
-            size: `${sizeKB} KB`
-          });
-        } catch {
-          // Skip files we can't read
-        }
-      }
-      
-      return logFileInfos;
-    } catch (error) {
-      console.error("Error getting log files:", error);
-      return [];
-    }
-  }
-
-  static async getLogFileContent(filePath: string): Promise<string> {
-    try {
-      const normalizedPath = path.resolve(filePath);
-      if (!normalizedPath.startsWith(PIDECK_LOGS_DIR + "/")) {
-        throw new Error("Access denied");
-      }
-      
-      const content = await fs.readFile(filePath, "utf8");
-      // Return last 1000 lines
-      const lines = content.split("\n");
-      return lines.slice(-1000).join("\n");
-    } catch (error) {
-      console.error("Error reading log file:", error);
-      throw new Error("Failed to read log file");
-    }
   }
 
   /** null = pm2 isn't installed on this host (e.g. a systemd install). */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  grepArgs, hasNestedQuantifier, lineFilter, LogFilterError, parseTail,
+  hasNestedQuantifier, lineFilter, LogFilterError, parsePattern,
 } from "../../server/services/log-filter";
 
 const rejects = (fn: () => unknown, msg: RegExp) => {
@@ -8,40 +8,27 @@ const rejects = (fn: () => unknown, msg: RegExp) => {
   expect(fn).toThrow(msg);
 };
 
-describe("parseTail (rasplogs ?tail=)", () => {
-  it.each([
-    [undefined, 1000], ["", 1000], ["0", 1000], [0, 1000], ["-5", 1], ["99999", 10000],
-    ["abc", 1000], ["250", 250], ["1", 1], ["10000", 10000], ["12abc", 12],
-  ])("%j → %i", (input, out) => expect(parseTail(input)).toBe(out));
-});
-
-describe("grepArgs (rasplogs)", () => {
+describe("parsePattern", () => {
   it("returns null when there is no filter", () => {
-    expect(grepArgs(undefined)).toBeNull();
-    expect(grepArgs("")).toBeNull();
-    expect(grepArgs("   ")).toBeNull();
+    expect(parsePattern(undefined)).toBeNull();
+    expect(parsePattern("")).toBeNull();
+    expect(parsePattern("   ")).toBeNull();
   });
 
-  it("puts leading-dash patterns after -e as fixed strings, then ends options", () => {
-    expect(grepArgs("--help")).toEqual(["-F", "-e", "--help", "--"]);
-    expect(grepArgs("-r")).toEqual(["-F", "-e", "-r", "--"]);
-    expect(grepArgs("-f/etc/shadow")).toEqual(["-F", "-e", "-f/etc/shadow", "--"]);
-  });
-
-  it("treats regex metacharacters literally unless wrapped in /…/", () => {
-    expect(grepArgs("a.*b")).toEqual(["-F", "-e", "a.*b", "--"]);
-    expect(grepArgs("/err(or)?/")).toEqual(["-e", "err(or)?", "--"]);
-    expect(grepArgs("/-v/")).toEqual(["-e", "-v", "--"]);
-    expect(grepArgs("//")).toEqual(["-F", "-e", "//", "--"]); // too short to be a regex
+  it("is literal unless wrapped in /…/ (at least one char inside)", () => {
+    expect(parsePattern("--help")).toEqual({ kind: "literal", source: "--help" });
+    expect(parsePattern("a.*b")).toEqual({ kind: "literal", source: "a.*b" });
+    expect(parsePattern("/err(or)?/")).toEqual({ kind: "regex", source: "err(or)?" });
+    expect(parsePattern("//")).toEqual({ kind: "literal", source: "//" });
   });
 
   it("caps length and rejects newline, CR, NUL and non-strings", () => {
-    expect(grepArgs("x".repeat(200))).not.toBeNull();
-    rejects(() => grepArgs("x".repeat(201)), /too long/);
-    rejects(() => grepArgs("a\nb"), /newline/);
-    rejects(() => grepArgs("a\rb"), /newline/);
-    rejects(() => grepArgs("a\0b"), /NUL/);
-    rejects(() => grepArgs(["a", "b"]), /single string/);
+    expect(parsePattern("x".repeat(200))).not.toBeNull();
+    rejects(() => parsePattern("x".repeat(201)), /too long/);
+    rejects(() => parsePattern("a\nb"), /newline/);
+    rejects(() => parsePattern("a\rb"), /newline/);
+    rejects(() => parsePattern("a\0b"), /NUL/);
+    rejects(() => parsePattern(["a", "b"]), /single string/);
   });
 });
 

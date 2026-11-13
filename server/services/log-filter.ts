@@ -1,23 +1,16 @@
 // User-supplied log filters, validated before they reach grep or RegExp.
 //
 //   "text"   → literal, never an option or a regex
-//   "/re/"   → regex (rasplogs: grep BRE; hostLogs: JS RegExp, case-insensitive)
+//   "/re/"   → JS RegExp, case-insensitive
 //
-// rasplogs hands the pattern to grep after `-e` and ends options with `--`,
-// so a leading "-" can't be read as a flag. hostLogs runs the filter on the
-// event loop, so its regexes are also length-capped and screened for nested
-// quantifiers (catastrophic backtracking).
+// hostLogs runs the filter on the event loop, so regexes are length-capped
+// and screened for nested quantifiers (catastrophic backtracking).
 
 export const MAX_PATTERN_LENGTH = 200;
 export const MAX_REGEX_LENGTH = 100;
 
 export class LogFilterError extends Error {
   readonly status = 400;
-}
-
-/** `?tail=` for rasplogs: 1..10000, default 1000 (unparseable or 0 → default). */
-export function parseTail(value: unknown): number {
-  return Math.max(1, Math.min(parseInt(String(value || "1000"), 10) || 1000, 10000));
 }
 
 type Pattern = { kind: "literal" | "regex"; source: string };
@@ -36,16 +29,6 @@ export function parsePattern(raw: unknown): Pattern | null {
     return { kind: "regex", source: pattern.slice(1, -1) };
   }
   return { kind: "literal", source: pattern };
-}
-
-/**
- * grep arguments for a filter, without the file: fixed-string by default,
- * basic regex for /…/. The caller appends the file path (if any) after "--".
- */
-export function grepArgs(raw: unknown): string[] | null {
-  const p = parsePattern(raw);
-  if (!p) return null;
-  return p.kind === "literal" ? ["-F", "-e", p.source, "--"] : ["-e", p.source, "--"];
 }
 
 /**

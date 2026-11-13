@@ -33,12 +33,6 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
-export type LogFile = {
-  name: string;
-  path: string;
-  size: string;
-  content?: string;
-};
 
 export const logIndexEntrySchema = z.object({
   id: z.string(),

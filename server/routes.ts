@@ -29,7 +29,8 @@ import { createRemoteLogAudit } from "./agent-api";
 import { servicesHandler } from "./routes/services";
 import { registerFleetRoutes } from "./routes/fleet";
 import { schemaReady, schemaState } from "./db-schema";
-import { adminPasswordIsDefault } from "./storage";
+import { adminPasswordIsDefault, pool } from "./storage";
+import { createHealthHandler } from "./routes/health";
 import { getFirebasePublicConfig, isFirebaseEnabled, verifyFirebaseLogin } from "./services/firebase-auth";
 
 const passwordChangeSchema = z.object({
@@ -60,45 +61,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // origin (see middleware/sameOrigin.ts). Before all routes, login included.
   app.use("/api", requireSameOrigin());
 
-  // Health (public)
-  app.get("/api/health", async (_req, res) => {
-    try {
-      // Test each sensor endpoint to determine health status
-      const rebootCheck = await SystemService.checkRebootRequired().then(() => true).catch(() => false);
-      
-      const sensorChecks = {
-        reboot: rebootCheck,
-        mem: true, // Memory check is reliable
-        swap: true, // Swap check is reliable
-        cpuFreq: true, // CPU frequency check is reliable
-        fs: true, // Filesystem check is reliable
-        mounts: true, // Mounts check is reliable
-        top: true // Top processes check is reliable
-      };
-      
-      res.json({ 
-        ok: true, 
-        ts: Date.now(),
-        sensors: sensorChecks
-      });
-    } catch (error) {
-      console.error("Health check error:", error);
-      res.json({ 
-        ok: false, 
-        ts: Date.now(),
-        sensors: {
-          reboot: false,
-          mem: false,
-          swap: false,
-          cpuFreq: false,
-          fs: false,
-          mounts: false,
-          top: false
-        }
-      });
-    }
-  });
-
+  // Health (public): database reachable and schema migrated (PD-21).
+  app.get("/api/health", createHealthHandler({ ping: () => pool.query("SELECT 1"), schemaReady }));
 
   // --- Auth bypass marker (belt & suspenders) ---
   // Mark ONLY the login POST to bypass any stray guards mounted elsewhere.

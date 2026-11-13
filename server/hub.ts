@@ -11,7 +11,6 @@ import { fileURLToPath } from "url";
 // Your existing helpers (unchanged)
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import compatRouter from "./routes/compat";
 import { startSampler } from "./services/sampler";
 import { initializeStorage, pool } from "./storage";
 import { checkSchema, schemaReady, schemaState } from "./db-schema";
@@ -130,13 +129,6 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
 
   // History rows + temperature alerts every 60s (off with PIDECK_SAMPLER=off).
   const sampler = startSampler();
-
-  // Back-compat router BEFORE API routes; never intercept /api/*
-  app.use((req, res, next) => {
-    const u = (req.originalUrl || req.url || "").toLowerCase();
-    if (u.startsWith("/api/")) return next();
-    return (compatRouter as any)(req, res, next);
-  });
 
   // Register your API routes (includes auth endpoints and protected routes)
   const server = await registerRoutes(app);
