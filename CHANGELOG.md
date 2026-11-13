@@ -5,6 +5,22 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.4] - 2026-11-13
+
+PD-21 from the 2026-11-13 audit.
+
+### Added
+- **CI**: `.github/workflows/ci.yml` runs on every pull request and push to `main`: typecheck, `check:theme`, `check:shell`, the unit tests including the real-Postgres ones (PostgreSQL 18 service, as in production) and a production build. Playwright still runs on piapps.
+
+### Changed
+- **`/api/health` checks something**: one `SELECT 1` (2 s budget) and the schema state; 200 when both hold, 503 otherwise. It used to answer hard-coded `true` values.
+- **`npm run check:theme` passes**: the Google logo's brand colours are one constant marked `theme-ok`.
+- The package is named `pideck` (was `rest-express`); `@types/*` and `dotenv-cli` moved to development dependencies, which trims the `--prebuilt` bundle.
+- `server/AGENTS.md` describes the current route pattern and both registrations (hub behind auth, agent allowlist) instead of the deleted `mounts.ts`.
+
+### Removed
+- Dead code: six route files nothing imported (`memory`, `filesystem`, `mounts`, `topProcesses`, `cpuFreq`, `firewall`), the back-compat stubs in `server/routes/compat.ts`, `SystemService.getLogFiles`/`getLogFileContent`, and `grepArgs`/`parseTail` in `server/services/log-filter.ts`.
+
 ## [2.10.3] - 2026-11-13
 
 PD-12, PD-13 and PD-14 from the 2026-11-13 audit.

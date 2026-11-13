@@ -1,0 +1,64 @@
+# CI for every PR and push to main (PD-21): typecheck, theme and shell lint,
+# unit tests including the real-Postgres ones, and a production build.
+# Playwright stays on piapps (it needs the real host, pm2 and the prod DB);
+# see the release recipe in the PiDeck audit handoff note.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:18 # production (piapps) runs PostgreSQL 18
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PIDECK_TEST_PG_URL: postgres://postgres:ci@127.0.0.1:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # the supported line (scripts/install.sh requires 22.x)
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run check
+
+      - name: Theme tokens
+        run: npm run check:theme
+
+      - name: Shell scripts
+        run: npm run check:shell
+
+      - name: Unit tests (with Postgres)
+        run: npx vitest run
+
+      - name: Production build
+        run: npm run build
