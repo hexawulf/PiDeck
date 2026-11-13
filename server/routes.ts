@@ -20,7 +20,8 @@ import { readCrontab, runCronEntry } from "./services/cron";
 import { unavailable } from "./services/unavailable";
 
 import { loginSchema } from "@shared/schema";
-import { rateLimitLogin } from "./middleware/rateLimitLogin";
+import { clientKey, rateLimitLogin } from "./middleware/rateLimitLogin";
+import { authLogLine, loginLockout } from "./services/login-lockout";
 import { requireSameOrigin } from "./middleware/sameOrigin";
 import { envPasswordMatches } from "./services/env-password";
 import { cookieSecure, insecureHttp } from "./config";
@@ -82,26 +83,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/auth/login", rateLimitLogin, async (req, res) => {
     try {
       const { password } = loginSchema.parse(req.body);
+      const ip = clientKey(req);
 
-      // 1) Env/file bootstrap password first: a match must not touch the DB
-      //    admin's failed-attempt counter (see services/env-password.ts).
-      // 2) Otherwise validate via AuthService (DB/hashed, with lockout).
+      // Lockout is per client address (PD-17), checked before any comparison.
+      const lockedMs = loginLockout.lockedFor(ip);
+      if (lockedMs > 0) {
+        console.warn(authLogLine({ method: "password", result: "locked", ip }));
+        return res.status(403).json({
+          message: `Too many failed sign-in attempts from this address. Please try again in about ${Math.ceil(lockedMs / 60000)} minutes.`,
+        });
+      }
+
+      // 1) Env/file bootstrap password first, 2) otherwise the DB admin's hash.
       const envMatch = envPasswordMatches(password);
       const validationResult = envMatch
         ? { isValid: true, user: undefined, error: undefined }
         : await AuthService.validatePassword(password);
 
       if (!validationResult.isValid) {
-        if (validationResult.error === "account_locked") {
-          let message = "Account is locked due to too many failed login attempts.";
-          if (validationResult.user?.account_locked_until) {
-            const ms = new Date(validationResult.user.account_locked_until).getTime() - Date.now();
-            if (ms > 0) message += ` Please try again in about ${Math.ceil(ms / 60000)} minutes.`;
-          }
-          return res.status(403).json({ message });
-        }
+        const nowLocked = validationResult.error === "invalid_password" && loginLockout.failure(ip);
+        console.warn(authLogLine({ method: "password", result: nowLocked ? "bad-password-locked" : validationResult.error ?? "failed", ip }));
         return res.status(401).json({ message: "Invalid username or password." });
       }
+      loginLockout.success(ip);
 
       // Regenerate session to prevent session fixation attacks
       req.session.regenerate((err) => {
@@ -119,6 +123,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.error("Session save error:", err);
             return res.status(500).json({ message: "Session save failed" });
           }
+          console.log(authLogLine({ method: "password", result: "ok", ip, detail: envMatch ? "bootstrap password" : undefined }));
           res.json({
             message: "Login successful",
             authenticated: true,
@@ -141,7 +146,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/auth/firebase-login", rateLimitLogin, async (req, res) => {
     try {
       const { idToken } = z.object({ idToken: z.string().min(1) }).parse(req.body);
-      const identity = await verifyFirebaseLogin(idToken);
+      let identity: Awaited<ReturnType<typeof verifyFirebaseLogin>>;
+      try {
+        identity = await verifyFirebaseLogin(idToken);
+      } catch (error: any) {
+        console.warn(authLogLine({ method: "google", result: "rejected", ip: clientKey(req), detail: error?.message }));
+        throw error;
+      }
 
       req.session.regenerate((err) => {
         if (err) {
@@ -159,6 +170,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.error("Session save error:", err);
             return res.status(500).json({ message: "Session save failed" });
           }
+          console.log(authLogLine({ method: "google", result: "ok", ip: clientKey(req), email: identity.email }));
           res.json({
             message: "Login successful",
             authenticated: true,

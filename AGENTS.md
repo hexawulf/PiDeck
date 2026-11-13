@@ -54,7 +54,7 @@ PIDECK_TEST_PG_URL=postgres://postgres@127.0.0.1:5432/postgres npx vitest run
 - **NEVER commit**: `.env` files, API keys, passwords, session secrets
 - **Environment variables**: Stored in `.env` (gitignored), loaded via `dotenv`
 - **Session secret**: `SESSION_SECRET` env var (default: `CHANGE_ME_SESSION_SECRET_LONG_RANDOM`)
-- **Admin password**: `PIDECK_PASSWORD` or `ADMIN_PASSWORD` or `APP_PASSWORD` env vars
+- **Admin password**: the bcrypt hash of the `admin` row in the database (set or changed in Settings). A bootstrap / break-glass password can come from `APP_PASSWORD` or `APP_PASSWORD_FILE` (`server/services/env-password.ts`); no other variable is read (`PIDECK_PASSWORD` and `ADMIN_PASSWORD` never were)
 - **Database**: `DATABASE_URL` for PostgreSQL connection
 - **Update guard**: `PIDECK_DISABLE_SYSTEM_UPDATE=1` makes `POST /api/system/update` a 409 no-op (set for E2E)
 - **zod in the browser**: import `z` from `@shared/zod`, never from `zod` (type-only imports excepted): it turns on `jitless` before any schema exists, or zod 4 probes `eval` and the CSP reports it on every page load

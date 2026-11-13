@@ -9,6 +9,11 @@ interface ValidationResult {
 }
 
 export class AuthService {
+  /**
+   * Compare against the admin's stored hash. No lockout here any more: that
+   * is per client address in services/login-lockout.ts (PD-17); the
+   * failed_login_attempts / account_locked_until columns are no longer used.
+   */
   static async validatePassword(password: string): Promise<ValidationResult> {
     try {
       const user = await storage.getUserByUsername("admin");
@@ -16,37 +21,8 @@ export class AuthService {
         console.error("[AuthService.validatePassword] Admin user not found in storage.");
         return { isValid: false, user: null, error: "user_not_found" };
       }
-
-      // Check if account is locked
-      if (user.account_locked_until && new Date(user.account_locked_until) > new Date()) {
-        console.warn(`[AuthService.validatePassword] Account for user ${user.username} is locked until ${user.account_locked_until}.`);
-        return { isValid: false, user, error: "account_locked" };
-      }
-      
-      // console.log(`[AuthService.validatePassword] Attempting to validate password. Input: "${password}", Stored Hash: "${user.password_hash}"`);
-
       const result = await bcrypt.compare(password, user.password_hash);
-      // console.log(`[AuthService.validatePassword] bcrypt.compare result: ${result}`);
-
-      if (result) {
-        // Password is valid, reset failed attempts if any
-        if (user.failed_login_attempts && user.failed_login_attempts > 0) {
-          user.failed_login_attempts = 0;
-          user.account_locked_until = null; // This is fine as account_locked_until can be null in DB
-          await storage.updateUser(user);
-        }
-        return { isValid: true, user, error: undefined }; // Changed null to undefined
-      } else {
-        // Password is not valid, handle failed attempt
-        user.failed_login_attempts = (user.failed_login_attempts || 0) + 1;
-        if (user.failed_login_attempts >= 5) { // 5 failed attempts
-          const lockoutDuration = 15 * 60 * 1000; // 15 minutes
-          user.account_locked_until = new Date(Date.now() + lockoutDuration);
-          console.warn(`[AuthService.validatePassword] User ${user.username} account locked due to too many failed attempts.`);
-        }
-        await storage.updateUser(user);
-        return { isValid: false, user, error: "invalid_password" };
-      }
+      return result ? { isValid: true, user, error: undefined } : { isValid: false, user, error: "invalid_password" };
     } catch (error) {
       console.error("[AuthService.validatePassword] Error during bcrypt.compare:", error);
       return { isValid: false, user: null, error: "bcrypt_error" };

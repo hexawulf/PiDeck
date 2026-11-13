@@ -1,6 +1,6 @@
 // Bootstrap / no-DB admin password from APP_PASSWORD or APP_PASSWORD_FILE.
-// Checked BEFORE the DB so a correct env/file password never counts as a
-// failed attempt against the DB admin's lockout counter.
+// Checked before the DB hash. Failed attempts count against the caller's
+// address only (services/login-lockout.ts).
 import crypto from "crypto";
 import fs from "fs";
 
