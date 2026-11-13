@@ -5,6 +5,26 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.0] - 2026-11-13
+
+PD-16, PD-17 and PD-18, the last findings of the 2026-11-13 audit.
+
+### Security
+- **Sign-ins are logged** (PD-17): one `[auth] sign-in method=… result=… ip=…` line per attempt, with the email for Google, never the password.
+- **The password lockout is per address** (PD-17). Five wrong passwords lock the address they came from for 15 minutes. Before, they locked password sign-in for everyone, so anyone could lock the operator out. Google sign-in was never affected.
+- **Sessions have an absolute lifetime** (PD-18): `PIDECK_SESSION_MAX_DAYS` (default 30) after sign-in, even in a tab that keeps polling. Sessions from before this version start their clock on first use, so nobody is signed out by the upgrade.
+- **A Google session ends when its email leaves `FIREBASE_ALLOWED_EMAILS`** (PD-18), or when Google sign-in is turned off, at its next request.
+- **Changing the password ends every other session** (PD-18).
+- **The hub's own logs are redacted** like the agents' (PD-16): values that look like tokens, passwords or credentials are replaced with `[REDACTED]` before the filter sees them, and the viewer shows how many.
+
+### Fixed
+- **Local logs show whole lines and say when older ones were cut** (PD-16). The 1 MB cut could start with half a line and `tail=5000` could quietly return fewer lines. Reads now use the agents' reader, and the viewer shows a "Truncated" note when older lines were not read.
+- **Opening a log no longer rescans every log source** (PD-16): the list is cached for 5 seconds.
+- **After signing in, the default-password warning and the migration banner show without a reload** (PD-18).
+
+### Changed
+- `AGENTS.md`: the admin password is the database hash, plus `APP_PASSWORD`/`APP_PASSWORD_FILE`; `PIDECK_PASSWORD` and `ADMIN_PASSWORD` were never read.
+
 ## [2.10.5] - 2026-11-13
 
 PD-19 and PD-20 from the 2026-11-13 audit.

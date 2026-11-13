@@ -271,6 +271,7 @@ to touch:
 | `PIDECK_NVME_DEVICE` | first `/dev/nvme*` | NVMe Health device. |
 | `PIDECK_SAMPLER` | on | `off` disables the 60 s history/alert sampler (every host). |
 | `PIDECK_HISTORY_HOURS` | 24 | Hours of history kept per host (1–168). |
+| `PIDECK_SESSION_MAX_DAYS` | 30 | Days a sign-in lasts at most, even in a tab that keeps polling (the 24-hour idle limit applies too). |
 | `PIDECK_OFFLINE_ALERT_MINUTES` | 5 | Minutes an agent must be unreachable before its "offline" alert (1–1440). |
 | `PIDECK_SERVICES` | unset | systemd units for the Services card and alerts ([Services](#services-systemd-28)). Hub and agents. |
 | `PIDECK_SERVICES_FAILED` | on | Also list every failed unit (shown, not alerting). |
