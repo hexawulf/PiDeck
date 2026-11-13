@@ -55,7 +55,7 @@ test("import rejects bad files inline and keeps current prefs; accepts a good on
 
   const unknownKey = { ...before, paused: true };
   await input.setInputFiles({ name: "x.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(unknownKey)) });
-  await expect(page.getByRole("alert")).toContainText("(root): Unrecognized key(s) in object: 'paused'");
+  await expect(page.getByRole("alert")).toContainText('(root): Unrecognized key: "paused"');
 
   const badSpeed = { ...before, speed: "warp" };
   await input.setInputFiles({ name: "x.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(badSpeed)) });
