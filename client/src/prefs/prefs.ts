@@ -23,7 +23,7 @@
  *
  * Pure module: no React, no react-grid-layout (keeps RGL out of the main chunk).
  */
-import { z } from "zod";
+import { z } from "@shared/zod";
 
 export const PREFS_KEY = "pideck:prefs:v1";
 export const PREFS_BAD_KEY = `${PREFS_KEY}.bad`;

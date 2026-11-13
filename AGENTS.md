@@ -57,6 +57,7 @@ PIDECK_TEST_PG_URL=postgres://postgres@127.0.0.1:5432/postgres npx vitest run
 - **Admin password**: `PIDECK_PASSWORD` or `ADMIN_PASSWORD` or `APP_PASSWORD` env vars
 - **Database**: `DATABASE_URL` for PostgreSQL connection
 - **Update guard**: `PIDECK_DISABLE_SYSTEM_UPDATE=1` makes `POST /api/system/update` a 409 no-op (set for E2E)
+- **zod in the browser**: import `z` from `@shared/zod`, never from `zod` (type-only imports excepted): it turns on `jitless` before any schema exists, or zod 4 probes `eval` and the CSP reports it on every page load
 - **CSRF**: state-changing `/api` requests must be same-origin (`server/middleware/sameOrigin.ts`, mounted first in `server/routes.ts`); the cookie is `SameSite=Strict` and only JSON bodies are parsed — never add `express.urlencoded` or a mutating GET
 - **pm2 actions**: go through `SystemService.pm2Action` (real process names only; refuses `all` and stopping PiDeck itself)
 - **Transport**: `PIDECK_INSECURE_HTTP=1` drops the cookie's `Secure` flag (LAN HTTP, `install.sh --lan-http`); `TRUST_PROXY` (default 1, `false` = no proxy); `PIDECK_CORS_ORIGIN` (default: no CORS); `COOKIE_DOMAIN` (default host-only)

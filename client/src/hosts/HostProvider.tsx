@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { z } from "zod";
+import { z } from "@shared/zod";
 import { getQueryFn } from "@/lib/queryClient";
 import { useRefetch } from "@/hooks/useRefetch";
 import { isLocalHost, LOCAL_HOST } from "./host-path";

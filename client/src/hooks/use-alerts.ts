@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { z } from "zod";
+import { z } from "@shared/zod";
 import { getQueryFn } from "@/lib/queryClient";
 
 // Alerts are raised by the hub's 60s sampler for every host

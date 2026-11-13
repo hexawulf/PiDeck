@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { z } from "zod";
+import { z } from "@shared/zod";
 import { AlertCircle, Box, FileText, Pin, PinOff, RefreshCw, ScrollText, Search, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DownloadLogButton } from "@/components/logview/download-log-button";

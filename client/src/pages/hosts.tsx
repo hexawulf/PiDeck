@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { z } from "zod";
+import { z } from "@shared/zod";
 import { AlertTriangle } from "lucide-react";
 import { getQueryFn } from "@/lib/queryClient";
 import { useRefetch } from "@/hooks/useRefetch";

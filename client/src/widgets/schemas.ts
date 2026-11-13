@@ -2,7 +2,7 @@
 // validates against these, so a backend shape change shows "Unexpected data"
 // on that one card instead of a TypeError. The live contract spec
 // (tests/e2e/contract.spec.ts) checks them against a real server.
-import { z } from "zod";
+import { z } from "@shared/zod";
 
 const num = z.number();
 const numOrNull = z.number().nullable();
