@@ -196,7 +196,10 @@ export default function AppShell({ tab }: { tab: TabId | "hosts" }) {
         </div>
       )}
       {reboot.data?.rebootRequired && (
-        <div className="mx-4 mt-4 animate-pulse rounded-xl bg-red-700 px-4 py-2 text-center text-pi-on-accent shadow-lg">
+        // The banner itself never fades: a pulsing background drops the text below AA
+        // contrast for half of every cycle. Only the small dot pulses, and only when motion is allowed.
+        <div role="status" className="mx-4 mt-4 rounded-xl bg-red-700 px-4 py-2 text-center text-pi-on-accent shadow-lg" data-testid="reboot-banner">
+          <span aria-hidden className="mr-2 inline-block h-2 w-2 rounded-full bg-pi-on-accent align-middle motion-safe:animate-pulse" />
           ⚠️ System reboot required to activate latest kernel updates
         </div>
       )}
