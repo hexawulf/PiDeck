@@ -30,10 +30,17 @@ describe("ratesBetween (one-minute averages from raw counters)", () => {
     expect(r).toEqual({ cpu: 25, diskReadKBs: 60, diskWriteKBs: 120, rxKBs: 10, txKBs: 2, memory: 50, temperature: 60, seconds: 60 });
   });
 
-  it("drops the interval on a counter reset or wrap (never a negative rate)", () => {
-    expect(ratesBetween(base, later({ net: { rxBytes: 10, txBytes: 600_000 } }))).toBeNull();
-    expect(ratesBetween(base, later({ disk: { readSectors: 0, writeSectors: 5_000 } }))).toBeNull();
-    expect(ratesBetween(base, later({ cpu: { total: 50, idle: 10 } }))).toBeNull();
+  it("a counter going backwards drops only its own metric (never a negative rate, never the whole row)", () => {
+    const moving = { cpu: { total: 106_000, idle: 84_500 } }; // 25 % busy
+    // network went back (an interface disappeared): CPU and disk still count
+    const net = ratesBetween(base, later({ ...moving, net: { rxBytes: 10, txBytes: 600_000 } }));
+    expect(net).toMatchObject({ cpu: 25, diskReadKBs: 0, diskWriteKBs: 0, rxKBs: null, txKBs: null, memory: 25, temperature: 51.5 });
+    // disk went back: both disk rates are dropped together
+    const disk = ratesBetween(base, later({ ...moving, disk: { readSectors: 0, writeSectors: 5_000 } }));
+    expect(disk).toMatchObject({ cpu: 25, diskReadKBs: null, diskWriteKBs: null, rxKBs: 0, txKBs: 0 });
+    // CPU went back
+    const cpu = ratesBetween(base, later({ cpu: { total: 50, idle: 10 } }));
+    expect(cpu).toMatchObject({ cpu: null, diskReadKBs: 0, rxKBs: 0 });
   });
 
   it("drops the interval across a reboot (boot id changes) even if counters happen to be higher", () => {

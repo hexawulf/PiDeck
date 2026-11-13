@@ -5,14 +5,14 @@
 //   hub:    readCounters() for itself, the agents' samples for them
 //             → ratesBetween(previous, current) → one history row per host
 //
-// Counters only grow; a reboot (boot id changes), agent restart with a new
-// boot, or a wrap makes one go backwards → that interval is dropped (no
-// row), never a negative rate.
+// Counters only grow. A reboot (boot id changes) drops the interval (no row);
+// a single counter going backwards drops only that metric, never a negative rate.
 import fs from "node:fs/promises";
 import os from "node:os";
 import { SystemService } from "./system";
 import { diskMount } from "../config";
 import { compactServices, localServices, type CompactService } from "./systemd";
+import { cpuPercentBetween, readCpu, readDisk, readMemory, readNet } from "./proc";
 
 export type RawCounters = {
   /** When these were read (ISO, UTC). */
@@ -22,9 +22,9 @@ export type RawCounters = {
   hostname: string;
   /** Jiffies summed over all CPUs (/proc/stat). idle includes iowait. */
   cpu: { total: number; idle: number } | null;
-  /** Sectors since boot, all block devices except loop/ram (/proc/diskstats). */
+  /** Sectors since boot, whole physical disks only (services/proc.ts). */
   disk: { readSectors: number; writeSectors: number } | null;
-  /** Bytes since boot, all interfaces except lo (/sys/class/net). */
+  /** Bytes since boot, physical interfaces only (services/proc.ts). */
   net: { rxBytes: number; txBytes: number } | null;
   /** Instant values. */
   memory: { totalMb: number; usedMb: number; percentage: number } | null;
@@ -34,50 +34,6 @@ export type RawCounters = {
   /** systemd units (2.8+): listed + failed, compact; absent without systemd or on older agents. */
   services?: CompactService[];
 };
-
-async function readCpu(): Promise<RawCounters["cpu"]> {
-  const line = (await fs.readFile("/proc/stat", "utf8")).split("\n").find((l) => l.startsWith("cpu "));
-  if (!line) return null;
-  const v = line.trim().split(/\s+/).slice(1, 9).map((n) => Number(n) || 0); // user nice system idle iowait irq softirq steal
-  return { total: v.reduce((a, b) => a + b, 0), idle: v[3] + v[4] };
-}
-
-async function readDisk(): Promise<RawCounters["disk"]> {
-  let readSectors = 0;
-  let writeSectors = 0;
-  for (const line of (await fs.readFile("/proc/diskstats", "utf8")).trim().split("\n")) {
-    const p = line.trim().split(/\s+/);
-    if (p.length < 14 || p[2].startsWith("loop") || p[2].startsWith("ram")) continue;
-    readSectors += Number(p[5]) || 0;
-    writeSectors += Number(p[9]) || 0;
-  }
-  return { readSectors, writeSectors };
-}
-
-async function readNet(): Promise<RawCounters["net"]> {
-  let rxBytes = 0;
-  let txBytes = 0;
-  for (const iface of (await fs.readdir("/sys/class/net")).filter((i) => i !== "lo")) {
-    try {
-      rxBytes += Number(await fs.readFile(`/sys/class/net/${iface}/statistics/rx_bytes`, "utf8")) || 0;
-      txBytes += Number(await fs.readFile(`/sys/class/net/${iface}/statistics/tx_bytes`, "utf8")) || 0;
-    } catch {
-      /* interface went away */
-    }
-  }
-  return { rxBytes, txBytes };
-}
-
-async function readMemory(): Promise<RawCounters["memory"]> {
-  const info = await fs.readFile("/proc/meminfo", "utf8");
-  const kb = (k: string) => Number(new RegExp(`^${k}:\\s+(\\d+)`, "m").exec(info)?.[1] ?? NaN);
-  const total = kb("MemTotal");
-  const available = kb("MemAvailable");
-  if (!Number.isFinite(total) || !Number.isFinite(available) || total <= 0) return null;
-  const totalMb = Math.round(total / 1024);
-  const usedMb = Math.round((total - available) / 1024);
-  return { totalMb, usedMb, percentage: Math.round(((total - available) / total) * 100) };
-}
 
 let mount: string | null = null;
 /** Usage % of PIDECK_DISK_MOUNT (default "/"). */
@@ -131,8 +87,13 @@ export const MAX_INTERVAL_S = 15 * 60;
 
 /**
  * One-minute averages between two samples of the same host, or null when the
- * interval must be dropped: no previous sample, time not moving forward, too
- * long a gap, a different boot, or any counter going backwards (reset/wrap).
+ * whole interval must be dropped: no previous sample, time not moving
+ * forward, too long a gap, or a different boot.
+ *
+ * A counter that went backwards (a wrap, a disk or interface that went away)
+ * drops only its own metric — CPU, disk or network becomes null for this
+ * interval — and never a negative rate. The row is still written, so one
+ * odd counter no longer punches a hole into every chart.
  */
 export function ratesBetween(prev: RawCounters | null, cur: RawCounters): Rates | null {
   if (!prev) return null;
@@ -140,16 +101,14 @@ export function ratesBetween(prev: RawCounters | null, cur: RawCounters): Rates 
   if (!(seconds > 0) || seconds > MAX_INTERVAL_S) return null;
   if (prev.bootId && cur.bootId && prev.bootId !== cur.bootId) return null;
   const d = (a: number | undefined, b: number | undefined) => (a === undefined || b === undefined ? null : b - a);
-  const deltas = [
-    d(prev.cpu?.total, cur.cpu?.total), d(prev.cpu?.idle, cur.cpu?.idle),
-    d(prev.disk?.readSectors, cur.disk?.readSectors), d(prev.disk?.writeSectors, cur.disk?.writeSectors),
-    d(prev.net?.rxBytes, cur.net?.rxBytes), d(prev.net?.txBytes, cur.net?.txBytes),
-  ];
-  if (deltas.some((x) => x !== null && x < 0)) return null; // a counter reset: drop the interval
-  const [dTotal, dIdle, dRead, dWrite, dRx, dTx] = deltas;
+  /** Both deltas of a pair, or nulls when either is missing or went backwards. */
+  const pair = (x: number | null, y: number | null): [number | null, number | null] =>
+    x === null || y === null || x < 0 || y < 0 ? [null, null] : [x, y];
+  const [dRead, dWrite] = pair(d(prev.disk?.readSectors, cur.disk?.readSectors), d(prev.disk?.writeSectors, cur.disk?.writeSectors));
+  const [dRx, dTx] = pair(d(prev.net?.rxBytes, cur.net?.rxBytes), d(prev.net?.txBytes, cur.net?.txBytes));
   const per = (x: number | null, scale: number) => (x === null ? null : Math.round((x * scale) / seconds));
   return {
-    cpu: dTotal !== null && dIdle !== null && dTotal > 0 ? Math.round(Math.min(100, Math.max(0, (1 - dIdle / dTotal) * 100)) * 10) / 10 : null,
+    cpu: prev.cpu && cur.cpu ? cpuPercentBetween(prev.cpu, cur.cpu) : null,
     diskReadKBs: per(dRead, 512 / 1024),
     diskWriteKBs: per(dWrite, 512 / 1024),
     rxKBs: per(dRx, 1 / 1024),

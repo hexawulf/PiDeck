@@ -6,6 +6,7 @@ import path from "path";
 import { PIDECK_LOGS_DIR } from "../config";
 import { classifyCommandFailure } from "./unavailable";
 import { platform, readHwmonTemperature } from "./platform";
+import { cpuPercentBetween, formatUptime, meminfoMb, parseMeminfo, readCpu, readDisk, readMemory, readNet, type CpuJiffies } from "./proc";
 import type {
   SystemInfo,
   LogFile,
@@ -40,8 +41,27 @@ export const pm2SelfName = (env: NodeJS.ProcessEnv = process.env) => (env.pm_id 
 export type RateBaseline = {
   disk: { read: number; write: number; timestamp: number } | null;
   net: { rx: number; tx: number; timestamp: number } | null;
+  cpu: CpuJiffies | null;
 };
-export const createRateBaseline = (): RateBaseline => ({ disk: null, net: null });
+export const createRateBaseline = (): RateBaseline => ({ disk: null, net: null, cpu: null });
+
+export type PsRow = { pid: number; name: string; cpu: number; mem: number };
+/**
+ * One line of `ps -eo pid,comm,%cpu,%mem`. The command name may contain
+ * spaces ("npm run build", "Web Content"), so the two numbers are taken
+ * from the right, not by position.
+ */
+export function parsePsLine(line: string): PsRow | null {
+  const m = /^\s*(\d+)\s+(.+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s*$/.exec(line);
+  if (!m) return null;
+  const pid = Number(m[1]);
+  return pid > 0 ? { pid, name: m[2], cpu: Number(m[3]), mem: Number(m[4]) } : null;
+}
+
+/** Values that can't change while the process runs (OS name) or change rarely (primary IP). */
+let cachedOs: string | null = null;
+let cachedIp: { value: string; at: number } | null = null;
+const IP_TTL_MS = 60_000;
 
 const clientBaseline = createRateBaseline();
 
@@ -69,7 +89,7 @@ export class SystemService {
       this.getKernel(),
       this.getArchitecture(),
       this.getUptime(),
-      this.getCPUUsage(),
+      this.getCPUUsage(baseline),
       this.getMemoryUsage(),
       this.readTemperature(),
       this.getIPAddress(),
@@ -101,17 +121,8 @@ export class SystemService {
 
 private static async getDiskIO(baseline: RateBaseline): Promise<DiskIO> {
   try {
-    const content = await fs.readFile('/proc/diskstats', 'utf8');
-    let readSectors = 0;
-    let writeSectors = 0;
-    for (const line of content.trim().split('\n')) {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length < 14) continue;
-      const name = parts[2];
-      if (name.startsWith('loop') || name.startsWith('ram')) continue;
-      readSectors += parseInt(parts[5]) || 0;
-      writeSectors += parseInt(parts[9]) || 0;
-    }
+    // Whole physical disks only (services/proc.ts): partitions would count twice.
+    const { readSectors, writeSectors } = await readDisk();
 
     const now = Date.now();
     let readSpeed = 0;
@@ -150,19 +161,8 @@ private static async getDiskIO(baseline: RateBaseline): Promise<DiskIO> {
 }
 private static async getNetworkBandwidth(baseline: RateBaseline): Promise<NetworkBandwidth> {
   try {
-    const interfaces = (await fs.readdir('/sys/class/net')).filter(i => i !== 'lo');
-    let rx = 0;
-    let tx = 0;
-    for (const iface of interfaces) {
-      try {
-        const rxPath = `/sys/class/net/${iface}/statistics/rx_bytes`;
-        const txPath = `/sys/class/net/${iface}/statistics/tx_bytes`;
-        rx += parseInt(await fs.readFile(rxPath, 'utf8'), 10) || 0;
-        tx += parseInt(await fs.readFile(txPath, 'utf8'), 10) || 0;
-      } catch (err) {
-        // console.log(`Failed to read stats for interface ${iface}:`, err); // Potentially noisy if an interface is down
-      }
-    }
+    // Physical interfaces only (services/proc.ts): bridges, veths and tunnels repeat the same traffic.
+    const { rxBytes: rx, txBytes: tx } = await readNet();
 
     const now = Date.now();
     let rxSpeed = 0;
@@ -200,38 +200,34 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
 
   private static async getProcessList(): Promise<ProcessInfo[]> {
     try {
-      // Using ps to get PID, command name, %CPU, %MEM
-      // -eo pid,comm,%cpu,%mem: specify output format
-      // --sort=-%cpu: sort by CPU usage in descending order
-      // | head -n 6: take top 5 processes (plus header)
-      // | tail -n 5: remove header
-      const { stdout } = await execAsync("ps -eo pid,comm,%cpu,%mem --sort=-%cpu | head -n 6 | tail -n 5");
-      const lines = stdout.trim().split("\n");
-      return lines.map(line => {
-        const parts = line.trim().split(/\s+/);
-        return {
-          pid: parseInt(parts[0]) || 0,
-          name: parts[1] || "unknown",
-          cpuUsage: parseFloat(parts[2]) || 0,
-          memUsage: parseFloat(parts[3]) || 0,
-        };
-      }).filter(p => p.pid > 0);
+      return (await this.topByCpu(5)).map((p) => ({ pid: p.pid, name: p.name, cpuUsage: p.cpu, memUsage: p.mem }));
     } catch (error) {
       console.error("Error getting process list:", error);
       return [];
     }
   }
 
-  private static async getHostname(): Promise<string> {
-    try {
-      const { stdout } = await execAsync("hostname");
-      return stdout.trim();
-    } catch {
-      return "unknown";
+  /** The `n` busiest processes: one `ps` (no shell pipeline), parsed by parsePsLine. */
+  private static async topByCpu(n: number): Promise<PsRow[]> {
+    const { stdout } = await execFileAsync("ps", ["-eo", "pid,comm,%cpu,%mem", "--sort=-%cpu", "--no-headers"], { timeout: 5000, maxBuffer: 4 * 1024 * 1024 });
+    const rows: PsRow[] = [];
+    for (const line of stdout.split("\n")) {
+      const row = parsePsLine(line);
+      if (row) rows.push(row);
+      if (rows.length >= n) break;
     }
+    return rows;
+  }
+
+  private static async getHostname(): Promise<string> {
+    return os.hostname() || "unknown";
   }
 
   private static async getOS(): Promise<string> {
+    return (cachedOs ??= await this.detectOS());
+  }
+
+  private static async detectOS(): Promise<string> {
     const p = platform();
     if (p.kind === "dsm") return p.os; // Synology: no lsb_release, no /etc/os-release
     try {
@@ -250,36 +246,35 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
   }
 
   private static async getKernel(): Promise<string> {
-    try {
-      const { stdout } = await execAsync("uname -r");
-      return stdout.trim();
-    } catch {
-      return "unknown";
-    }
+    return os.release() || "unknown";
   }
 
   private static async getArchitecture(): Promise<string> {
-    try {
-      const { stdout } = await execAsync("uname -m");
-      return stdout.trim();
-    } catch {
-      return "unknown";
-    }
+    return os.machine() || "unknown"; // what `uname -m` prints (aarch64, x86_64)
   }
 
   private static async getUptime(): Promise<string> {
-    try {
-      const { stdout } = await execAsync("uptime -p");
-      return stdout.trim().replace("up ", "");
-    } catch {
-      return "unknown";
-    }
+    return formatUptime(os.uptime());
   }
 
-  private static async getCPUUsage(): Promise<number> {
+  /**
+   * Busy CPU (%) since this caller's previous reading — everything but idle
+   * and iowait, from /proc/stat, the same measure the history chart uses.
+   * The first call samples twice, 500 ms apart, to have something to show.
+   */
+  private static async getCPUUsage(baseline: RateBaseline): Promise<number> {
     try {
-      const { stdout } = await execAsync("top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d% -f1");
-      return parseFloat(stdout.trim()) || 0;
+      let prev = baseline.cpu;
+      if (!prev) {
+        prev = await readCpu();
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      const cur = await readCpu();
+      if (!prev || !cur) return 0;
+      const pct = cpuPercentBetween(prev, cur);
+      if (pct === null) return 0; // polled twice within one tick: keep the baseline, show nothing new
+      baseline.cpu = cur;
+      return pct;
     } catch {
       return 0;
     }
@@ -287,13 +282,8 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
 
   private static async getMemoryUsage(): Promise<{ used: number; total: number; percentage: number }> {
     try {
-      const { stdout } = await execAsync("free -m | grep '^Mem:'");
-      const parts = stdout.trim().split(/\s+/);
-      const total = parseInt(parts[1]) || 0;
-      const used = parseInt(parts[2]) || 0;
-      const percentage = total > 0 ? Math.round((used / total) * 100) : 0;
-      
-      return { used, total, percentage };
+      const m = await readMemory(); // used = total − available, as `free` and the history chart count it
+      return m ? { used: m.usedMb, total: m.totalMb, percentage: m.percentage } : { used: 0, total: 0, percentage: 0 };
     } catch {
       return { used: 0, total: 0, percentage: 0 };
     }
@@ -368,6 +358,14 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
   }
 
   private static async getIPAddress(): Promise<string> {
+    const now = Date.now();
+    if (cachedIp && now - cachedIp.at < IP_TTL_MS) return cachedIp.value;
+    const value = await this.detectIPAddress();
+    cachedIp = { value, at: now };
+    return value;
+  }
+
+  private static async detectIPAddress(): Promise<string> {
     // 1. Kernel routing table for primary outbound route (picks primary NIC on multi-NIC hosts like DS920+)
     try {
       const { stdout } = await execAsync("ip route get 1.1.1.1 2>/dev/null");
@@ -684,14 +682,10 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
 
   static async getMemoryStats(): Promise<{ total: number; used: number; free: number; usage: number }> {
     try {
-      const { stdout } = await execAsync("free -m | grep '^Mem:'");
-      const parts = stdout.trim().split(/\s+/);
-      const total = parseInt(parts[1]) || 0;
-      const used = parseInt(parts[2]) || 0;
-      const free = parseInt(parts[3]) || 0;
-      const usage = total > 0 ? Math.round((used / total) * 100) : 0;
-      
-      return { total, used, free, usage };
+      const info = await fs.readFile("/proc/meminfo", "utf8");
+      const m = parseMeminfo(info);
+      if (!m) return { total: 0, used: 0, free: 0, usage: 0 };
+      return { total: m.totalMb, used: m.usedMb, free: meminfoMb(info, "MemFree"), usage: m.percentage };
     } catch (error) {
       console.error("Error getting memory stats:", error);
       return { total: 0, used: 0, free: 0, usage: 0 };
@@ -700,13 +694,10 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
 
   static async getSwapStats(): Promise<{ total: number; used: number; free: number }> {
     try {
-      const { stdout } = await execAsync("free -m | grep '^Swap:'");
-      const parts = stdout.trim().split(/\s+/);
-      const total = parseInt(parts[1]) || 0;
-      const used = parseInt(parts[2]) || 0;
-      const free = parseInt(parts[3]) || 0;
-      
-      return { total, used, free };
+      const info = await fs.readFile("/proc/meminfo", "utf8");
+      const total = meminfoMb(info, "SwapTotal");
+      const free = meminfoMb(info, "SwapFree");
+      return { total, used: Math.max(0, total - free), free };
     } catch (error) {
       console.error("Error getting swap stats:", error);
       return { total: 0, used: 0, free: 0 };
@@ -716,20 +707,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
   static async getTopProcesses(n: number = 10): Promise<any[]> {
     const count = Math.max(1, Math.min(Math.floor(n), 100));
     try {
-      const { stdout } = await execAsync(`ps -eo pid,comm,%cpu,%mem --sort=-%cpu --no-headers | head -n ${count}`);
-      const lines = stdout.trim().split('\n');
-      
-      return lines.map(line => {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length < 4) return null;
-        
-        return {
-          pid: parseInt(parts[0]) || 0,
-          name: parts[1] || "unknown",
-          cpu: parseFloat(parts[2]) || 0,
-          mem: parseFloat(parts[3]) || 0
-        };
-      }).filter(proc => proc !== null);
+      return await this.topByCpu(count);
     } catch (error) {
       console.error("Error getting top processes:", error);
       return [];
