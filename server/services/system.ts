@@ -738,16 +738,4 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       return [{ core: "cpu0", freq: "N/A" }];
     }
   }
-
-  static async updateSystem(): Promise<string> {
-    try {
-      const { stdout, stderr } = await execAsync(
-        "sudo -n apt-get update && sudo -n apt-get upgrade -y" // -n: fail fast without a sudoers rule
-      );
-      return stdout || stderr;
-    } catch (error) {
-      console.error("Error updating system:", error);
-      throw new Error("System update failed");
-    }
-  }
 }

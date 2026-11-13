@@ -15,7 +15,8 @@ import rasplogsRouter from "./routes/rasplogs";
 import hostLogsRouter from "./routes/hostLogs";
 import thermalZonesRouter from "./routes/thermalZones";
 import powerStatusRouter from "./routes/powerStatus";
-import { createSystemUpdateHandler } from "./routes/system-update";
+import { createSystemUpdateHandler, createSystemUpdateStatusHandler } from "./routes/system-update";
+import { updateRunner } from "./services/system-update";
 import { unavailable } from "./services/unavailable";
 
 import { loginSchema } from "@shared/schema";
@@ -317,7 +318,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // These ad-hoc endpoints are also protected by the wrapper above
   // 409 without running anything when PIDECK_DISABLE_SYSTEM_UPDATE=1 (E2E builds).
-  app.post("/api/system/update", createSystemUpdateHandler({ run: () => SystemService.updateSystem() }));
+  // POST starts the job and answers 202; GET reports how it is going.
+  app.post("/api/system/update", createSystemUpdateHandler({ runner: updateRunner() }));
+  app.get("/api/system/update", createSystemUpdateStatusHandler({ runner: updateRunner() }));
 
   app.get("/api/reboot-check", rebootCheckHandler);
   // Read-only systemd units on the hub itself (agents serve the same route).
