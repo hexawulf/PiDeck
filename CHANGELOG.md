@@ -5,6 +5,15 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.1] - 2026-11-13
+
+PD-22 from the 2026-11-13 audit.
+
+### Fixed
+- **Alerts of removed hosts resolve**: when the hub starts, open alerts of a host that is no longer in `PIDECK_HOSTS` are resolved (and logged). Nothing polls such a host, so its "offline" alert stayed open forever and showed as a red toast on every page load.
+- **The red toast is readable in the light theme**: `--destructive` is red-700 instead of red-500 (white text was 3.8:1, below AA).
+- **The toast's close button has a name** ("Dismiss notification") for screen readers.
+
 ## [2.10.0] - 2026-11-13
 
 The seven medium findings of the 2026-11-13 audit (PD-04 to PD-09, PD-11). With 2.9.3 and 2.9.4, every high and medium finding is closed.

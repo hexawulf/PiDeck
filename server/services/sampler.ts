@@ -234,6 +234,15 @@ export function createSampleTick({
     if (!isReady()) return false; // pending migrations: no DB work (see server/db-schema.ts)
     if (!seeded) {
       await alerts.load(); // open alerts survive a restart
+      // …but not their host's removal: nothing polls a host that is no longer in
+      // PIDECK_HOSTS, so its open alerts ("offline", a service) would stay open
+      // forever and greet every page load with a toast. Resolve them once here.
+      const configured = new Set(["local", ...hostHub.entries().map((h) => h.id)]);
+      for (const a of alerts.openAlerts()) {
+        if (configured.has(a.hostId)) continue;
+        await alerts.evaluate(a.hostId, a.type, false, { severity: a.severity, message: "" });
+        logger.info(`[sampler] resolved "${a.type}" alert of host "${a.hostId.slice(0, 32)}": no longer configured`);
+      }
       for (const [id, p] of await history.latestPerHost()) hostHub.seedLastSeen(id, Date.parse(p.timestamp));
       seeded = true;
     }

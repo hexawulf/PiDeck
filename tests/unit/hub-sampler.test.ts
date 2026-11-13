@@ -227,6 +227,22 @@ describe("hub sampler: alerts per host", () => {
     expect(open(s)).toEqual([]);
   });
 
+  it("resolves the open alerts of a host that is no longer configured (and leaves the others)", async () => {
+    const mk = (id: number, hostId: string, type: Alert["type"]): Alert => ({
+      id, hostId, type, severity: "critical", message: "Not answering since …", startedAt: new Date(T0 - 60 * MIN), resolvedAt: null,
+    });
+    const store = memoryAlertStore([mk(1, "retired", "offline"), mk(2, "retired", "service:nginx"), mk(3, "kept", "offline"), mk(4, "local", "temperature")]);
+    const s = setup({ kept: "down" }, { store });
+    s.agentTemp.local = 80; // still hot: the local alert must stay open
+    await s.run(1);
+    expect(open(s).map((a) => a.id).sort()).toEqual([3, 4]);
+    expect(store.rows.filter((a) => a.hostId === "retired").every((a) => a.resolvedAt !== null)).toBe(true);
+    expect(s.alerts.openAlerts("retired")).toEqual([]);
+    expect(s.logger.info).toHaveBeenCalledWith(expect.stringContaining('host "retired": no longer configured'));
+    await s.run(1); // only once: nothing left to resolve, nothing logged again
+    expect(s.logger.info.mock.calls.filter((c) => String(c[0]).includes("no longer configured"))).toHaveLength(2);
+  });
+
   it("local host: temperature only (never 'offline')", async () => {
     const s = setup({});
     s.agentTemp.local = 72;
