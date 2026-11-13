@@ -38,6 +38,9 @@ export function useAuth() {
       return res.json();
     },
     retry: false,
+    // Back in a tab that sat in the background (polling pauses while hidden,
+    // so the 24 h session can run out): check the session again at once.
+    refetchOnWindowFocus: "always",
   });
 
   const loginMutation = useMutation({
