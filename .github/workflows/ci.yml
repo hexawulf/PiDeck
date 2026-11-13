@@ -45,6 +45,12 @@ jobs:
           node-version: 22 # the supported line (scripts/install.sh requires 22.x)
           cache: npm
 
+      # Node 22 ships npm 10, which reads the lockfile's overrides (gaxios,
+      # rimraf under firebase-admin) differently and refuses `npm ci`.
+      # piapps runs npm 11.13; match it.
+      - name: npm as on piapps
+        run: npm install -g npm@11.13.0
+
       - name: Install
         run: npm ci --no-audit --no-fund
 
