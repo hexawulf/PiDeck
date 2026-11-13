@@ -43,69 +43,62 @@ server/
 ```
 
 ### Naming Conventions
-- **Routes**: Lowercase with descriptive names (e.g., `mounts.ts`, `docker.ts`, `network.ts`)
+- **Routes**: Lowercase or camelCase file per domain (e.g., `docker.ts`, `network.ts`, `thermalZones.ts`)
 - **Middleware**: camelCase with descriptive names (e.g., `rateLimitLogin.ts`)
-- **API paths**: `/api/{domain}/{resource}` (e.g., `/api/metrics/mounts`, `/api/docker/containers`)
+- **API paths**: `/api/{domain}/{resource}` (e.g., `/api/metrics/thermal-zones`, `/api/docker/containers`)
 - **Exports**: Default export for routers, named exports for utilities
 
 ### Route Pattern (✅ COPY THIS)
-**Reference**: `server/routes/mounts.ts`
+**Reference**: `server/routes/thermalZones.ts` (reads `/sys`, no shell). For a host tool
+that may be missing or need root, see `server/routes/network.ts` and the
+`unavailable()` example further down.
 
 ```typescript
 import { Router } from 'express'
-import { exec } from 'child_process'
+import { readFileSync, readdirSync } from 'fs'
+import { join } from 'path'
+import { unavailable } from '../services/unavailable'
 
 const router = Router()
 
-router.get('/api/metrics/mounts', (_req, res) => {
-  exec('mount | grep -v snap', (err, stdout, stderr) => {
-    if (err || stderr) {
-      const details = stderr || (err ? err.message : 'Unknown error')
-      return res.status(500).json({ error: 'Failed to run mount', details })
-    }
-
-    const lines = stdout.trim().split('\n')
-    const mounts = lines.map(line => {
-      const match = line.match(/^(.+?) on (.+?) type (.+?) \((.+?)\)$/)
-      if (!match) return null
-      const [, device, mountpoint, fstype, options] = match
-      return { device, mountpoint, fstype, options }
-    }).filter(Boolean)
-
-    res.json(mounts)
-  })
+router.get('/api/metrics/thermal-zones', (_req, res) => {
+  let zones: string[] = []
+  try {
+    zones = readdirSync('/sys/class/thermal').filter(n => n.startsWith('thermal_zone'))
+  } catch { /* none */ }
+  if (zones.length === 0) {
+    return res.json(unavailable('no-device', 'No thermal sensors exposed (/sys/class/thermal).'))
+  }
+  // … read each zone, return JSON
 })
 
 export default router
 ```
 
 **Rules**:
-- ✅ Use `Router()` from Express
-- ✅ Handle errors explicitly with appropriate HTTP status codes
-- ✅ Always validate and sanitize shell command output
-- ✅ Use `child_process.exec()` for shell commands (NOT `execSync` in request handlers)
-- ✅ Export router as default: `export default router`
+- ✅ Use `Router()` from Express; export it as default
+- ✅ Prefer `/proc`, `/sys` and `fs` over shelling out; if you must run a tool, use async `execFile`/`exec` with fixed arguments (never `execSync` in a handler)
+- ✅ Handle errors explicitly with appropriate HTTP status codes; a missing tool or device is `unavailable(...)`, not a 500
 - ✅ Return JSON with `res.json()`, not `res.send()`
 - ❌ DON'T use blocking operations in request handlers
 - ❌ DON'T expose raw error messages to clients (sanitize details)
 
 ### Route Registration
-**Location**: `server/routes.ts` (centralized registration)
+A new GET route is registered in **two** places, and each must be deliberate:
 
-**After creating a new route file**:
-1. Import the router in `server/routes.ts`
-2. Register with `app.use(myRouter)`
+1. **Hub** — `server/routes.ts`, always behind auth:
+   ```typescript
+   import thermalZonesRouter from './routes/thermalZones'
+   // router declares the full /api/... path; app.get keeps req.url intact
+   app.get('/api/metrics/thermal-zones', requireAuth, thermalZonesRouter)
+   ```
+2. **Agent** (only if remote hosts should serve it) — add the exact path to the
+   GET allowlist in `server/agent-api.ts` and mount it in `server/agent.ts`.
+   Anything not on that list is refused by the agent.
 
-**Example**:
-```typescript
-// server/routes.ts
-import mountsRouter from './routes/mounts'
-
-export async function registerRoutes(app: Express) {
-  // ... other routes
-  app.use(mountsRouter)
-}
-```
+Mutating routes are hub-only, non-GET, JSON, and pass the same-origin check
+(`server/middleware/sameOrigin.ts`). `/api/health` and the auth endpoints are
+the only public `/api` paths; unknown `/api` paths answer a JSON 404.
 
 ### Middleware Pattern
 **Reference**: `server/middleware/rateLimitLogin.ts`
@@ -200,7 +193,7 @@ the client's `QueryState` renders it as "Not available on this host".
 - **Environment**: `server/env.ts` - dotenv loading
 
 ### Example Files (Good Patterns)
-- **Simple Route**: `server/routes/mounts.ts` - Shell command + parsing
+- **Simple Route**: `server/routes/thermalZones.ts` - reads `/sys`, `unavailable()` when absent
 - **Complex Route**: `server/routes/docker.ts` - dockerode API integration
 - **Middleware**: `server/middleware/rateLimitLogin.ts` - Rate limiting logic
 - **Multi-endpoint Route**: `server/routes/network.ts` - Multiple related endpoints
