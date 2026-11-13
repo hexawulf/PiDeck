@@ -29,7 +29,9 @@ test("page, assets and unknown API paths get the right headers", async ({ page }
   expect(unknown.status()).toBe(404);
   expect(unknown.headers()["content-type"]).toMatch(/^application\/json/);
 
-  const deep = await api.get("/logs");
+  // A browser navigation to a client route gets the page (API-style callers of
+  // /logs get the back-compat stub, server/routes/compat.ts).
+  const deep = await api.get("/logs", { headers: { accept: "text/html" } });
   expect(deep.status()).toBe(200);
   expect(await deep.text()).toContain('<div id="root">');
 });
