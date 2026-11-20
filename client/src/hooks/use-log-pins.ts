@@ -66,9 +66,12 @@ export function useLogPins() {
   const logs = useHostLogs(false); // read whatever the Logs tab / palette already fetched
   const missingVersion = useSyncExternalStore(subscribe, () => version);
   const known = useMemo(() => (logs.data ? new Set(logs.data.map((l) => l.id)) : null), [logs.data]);
+  const missing = useMemo(() => {
+    void missingVersion;
+    return new Set(stale404);
+  }, [missingVersion]);
 
-  // missingVersion changes whenever stale404 does, so the callback re-creates.
-  const isStale = useCallback((logId: string) => isPinStale(logId, known, stale404), [known, missingVersion]);
+  const isStale = useCallback((logId: string) => isPinStale(logId, known, missing), [known, missing]);
   const isPinned = useCallback((logId: string, grep?: string) => pins.some((p) => samePin(p, { logId, grep })), [pins]);
 
   const pin = useCallback(

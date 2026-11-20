@@ -55,7 +55,7 @@ export default function AppMonitor() {
         title: "Success",
         description: `Container ${name} ${action}ed successfully`,
       });
-    } catch (error) {
+    } catch {
       toast({
         title: "Error",
         description: `Failed to ${action} container ${name}`,
@@ -71,7 +71,7 @@ export default function AppMonitor() {
         title: "Success",
         description: `Process ${name} ${action}ed successfully`,
       });
-    } catch (error) {
+    } catch {
       toast({
         title: "Error", 
         description: `Failed to ${action} process ${name}`,
@@ -124,7 +124,7 @@ export default function AppMonitor() {
     }
   };
 
-  const formatPorts = (ports: any[]) => {
+  const formatPorts = (ports: Array<{ private: number; public?: number }>) => {
     if (!ports || ports.length === 0) return "—";
     return ports.map(p => `${p.private}${p.public ? `:${p.public}` : ""}`).join(", ");
   };

@@ -27,12 +27,13 @@ dockerRouter.get("/docker/containers", async (_req, res) => {
 
     const payload: DockerContainersResponse = { containers };
     res.json(payload);
-  } catch (error: any) {
-    console.error("[dockerRouter] Failed to list containers", error?.message ?? error);
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error ?? "");
+    console.error("[dockerRouter] Failed to list containers", errMsg || error);
     
     // Handle specific error cases
     let warning = "docker_unavailable";
-    if (String(error?.message || "").match(/ENOENT|EACCES|permission/i)) {
+    if (errMsg.match(/ENOENT|EACCES|permission/i)) {
       warning = "socket unavailable or permission denied";
     }
     

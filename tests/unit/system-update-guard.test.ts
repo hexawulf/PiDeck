@@ -79,8 +79,8 @@ describe("update job", () => {
   });
 
   const fakeSpawn = () => {
-    const calls: { cmd: string; args: string[]; opts: any }[] = [];
-    const spawn = (cmd: string, args: string[], opts: any) => {
+    const calls: { cmd: string; args: string[]; opts: unknown }[] = [];
+    const spawn = (cmd: string, args: string[], opts: unknown) => {
       calls.push({ cmd, args, opts });
       return { on: () => undefined, unref: () => undefined };
     };

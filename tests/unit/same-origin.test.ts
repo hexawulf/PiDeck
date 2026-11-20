@@ -1,3 +1,4 @@
+import type { Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import { requireSameOrigin, sameOriginAllowed } from "../../server/middleware/sameOrigin";
 
@@ -57,13 +58,13 @@ describe("same-origin guard (CSRF)", () => {
   it("the middleware answers 403 JSON and logs one line, or calls next", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const mw = requireSameOrigin({});
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
+    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as unknown as Response;
     const next = vi.fn();
-    mw({ method: "POST", path: "/system/update", ip: "10.0.0.9", headers: { host: HOST, origin: "https://kuma.example.dev" } } as any, res, next);
+    mw({ method: "POST", path: "/system/update", ip: "10.0.0.9", headers: { host: HOST, origin: "https://kuma.example.dev" } } as unknown as Request, res, next);
     expect(res.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(1);
-    mw({ method: "POST", path: "/system/update", headers: { host: HOST, origin: `https://${HOST}` } } as any, res, next);
+    mw({ method: "POST", path: "/system/update", headers: { host: HOST, origin: `https://${HOST}` } } as unknown as Request, res, next);
     expect(next).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });

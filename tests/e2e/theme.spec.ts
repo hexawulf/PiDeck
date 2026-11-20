@@ -23,11 +23,14 @@ async function seedTheme(page: Page, value: string | null, throwOnRead = false) 
   }, [KEY, value, throwOnRead] as const);
 }
 
+type CspWindow = Window & { __csp?: string[] };
+
 async function collectCspViolations(page: Page) {
   await page.addInitScript(() => {
-    (window as any).__csp = [];
+    const win = window as CspWindow;
+    win.__csp = [];
     document.addEventListener("securitypolicyviolation", (e) =>
-      (window as any).__csp.push(`${e.violatedDirective} ${e.blockedURI}`));
+      win.__csp?.push(`${e.violatedDirective} ${e.blockedURI}`));
   });
 }
 
@@ -109,7 +112,7 @@ for (const theme of ["light", "dark"] as const) {
       const axe = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
       const contrast = axe.violations.filter((v) => v.id === "color-contrast");
       expect(contrast.flatMap((v) => v.nodes.map((n) => `${n.target} — ${n.failureSummary}`))).toEqual([]);
-      expect(await page.evaluate(() => (window as any).__csp)).toEqual([]);
+      expect(await page.evaluate(() => (window as CspWindow).__csp)).toEqual([]);
     }
 
     test("login", async ({ browser }) => {

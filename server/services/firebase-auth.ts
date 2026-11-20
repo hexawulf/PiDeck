@@ -79,7 +79,7 @@ export function getFirebaseAdminApp(env: NodeJS.ProcessEnv = process.env): App {
       }
     } catch (err) {
       console.error(`[Firebase] Failed to load service account key from ${keyPath}:`, err);
-      throw new Error(`Failed to load Firebase service account from ${keyPath}`);
+      throw new Error(`Failed to load Firebase service account from ${keyPath}`, { cause: err });
     }
   } else if (rawJson) {
     try {
@@ -90,7 +90,7 @@ export function getFirebaseAdminApp(env: NodeJS.ProcessEnv = process.env): App {
       }
     } catch (err) {
       console.error("[Firebase] Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:", err);
-      throw new Error("Invalid FIREBASE_SERVICE_ACCOUNT_JSON");
+      throw new Error("Invalid FIREBASE_SERVICE_ACCOUNT_JSON", { cause: err });
     }
   } else {
     // Fall back to Google Application Default Credentials
@@ -105,61 +105,55 @@ export function getFirebaseAdminApp(env: NodeJS.ProcessEnv = process.env): App {
   return firebaseAdminApp;
 }
 
+class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.status = status;
+  }
+}
+
 export async function verifyFirebaseLogin(
   idToken: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<VerifiedFirebaseUser> {
   if (!isFirebaseEnabled(env)) {
-    const err: any = new Error("Firebase authentication is disabled on this host.");
-    err.status = 503;
-    throw err;
+    throw new HttpError(503, "Firebase authentication is disabled on this host.");
   }
 
   if (!idToken || typeof idToken !== "string" || !idToken.trim()) {
-    const err: any = new Error("Missing or invalid ID token.");
-    err.status = 400;
-    throw err;
+    throw new HttpError(400, "Missing or invalid ID token.");
   }
 
   let app: App;
   try {
     app = getFirebaseAdminApp(env);
-  } catch (e: any) {
-    const err: any = new Error("Firebase Admin is not configured properly on the server.");
-    err.status = 500;
-    throw err;
+  } catch (e) {
+    throw new HttpError(500, "Firebase Admin is not configured properly on the server.", { cause: e });
   }
 
   let decoded: DecodedIdToken;
   try {
     decoded = await getAuth(app).verifyIdToken(idToken.trim());
-  } catch (e: any) {
-    console.warn("[Firebase] Failed to verify ID token:", e?.message || e);
-    const err: any = new Error("Invalid or expired Firebase ID token.");
-    err.status = 401;
-    throw err;
+  } catch (e: unknown) {
+    console.warn("[Firebase] Failed to verify ID token:", e instanceof Error ? e.message : e);
+    throw new HttpError(401, "Invalid or expired Firebase ID token.", { cause: e });
   }
 
   const email = (decoded.email || "").trim().toLowerCase();
   if (!email || !decoded.email_verified) {
-    const err: any = new Error("Google account email is missing or not verified.");
-    err.status = 403;
-    throw err;
+    throw new HttpError(403, "Google account email is missing or not verified.");
   }
 
   const allowedEmails = getFirebaseAllowedEmails(env);
   if (allowedEmails.length === 0) {
     console.error("[Firebase] No allowed emails configured in FIREBASE_ALLOWED_EMAILS.");
-    const err: any = new Error("No authorized accounts configured on this host.");
-    err.status = 403;
-    throw err;
+    throw new HttpError(403, "No authorized accounts configured on this host.");
   }
 
   if (!allowedEmails.includes(email)) {
     console.warn(`[Firebase Auth] Access denied: Account '${email}' is not in FIREBASE_ALLOWED_EMAILS.`);
-    const err: any = new Error(`Account '${email}' is not authorized to access PiDeck.`);
-    err.status = 403;
-    throw err;
+    throw new HttpError(403, `Account '${email}' is not authorized to access PiDeck.`);
   }
 
   return {

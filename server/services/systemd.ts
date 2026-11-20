@@ -40,6 +40,7 @@ export function serviceConfig(env: NodeJS.ProcessEnv = process.env, warn: (m: st
     const eq = item.indexOf("=");
     const label = eq > 0 ? item.slice(0, eq).trim() : null;
     const ref = parseUnitRef((eq > 0 ? item.slice(eq + 1) : item).trim());
+    // eslint-disable-next-line no-control-regex -- intentionally reject control chars in labels
     if (!ref || (label !== null && (!label || label.length > 60 || /[\u0000-\u001f]/.test(label)))) {
       warn(`[config] PIDECK_SERVICES: ignoring "${item.slice(0, 60)}"`);
       continue;

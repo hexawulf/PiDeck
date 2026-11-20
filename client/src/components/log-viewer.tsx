@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useHostLogs, type LogEntry } from "@/hooks/use-host-logs";
 import { LogListItem } from "@/components/logview/log-list-item";
@@ -97,14 +97,6 @@ export default function LogViewer() {
   const [, navigate] = useLocation();
   const { isPinned, pin, unpin } = useLogPins();
   const hubLabel = useHostSummary(LOCAL_HOST)?.label ?? LOCAL_HOST; // download file names
-  // A log id that isn't in the list (stale pin, old link): open it anyway so the 404 shows.
-  const entryFor = (id: string): LogEntry =>
-    logs.find((l) => l.id === id) ?? { id, name: id, label: id, path: "", size: 0, mtime: "", source: "home" };
-  const openPin = (p: LogPin) => {
-    setSearchFilter(p.grep ?? "");
-    void handleLogSelect(entryFor(p.logId), p.grep ?? "");
-  };
-
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [logContent, setLogContent] = useState<string[]>([]);
   // From the server's X-PiDeck-* headers (PD-16): secrets replaced, older lines cut.
@@ -112,11 +104,23 @@ export default function LogViewer() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchFilter, setSearchFilter] = useState("");
+  const [searchFilter, setSearchFilter] = useState(() => {
+    const params = new URLSearchParams(search);
+    return params.get("log") ? (params.get("grep") ?? "") : "";
+  });
+  const [prevSearch, setPrevSearch] = useState(search);
+  if (search !== prevSearch) {
+    setPrevSearch(search);
+    const params = new URLSearchParams(search);
+    if (params.get("log")) {
+      setSearchFilter(params.get("grep") ?? "");
+    }
+  }
   const [tailLines, setTailLines] = useState("1000");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "modified">("modified");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [mountTime] = useState(() => Date.now());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     localStorage.getItem("logViewer:sidebarCollapsed") === "true"
   );
@@ -130,27 +134,107 @@ export default function LogViewer() {
   const requestSeq = useRef(0);
   const logEndRef = useRef<HTMLDivElement>(null);
 
+  // A log id that isn't in the list (stale pin, old link): open it anyway so the 404 shows.
+  const entryFor = useCallback(
+    (id: string): LogEntry =>
+      logs.find((l) => l.id === id) ?? { id, name: id, label: id, path: "", size: 0, mtime: "", source: "home" },
+    [logs],
+  );
+
+  /** Load the tail. `quiet` (a follow tick): no spinner, and a failed read keeps what is shown. */
+  const fetchLogContent = useCallback(
+    async (logId: string, quiet: boolean, grep = searchFilter) => {
+      const seq = ++requestSeq.current;
+      if (!quiet) {
+        setIsLoading(true);
+        setError(null);
+      }
+      try {
+        const params = new URLSearchParams({ tail: tailLines });
+        if (grep) params.append("grep", grep);
+        const response = await fetch(`/api/hostlogs/${logId}?${params.toString()}`, {
+          credentials: "include",
+        });
+        if (response.status === 404) markLogMissing(logId); // pins show it as stale
+        else if (response.ok) markLogPresent(logId);
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        const text = await response.text();
+        if (seq !== requestSeq.current) return; // a newer request (another log, filter or tick) owns the view
+        setLogContent(text ? text.split("\n").filter((l: string) => l.trim()) : []);
+        setReadInfo({
+          redacted: Number(response.headers.get("X-PiDeck-Redacted")) || 0,
+          truncated: response.headers.get("X-PiDeck-Truncated") === "1",
+        });
+        setError(null);
+      } catch (err) {
+        if (seq !== requestSeq.current) return;
+        if (quiet) {
+          // The file went away or the session ended: stop following and say why.
+          setIsFollowing(false);
+        } else {
+          console.error("Error fetching log:", err);
+        }
+        setError(err instanceof Error ? err.message : "Failed to fetch log content");
+      } finally {
+        if (!quiet && seq === requestSeq.current) setIsLoading(false);
+      }
+    },
+    [searchFilter, tailLines],
+  );
+
+  const handleLogSelect = useCallback(
+    async (log: LogEntry, grep = searchFilter) => {
+      setIsFollowing(false);
+      setSelectedLog(log);
+      setLogContent([]);
+      setReadInfo({ redacted: 0, truncated: false });
+      setError(null);
+      localStorage.setItem("logViewer:lastId", log.id);
+      await fetchLogContent(log.id, false, grep);
+    },
+    [fetchLogContent, searchFilter],
+  );
+
+  const openPin = (p: LogPin) => {
+    setSearchFilter(p.grep ?? "");
+    void handleLogSelect(entryFor(p.logId), p.grep ?? "");
+  };
+
   // Persist sidebar state
   useEffect(() => {
     localStorage.setItem("logViewer:sidebarCollapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
 
+  const selectedLogRef = useRef(selectedLog);
+  useEffect(() => {
+    selectedLogRef.current = selectedLog;
+  }, [selectedLog]);
+
   // Open ?log=<id>[&grep=…] (palette, pins), else restore the last selection.
   useEffect(() => {
     if (!logs.length) return;
+    let cancelled = false;
     const params = new URLSearchParams(search);
     const wanted = params.get("log");
     if (wanted) {
       const grep = params.get("grep") ?? "";
-      setSearchFilter(grep);
-      handleLogSelect(entryFor(wanted), grep);
-      navigate("/logs", { replace: true }); // consume the link so reload/back don't re-open it
-      return;
+      const target = entryFor(wanted);
+      void Promise.resolve().then(() => {
+        if (cancelled) return;
+        void handleLogSelect(target, grep);
+        navigate("/logs", { replace: true }); // consume the link so reload/back don't re-open it
+      });
+      return () => { cancelled = true; };
     }
     const lastId = localStorage.getItem("logViewer:lastId");
     const log = lastId ? logs.find((l) => l.id === lastId) : undefined;
-    if (log && !selectedLog) handleLogSelect(log);
-  }, [logs, search]);
+    if (log && !selectedLogRef.current) {
+      void Promise.resolve().then(() => {
+        if (!cancelled) void handleLogSelect(log);
+      });
+    }
+    return () => { cancelled = true; };
+  }, [logs, search, entryFor, handleLogSelect, navigate]);
 
   // While following: refresh quietly, skipping ticks while the tab is hidden.
   useEffect(() => {
@@ -161,7 +245,7 @@ export default function LogViewer() {
       void fetchLogContent(id, true);
     }, FOLLOW_MS);
     return () => clearInterval(timer);
-  }, [isFollowing, selectedLog?.id, searchFilter, tailLines]);
+  }, [isFollowing, selectedLog, fetchLogContent]);
 
   // Auto-scroll when following
   useEffect(() => {
@@ -172,6 +256,7 @@ export default function LogViewer() {
 
   // --- Memos ---
 
+  const filterNow = logsQuery.dataUpdatedAt || mountTime;
   const groupedLogs = useMemo(() => {
     let data = logs || [];
 
@@ -190,7 +275,7 @@ export default function LogViewer() {
         "7d": 7 * 24 * 3600000,
         "30d": 30 * 24 * 3600000,
       };
-      const cutoff = Date.now() - cutoffs[dateFilter];
+      const cutoff = filterNow - cutoffs[dateFilter];
       data = data.filter((l) => new Date(l.mtime).getTime() >= cutoff);
     }
 
@@ -207,7 +292,7 @@ export default function LogViewer() {
       );
     }
     return groups;
-  }, [logs, searchQuery, dateFilter, sortBy]);
+  }, [logs, searchQuery, dateFilter, sortBy, filterNow]);
 
   const totalFiltered = useMemo(
     () => Object.values(groupedLogs).reduce((s: number, a: LogEntry[]) => s + a.length, 0),
@@ -219,57 +304,10 @@ export default function LogViewer() {
   const toggleCategory = (cat: string) => {
     setExpandedCategories((prev) => {
       const next = new Set(prev);
-      next.has(cat) ? next.delete(cat) : next.add(cat);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
       return next;
     });
-  };
-
-  const handleLogSelect = async (log: LogEntry, grep = searchFilter) => {
-    setIsFollowing(false);
-    setSelectedLog(log);
-    setLogContent([]);
-    setReadInfo({ redacted: 0, truncated: false });
-    setError(null);
-    localStorage.setItem("logViewer:lastId", log.id);
-    await fetchLogContent(log.id, false, grep);
-  };
-
-  /** Load the tail. `quiet` (a follow tick): no spinner, and a failed read keeps what is shown. */
-  const fetchLogContent = async (logId: string, quiet: boolean, grep = searchFilter) => {
-    const seq = ++requestSeq.current;
-    if (!quiet) {
-      setIsLoading(true);
-      setError(null);
-    }
-    try {
-      const params = new URLSearchParams({ tail: tailLines });
-      if (grep) params.append("grep", grep);
-      const response = await fetch(`/api/hostlogs/${logId}?${params.toString()}`, {
-        credentials: "include",
-      });
-      if (response.status === 404) markLogMissing(logId); // pins show it as stale
-      else if (response.ok) markLogPresent(logId);
-      if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-      const text = await response.text();
-      if (seq !== requestSeq.current) return; // a newer request (another log, filter or tick) owns the view
-      setLogContent(text ? text.split("\n").filter((l: string) => l.trim()) : []);
-      setReadInfo({
-        redacted: Number(response.headers.get("X-PiDeck-Redacted")) || 0,
-        truncated: response.headers.get("X-PiDeck-Truncated") === "1",
-      });
-      setError(null);
-    } catch (err) {
-      if (seq !== requestSeq.current) return;
-      if (quiet) {
-        // The file went away or the session ended: stop following and say why.
-        setIsFollowing(false);
-      } else {
-        console.error("Error fetching log:", err);
-      }
-      setError(err instanceof Error ? err.message : "Failed to fetch log content");
-    } finally {
-      if (!quiet && seq === requestSeq.current) setIsLoading(false);
-    }
   };
 
   const handleFollowToggle = () => {

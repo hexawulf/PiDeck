@@ -42,7 +42,7 @@ describe("session touch throttle", () => {
   });
 
   it("passes the store's error to the caller", () => {
-    let t = 0;
+    const t = 0;
     const store = throttleTouch({ touch: (_s: string, _x: unknown, cb?: (e?: unknown) => void) => cb?.(new Error("db down")) }, { now: () => t });
     const cb = vi.fn();
     store.touch!("a", {}, cb);

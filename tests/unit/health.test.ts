@@ -1,19 +1,35 @@
 // PD-21: /api/health reports the database and the schema, not constants.
+import type { Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import { createHealthHandler } from "../../server/routes/health";
 
-function fakeRes() {
-  const res: any = { statusCode: 0, headers: {} as Record<string, string>, body: undefined };
-  res.status = (c: number) => { res.statusCode = c; return res; };
-  res.set = (k: string, v: string) => { res.headers[k] = v; return res; };
-  res.json = (b: unknown) => { res.body = b; return res; };
+type FakeRes = {
+  statusCode: number;
+  headers: Record<string, string>;
+  body: unknown;
+  status: (c: number) => FakeRes;
+  set: (k: string, v: string) => FakeRes;
+  json: (b: unknown) => FakeRes;
+};
+
+function fakeRes(): FakeRes {
+  const res: FakeRes = {
+    statusCode: 0,
+    headers: {},
+    body: undefined,
+    status(c: number) { res.statusCode = c; return res; },
+    set(k: string, v: string) { res.headers[k] = v; return res; },
+    json(b: unknown) { res.body = b; return res; },
+  };
   return res;
 }
+
+const fakeReq = {} as Request;
 
 describe("createHealthHandler", () => {
   it("is 200 when the database answers and the schema is ready", async () => {
     const res = fakeRes();
-    await createHealthHandler({ ping: async () => 1, schemaReady: () => true })({} as any, res);
+    await createHealthHandler({ ping: async () => 1, schemaReady: () => true })(fakeReq, res as unknown as Response);
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({ ok: true, db: true, schema: true });
     expect(res.headers["Cache-Control"]).toBe("no-store");
@@ -21,7 +37,7 @@ describe("createHealthHandler", () => {
 
   it("is 503 when the database query fails", async () => {
     const res = fakeRes();
-    await createHealthHandler({ ping: () => Promise.reject(new Error("down")), schemaReady: () => true })({} as any, res);
+    await createHealthHandler({ ping: () => Promise.reject(new Error("down")), schemaReady: () => true })(fakeReq, res as unknown as Response);
     expect(res.statusCode).toBe(503);
     expect(res.body).toMatchObject({ ok: false, db: false, schema: true });
   });
@@ -30,7 +46,7 @@ describe("createHealthHandler", () => {
     vi.useFakeTimers();
     try {
       const res = fakeRes();
-      const done = createHealthHandler({ ping: () => new Promise(() => {}), schemaReady: () => true, timeoutMs: 50 })({} as any, res);
+      const done = createHealthHandler({ ping: () => new Promise(() => {}), schemaReady: () => true, timeoutMs: 50 })(fakeReq, res as unknown as Response);
       await vi.advanceTimersByTimeAsync(60);
       await done;
       expect(res.statusCode).toBe(503);
@@ -42,7 +58,7 @@ describe("createHealthHandler", () => {
 
   it("is 503 while migrations are pending", async () => {
     const res = fakeRes();
-    await createHealthHandler({ ping: async () => 1, schemaReady: () => false })({} as any, res);
+    await createHealthHandler({ ping: async () => 1, schemaReady: () => false })(fakeReq, res as unknown as Response);
     expect(res.statusCode).toBe(503);
     expect(res.body).toMatchObject({ ok: false, db: true, schema: false });
   });

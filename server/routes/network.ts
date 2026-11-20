@@ -12,15 +12,30 @@ const run = async (cmd: string): Promise<{ stdout: string; stderr: string }> => 
   try {
     const { stdout, stderr } = await execAsync(cmd, { timeout: 4000 })
     return { stdout: stdout || '', stderr: stderr || '' }
-  } catch (error: any) {
-    return { stdout: error.stdout || '', stderr: error.stderr || '' }
+  } catch (error: unknown) {
+    const e = error as { stdout?: string; stderr?: string } | null
+    return { stdout: e?.stdout || '', stderr: e?.stderr || '' }
   }
+}
+
+interface NetworkIface {
+  ifname: string
+  addr: string[]
+  ipv6: string[]
+  mac: string
+}
+
+interface ListeningPort {
+  proto: string
+  port: number
+  ip: string
+  desc: string
 }
 
 router.get('/metrics/ip-config', async (req, res) => {
   try {
     const includeDocker = req.query.includeDocker === '1'
-    const interfaces: any[] = []
+    const interfaces: NetworkIface[] = []
 
     // Try ip -j addr first (JSON output, available on Ubuntu >= 20.04)
     const { stdout: jsonOut } = await run('ip -j addr')
@@ -74,7 +89,7 @@ router.get('/metrics/ip-config', async (req, res) => {
     if (interfaces.length === 0) {
       const { stdout: lineOut } = await run('ip -o addr')
       const lines = lineOut.split('\n')
-      const ifaceMap = new Map<string, any>()
+      const ifaceMap = new Map<string, NetworkIface>()
 
       for (const line of lines) {
         const parts = line.trim().split(/\s+/)
@@ -96,7 +111,7 @@ router.get('/metrics/ip-config', async (req, res) => {
           ifaceMap.set(ifname, { ifname, addr: [], ipv6: [], mac: '' })
         }
 
-        const iface = ifaceMap.get(ifname)
+        const iface = ifaceMap.get(ifname)!
         if (family === 'inet') {
           iface.addr.push(addr)
         } else if (family === 'inet6' && !addr.startsWith('fe80::')) {
@@ -108,7 +123,7 @@ router.get('/metrics/ip-config', async (req, res) => {
     }
 
     res.json({ interfaces })
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[network] IP config error:', err)
     res.json({ interfaces: [] })
   }
@@ -135,7 +150,7 @@ router.get('/metrics/listening-ports', async (req, res) => {
     const { stdout } = await run('ss -tuln')
     
     const lines = stdout.trim().split('\n').slice(1)
-    const portMap = new Map<string, any>()
+    const portMap = new Map<string, ListeningPort>()
     
     for (const line of lines) {
       const parts = line.trim().split(/\s+/)
@@ -148,7 +163,7 @@ router.get('/metrics/listening-ports', async (req, res) => {
       const lastColon = localAddr.lastIndexOf(':')
       if (lastColon === -1) continue
       
-      const ip = localAddr.substring(0, lastColon).replace(/[\[\]]/g, '') // Remove brackets for IPv6
+      const ip = localAddr.substring(0, lastColon).replace(/[[\]]/g, '') // Remove brackets for IPv6
       const portStr = localAddr.substring(lastColon + 1)
       const port = parseInt(portStr, 10)
       
@@ -178,7 +193,7 @@ router.get('/metrics/listening-ports', async (req, res) => {
     }
     
     res.json({ listening })
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[network] Listening ports error:', err)
     res.json({ listening: [] })
   }
@@ -195,10 +210,11 @@ router.get('/metrics/firewall-status', async (_req, res) => {
       try {
         const result = await execAsync(`${SUDO} ufw status verbose`, { timeout: 15000 })
         stdout = result.stdout || ''
-      } catch (e: any) {
-        stdout = e.stdout || ''
+      } catch (e: unknown) {
+        const errObj = e as { code?: unknown; message?: string; stdout?: string; stderr?: string } | null
+        stdout = errObj?.stdout || ''
         // Without a NOPASSWD rule `sudo -n` fails at once; say so instead of reporting "disabled".
-        if (!stdout && classifyCommandFailure(e, e.stderr) === 'needs-sudoers') {
+        if (!stdout && classifyCommandFailure(errObj, errObj?.stderr) === 'needs-sudoers') {
           return res.json(unavailable('needs-sudoers', SUDOERS_HINT))
         }
       }
@@ -241,7 +257,7 @@ router.get('/metrics/firewall-status', async (_req, res) => {
         const { stdout: portsOut } = await run('firewall-cmd --list-ports')
         const ports = portsOut.trim().split(/\s+/).filter(Boolean)
         
-        const rules: any[] = []
+        const rules: { action: string; proto: string; port: string }[] = []
         for (const portProto of ports) {
           const [port, proto] = portProto.split('/')
           rules.push({
@@ -281,7 +297,7 @@ router.get('/metrics/firewall-status', async (_req, res) => {
     
     // No firewall detected
     res.json(unavailable('not-installed', 'No firewall tool found (ufw, firewalld or nftables).'))
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[network] Firewall status error:', err)
     res.json({
       engine: 'unknown',

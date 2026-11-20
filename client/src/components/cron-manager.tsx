@@ -64,9 +64,7 @@ export default function CronManager() {
   const formatSchedule = (schedule: string): string => {
     const parts = schedule.split(' ');
     if (parts.length !== 5) return schedule;
-    
-    const [minute, hour, day, month, dayOfWeek] = parts;
-    
+
     // Common patterns
     if (schedule === '0 0 * * *') return 'Daily, midnight';
     if (schedule === '0 2 * * 0') return 'Weekly, Sundays 2AM';

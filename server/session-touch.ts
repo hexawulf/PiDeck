@@ -8,7 +8,7 @@
 //
 // The cookie itself is still re-issued on every response (`rolling: true`).
 type TouchCallback = (err?: unknown) => void;
-type TouchableStore = { touch?: (sid: string, session: any, callback?: TouchCallback) => void };
+type TouchableStore = { touch?: (sid: string, session: never, callback?: TouchCallback) => void };
 
 export function throttleTouch<S extends TouchableStore>(
   store: S,

@@ -142,6 +142,7 @@ export function createHostHub({
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         if (passed) {
           // Only a short plain message crosses over, never the agent's whole body.
+          // eslint-disable-next-line no-control-regex -- intentionally strip ASCII control chars
           const msg = typeof body?.message === "string" ? body.message.replace(/[\u0000-\u001f]/g, " ").slice(0, 200) : `Agent answered ${res.status}`;
           return { kind: "status", status: res.status, message: msg };
         }

@@ -1,9 +1,10 @@
+import type { Request } from "express";
 import { describe, expect, it } from "vitest";
 import { clientKey } from "../../server/middleware/rateLimitLogin";
 import { trustCloudflare } from "../../server/config";
 
 const req = (ip: string | undefined, cf?: string | string[]) =>
-  ({ ip, headers: cf === undefined ? {} : { "cf-connecting-ip": cf } }) as any;
+  ({ ip, headers: cf === undefined ? {} : { "cf-connecting-ip": cf } }) as unknown as Request;
 
 describe("login rate limit key", () => {
   it("ignores CF-Connecting-IP by default (client-controlled without Cloudflare)", () => {

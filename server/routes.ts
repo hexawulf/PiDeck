@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, NextFunction, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
 
@@ -33,7 +33,16 @@ import { registerFleetRoutes } from "./routes/fleet";
 import { schemaReady, schemaState } from "./db-schema";
 import { adminPasswordIsDefault, pool } from "./storage";
 import { createHealthHandler } from "./routes/health";
-import { getFirebasePublicConfig, isFirebaseEnabled, verifyFirebaseLogin } from "./services/firebase-auth";
+import { getFirebasePublicConfig, verifyFirebaseLogin } from "./services/firebase-auth";
+
+type AuthSession = Request["session"] & {
+  authenticated?: boolean;
+  userId?: number;
+  createdAt?: number;
+  authMethod?: string;
+  email?: string;
+};
+type AuthRequest = Request & { __loginBypass?: boolean; session: AuthSession };
 
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
@@ -74,7 +83,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.method === "POST" &&
       (url.startsWith("/api/auth/login") || url.startsWith("/auth/login") || url.startsWith("/api/auth/firebase-login"))
     ) {
-      (req as any).__loginBypass = true;
+      (req as AuthRequest).__loginBypass = true;
     }
     next();
   });
@@ -116,9 +125,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // Set session data after regeneration
-        (req.session as any).authenticated = true;
-        (req.session as any).userId = validationResult.user?.id ?? 1;
-        (req.session as any).createdAt = Date.now(); // absolute lifetime (PD-18)
+        const session = req.session as AuthSession;
+        session.authenticated = true;
+        session.userId = validationResult.user?.id ?? 1;
+        session.createdAt = Date.now(); // absolute lifetime (PD-18)
 
         req.session.save((err) => {
           if (err) {
@@ -129,7 +139,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           res.json({
             message: "Login successful",
             authenticated: true,
-            userId: (req.session as any).userId,
+            userId: session.userId,
           });
         });
       });
@@ -151,8 +161,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let identity: Awaited<ReturnType<typeof verifyFirebaseLogin>>;
       try {
         identity = await verifyFirebaseLogin(idToken);
-      } catch (error: any) {
-        console.warn(authLogLine({ method: "google", result: "rejected", ip: clientKey(req), detail: error?.message }));
+      } catch (error: unknown) {
+        const detail = error instanceof Error ? error.message : undefined;
+        console.warn(authLogLine({ method: "google", result: "rejected", ip: clientKey(req), detail }));
         throw error;
       }
 
@@ -162,11 +173,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(500).json({ message: "Session regeneration failed" });
         }
 
-        (req.session as any).authenticated = true;
-        (req.session as any).userId = 1;
-        (req.session as any).createdAt = Date.now(); // absolute lifetime (PD-18)
-        (req.session as any).authMethod = "google-firebase";
-        (req.session as any).email = identity.email;
+        const session = req.session as AuthSession;
+        session.authenticated = true;
+        session.userId = 1;
+        session.createdAt = Date.now(); // absolute lifetime (PD-18)
+        session.authMethod = "google-firebase";
+        session.email = identity.email;
 
         req.session.save((err) => {
           if (err) {
@@ -182,19 +194,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         });
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid input: idToken is required" });
       }
-      const status = typeof error?.status === "number" ? error.status : 401;
-      return res.status(status).json({ message: error?.message || "Firebase login failed" });
+      const errObj = error as { status?: number; message?: string } | null;
+      const status = typeof errObj?.status === "number" ? errObj.status : 401;
+      return res.status(status).json({ message: errObj?.message || "Firebase login failed" });
     }
   });
 
   app.all(["/api/auth/firebase-login", "/api/auth/firebase-login/"], (_req, res) => res.sendStatus(405));
 
   // Optional: block non-GET verb misuse on /api/auth/me (helps avoid compat fallthrough)
-  app.all("*", (req: any, res: any, next: any) => {
+  app.all("*", (req: Request, res: Response, next: NextFunction) => {
     const p = req.path;
     if (req.method !== "GET" && (p === "/api/auth/me" || p === "/api/auth/me/")) return res.sendStatus(405);
     return next();
@@ -204,13 +217,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
    * PD-18: a session past its absolute lifetime, or a Google session whose
    * email left the allowlist, is ended here. Returns true if it still counts.
    */
-  const sessionStillValid = (req: any): boolean => {
-    const v = checkSession(req.session);
+  const sessionStillValid = (req: Request): boolean => {
+    const s = req.session as AuthSession | undefined;
+    const v = checkSession(s);
     if (v.ok) return true;
-    const s = req.session;
     console.warn(`[auth] session ended reason=${v.reason}${s?.email ? ` email=${String(s.email).slice(0, 120)}` : ""} ip=${clientKey(req)}`);
-    s.authenticated = false;
-    s.destroy?.(() => {});
+    if (s) {
+      s.authenticated = false;
+      s.destroy?.(() => {});
+    }
     return false;
   };
 
@@ -231,13 +246,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Pending schema migrations (M0): a banner tells the operator to run --update.
     const maintenance = { dbMigrationsPending: schemaState().checked && !schemaReady() };
     const firebase = getFirebasePublicConfig();
-    if ((req.session as any)?.authenticated && sessionStillValid(req)) {
+    const session = req.session as AuthSession | undefined;
+    if (session?.authenticated && sessionStillValid(req)) {
       // historyHours: how far back history goes (PIDECK_HISTORY_HOURS), so charts offer 3d/7d only when kept.
       res.json({
         authenticated: true,
-        userId: (req.session as any).userId,
-        email: (req.session as any).email,
-        authMethod: (req.session as any).authMethod || "password",
+        userId: session.userId,
+        email: session.email,
+        authMethod: session.authMethod || "password",
         transport,
         maintenance,
         defaultPassword: adminPasswordIsDefault(),
@@ -250,15 +266,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- Auth middleware & wrapper ---
-  const requireAuth = (req: any, res: any, next: any) => {
-    if (req.__loginBypass) return next(); // hard bypass for POST /api/auth/login or /api/auth/firebase-login
-    if (!(req.session as any)?.authenticated || !sessionStillValid(req)) {
+  const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+    if ((req as AuthRequest).__loginBypass) return next(); // hard bypass for POST /api/auth/login or /api/auth/firebase-login
+    if (!(req.session as AuthSession | undefined)?.authenticated || !sessionStillValid(req)) {
       return res.status(401).json({ message: "Authentication required" });
     }
     next();
   };
 
-  const requireAuthUnlessLogin = (req: any, res: any, next: any) => {
+  const requireAuthUnlessLogin = (req: Request, res: Response, next: NextFunction) => {
     const url = (req.originalUrl || req.url || "").toLowerCase();
     if (
       url.startsWith("/api/auth/login") ||
@@ -297,7 +313,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { status, body, logSource } = await hostHub.proxy(req.params.id, req.originalUrl);
     // Audit remote log reads (host, source, user): the pattern H4 uses for remote actions.
     // Throttled per open log (first read, then every 10 min; errors always).
-    const line = logSource ? auditRemoteLogRead({ host: req.params.id, source: logSource, user: (req.session as any)?.userId, ip: req.ip, status }) : null;
+    const line = logSource ? auditRemoteLogRead({ host: req.params.id, source: logSource, user: (req.session as AuthSession | undefined)?.userId, ip: req.ip, status }) : null;
     if (line) console.log(line);
     res.status(status).json(body);
   });
@@ -411,7 +427,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- Password change (protected) ---
-  app.post("/api/auth/change-password", requireAuth, async (req: any, res: any) => {
+  app.post("/api/auth/change-password", requireAuth, async (req: Request, res: Response) => {
     try {
       const parsed = passwordChangeSchema.parse(req.body);
 

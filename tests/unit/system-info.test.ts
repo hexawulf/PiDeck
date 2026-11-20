@@ -5,9 +5,11 @@ vi.mock("../../server/db", () => ({ getDb: () => db }));
 
 import { createRateBaseline, SystemService } from "../../server/services/system";
 
+type SystemServiceInternals = Record<string, (...args: unknown[]) => Promise<unknown>>;
+
 // Replace every collector so no shell commands run.
 function stubCollectors(temperature: number) {
-  const S = SystemService as any;
+  const S = SystemService as unknown as SystemServiceInternals;
   const stubs: Record<string, unknown> = {
     getHostname: "pi", getOS: "Ubuntu", getKernel: "6.8", getArchitecture: "aarch64", getUptime: "1 day",
     getCPUUsage: 12, getMemoryUsage: { used: 1, total: 2, percentage: 50 }, readTemperature: temperature,
@@ -35,7 +37,7 @@ describe("getSystemInfo is read-only", () => {
 
 describe("rate baselines", () => {
   it("are independent per caller", async () => {
-    const S = SystemService as any;
+    const S = SystemService as unknown as { getNetworkBandwidth: (b: ReturnType<typeof createRateBaseline>) => Promise<unknown> };
     const a = createRateBaseline();
     const b = createRateBaseline();
     await S.getNetworkBandwidth(a); // first call primes, waits 500ms, re-reads (real /sys or /proc)

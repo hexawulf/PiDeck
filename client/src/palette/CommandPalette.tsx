@@ -90,10 +90,17 @@ export function CommandPalette({
     return trimmed.slice(0, MAX_RESULTS);
   }, [actions, query]);
 
-  useEffect(() => setActive(0), [query, open]);
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [prevQuery, setPrevQuery] = useState(query);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    setActive(0);
     if (!open) setQuery("");
-  }, [open]);
+  }
+  if (query !== prevQuery) {
+    setPrevQuery(query);
+    setActive(0);
+  }
   const current = results[Math.min(active, results.length - 1)];
   useEffect(() => {
     if (current) optionRefs.current.get(current.id)?.scrollIntoView({ block: "nearest" });

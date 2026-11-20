@@ -35,7 +35,7 @@ router.get('/api/metrics/thermal-zones', (_req, res) => {
     })
 
     res.json(data)
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Thermal data unavailable' })
   }
 })

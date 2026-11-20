@@ -40,7 +40,9 @@ export function useCommandCenter() {
   // Latest state for the handler without re-binding the listener.
   const hostLogs = useHostSummary(host.id)?.logs === true && !host.isLocal;
   const latest = useRef({ path, paused, editing, isWide, hostId: host.id, hostLogs });
-  latest.current = { path, paused, editing, isWide, hostId: host.id, hostLogs };
+  useEffect(() => {
+    latest.current = { path, paused, editing, isWide, hostId: host.id, hostLogs };
+  }, [path, paused, editing, isWide, host.id, hostLogs]);
 
   const run = useCallback(
     (id: ShortcutId) => {

@@ -75,7 +75,7 @@ export class SystemService {
       return await this.collectMetrics(clientBaseline);
     } catch (error) {
       console.error("Error getting system info:", error);
-      throw new Error("Failed to retrieve system information");
+      throw new Error("Failed to retrieve system information", { cause: error });
     }
   }
 
@@ -308,9 +308,8 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
           console.warn(`Invalid temperature reading from thermal_zone0: ${temperatureC}°C`);
         }
       }
-    } catch (error) {
-      // Silently try next method, or log minimally if desired for debugging
-      // console.log('Thermal zone method failed:', error instanceof Error ? error.message : String(error));
+    } catch {
+      // Silently try next method
     }
 
     // Method 2: Fallback to vcgencmd if thermal zone fails
@@ -323,9 +322,8 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       } else if (!isNaN(temp)) {
         console.warn(`Invalid temperature reading from vcgencmd: ${temp}°C`);
       }
-    } catch (error) {
+    } catch {
       // Silently try next method
-      // console.log('vcgencmd method failed:', error instanceof Error ? error.message : String(error));
     }
 
     // Method 3: hwmon (x86 without thermal_zone0, e.g. a Synology: coretemp "Physical id 0")
@@ -342,9 +340,8 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       } else if (!isNaN(temp)) {
         console.warn(`Invalid temperature reading from sensors: ${temp}°C`);
       }
-    } catch (error) {
+    } catch {
       // Silently try next method
-      // console.log('sensors method failed:', error instanceof Error ? error.message : String(error));
     }
 
     // No thermal zone, vcgencmd or lm-sensors reading on this host: report "unavailable" (null), warn once.
@@ -409,9 +406,14 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
   static async getPM2Processes(): Promise<PM2Process[] | null> {
     try {
       const { stdout } = await execAsync("pm2 jlist");
-      const processes = JSON.parse(stdout || "[]");
-      
-      return processes.map((proc: any) => ({
+      const processes = JSON.parse(stdout || "[]") as Array<{
+        pid?: number;
+        name?: string;
+        pm2_env?: { status?: string; pm_uptime?: number };
+        monit?: { cpu?: number; memory?: number };
+      }>;
+
+      return processes.map((proc) => ({
         id: proc.pid || 0,
         name: proc.name || "",
         status: proc.pm2_env?.status || "unknown",
@@ -455,7 +457,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       await execFileAsync("docker", ["restart", containerId], { timeout: 60_000 });
     } catch (error) {
       console.error("Error restarting Docker container:", error);
-      throw new Error("Failed to restart container");
+      throw new Error("Failed to restart container", { cause: error });
     }
   }
 
@@ -467,7 +469,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       await execFileAsync("docker", ["stop", containerId], { timeout: 60_000 });
     } catch (error) {
       console.error("Error stopping Docker container:", error);
-      throw new Error("Failed to stop container");
+      throw new Error("Failed to stop container", { cause: error });
     }
   }
 
@@ -479,7 +481,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       await execFileAsync("docker", ["start", containerId], { timeout: 60_000 });
     } catch (error) {
       console.error("Error starting Docker container:", error);
-      throw new Error("Failed to start container");
+      throw new Error("Failed to start container", { cause: error });
     }
   }
 
@@ -508,7 +510,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       names = await list();
     } catch (error) {
       console.error("Error listing PM2 processes:", error);
-      throw new Error("Failed to list processes");
+      throw new Error("Failed to list processes", { cause: error });
     }
     if (!names.includes(name)) throw new Pm2ActionError(404, "No such pm2 process");
     if (action === "stop" && self && name === self) {
@@ -518,7 +520,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
       await run([action, name]);
     } catch (error) {
       console.error(`Error running pm2 ${action}:`, error);
-      throw new Error(`Failed to ${action} process`);
+      throw new Error(`Failed to ${action} process`, { cause: error });
     }
   }
 
@@ -531,9 +533,9 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
     }
   }
 
-  static async getFilesystemUsage(): Promise<any[]> {
+  static async getFilesystemUsage(): Promise<Array<{ device: string; mount: string; type: string; size: number; used: number; avail: number; pcent: number }>> {
     try {
-      const { stdout } = await execAsync("df -PT --block-size=1 | grep -v '^Filesystem' | grep -v '^tmpfs\|proc\|sysfs\|cgroup\|overlay\|devtmpfs'");
+      const { stdout } = await execAsync("df -PT --block-size=1 | grep -v '^Filesystem' | grep -vE '^(tmpfs|proc|sysfs|cgroup|overlay|devtmpfs)'");
       const lines = stdout.trim().split('\n');
       
       return lines.map(line => {
@@ -557,14 +559,14 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
           avail: Math.round(avail / 1024 / 1024),
           pcent
         };
-      }).filter(fs => fs !== null);
+      }).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
     } catch (error) {
       console.error("Error getting filesystem usage:", error);
       return [];
     }
   }
 
-  static async getMountInfo(): Promise<any[]> {
+  static async getMountInfo(): Promise<Array<{ device: string; mountpoint: string; fstype: string; options: string }>> {
     try {
       const { stdout } = await execAsync("mount | grep -v snap");
       const lines = stdout.trim().split('\n');
@@ -580,7 +582,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
           fstype: match[3],
           options: match[4]
         };
-      }).filter(mount => mount !== null);
+      }).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
     } catch (error) {
       console.error("Error getting mount info:", error);
       return [];
@@ -611,7 +613,7 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
     }
   }
 
-  static async getTopProcesses(n: number = 10): Promise<any[]> {
+  static async getTopProcesses(n: number = 10): Promise<PsRow[]> {
     const count = Math.max(1, Math.min(Math.floor(n), 100));
     try {
       return await this.topByCpu(count);

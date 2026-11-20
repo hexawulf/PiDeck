@@ -30,7 +30,8 @@ const JOURNAL_TIMEOUT_MS = 4000;
 /** Room for the rest of the JSON answer (id, label, flags). */
 const ANSWER_OVERHEAD = 4 * 1024;
 /** Terminal colour/cursor sequences (docker logs are full of them). */
-const ANSI = /\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+// eslint-disable-next-line no-control-regex -- intentionally strip ANSI escape sequences
+const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
 export type FileSource = { id: string; label: string; kind: "file"; pattern: string };
 export type JournalSource = { id: string; label: string; kind: "journal"; unit: string; user: boolean };

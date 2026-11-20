@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type Dispatch, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type ReactNode } from "react";
 import { toast } from "@/hooks/use-toast";
 import { RefreshCtx } from "./refresh-context";
 import { WIDGETS } from "@/widgets/registry";
@@ -117,26 +117,25 @@ function announce(issue: LoadIssue | null) {
 }
 
 export function UiPrefsProvider({ children, store = browserStore() }: { children: ReactNode; store?: Store | null }) {
-  const initial = useRef<ReturnType<typeof loadPrefs>>();
-  if (!initial.current) initial.current = loadPrefs(store, WIDGETS);
+  const [initial] = useState(() => loadPrefs(store, WIDGETS));
   const [state, dispatch] = useReducer(uiPrefsReducer, undefined, (): UiPrefsState => {
-    const reason = loadResetReason(initial.current!.issue);
-    return { ...initial.current!.prefs, paused: false, editing: false, lastReset: reason ? stamp(reason) : null };
+    const reason = loadResetReason(initial.issue);
+    return { ...initial.prefs, paused: false, editing: false, lastReset: reason ? stamp(reason) : null };
   });
 
   // Toast load problems once (StrictMode runs effects twice in dev).
   const announced = useRef(false);
-  const blocked = useRef(initial.current.issue?.kind === "blocked");
+  const blocked = useRef(initial.issue?.kind === "blocked");
   useEffect(() => {
     if (announced.current) return;
     announced.current = true;
-    announce(initial.current!.issue);
-  }, []);
+    announce(initial.issue);
+  }, [initial.issue]);
 
   // Persist on every change to a persisted section. Discrete events only —
   // the grid dispatches setLayout on drag/resize stop, never while dragging (E21).
   const { layout, hidden, density, speed, pins, layoutByHost } = state;
-  const lastSaved = useRef(serializePrefs(initial.current.prefs));
+  const lastSaved = useRef(serializePrefs(initial.prefs));
   const quotaWarned = useRef(false);
   useEffect(() => {
     const prefs = { layout, hidden, density, speed, pins, layoutByHost };

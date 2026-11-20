@@ -130,14 +130,34 @@ export default function RemoteLogs() {
 
   const lastKey = `logViewer:lastRemote:${host.id}`;
   const [selected, setSelected] = useState<string | null>(() => {
+    const wanted = new URLSearchParams(search).get("log");
+    if (wanted) return wanted;
     try {
       return localStorage.getItem(lastKey);
     } catch {
       return null;
     }
   });
-  const [filterDraft, setFilterDraft] = useState("");
-  const [filter, setFilter] = useState("");
+  const [filterDraft, setFilterDraft] = useState(() => {
+    const p = new URLSearchParams(search);
+    return p.get("log") ? (p.get("grep") ?? "") : "";
+  });
+  const [filter, setFilter] = useState(() => {
+    const p = new URLSearchParams(search);
+    return p.get("log") ? (p.get("grep") ?? "") : "";
+  });
+  const [prevSearch, setPrevSearch] = useState(search);
+  if (search !== prevSearch) {
+    setPrevSearch(search);
+    const p = new URLSearchParams(search);
+    const wanted = p.get("log");
+    if (wanted) {
+      const grep = p.get("grep") ?? "";
+      setSelected(wanted);
+      setFilterDraft(grep);
+      setFilter(grep);
+    }
+  }
   const [lines, setLines] = useState<number>(200);
 
   const list = useQuery({
@@ -146,15 +166,9 @@ export default function RemoteLogs() {
     refetchInterval: listRefetch,
   });
 
-  // ?log=<id>[&grep=…] (pins, palette): open it once, then drop the query.
+  // ?log=<id>[&grep=…] (pins, palette): consume the query once applied above.
   useEffect(() => {
-    const p = new URLSearchParams(search);
-    const wanted = p.get("log");
-    if (!wanted) return;
-    const grep = p.get("grep") ?? "";
-    setSelected(wanted);
-    setFilterDraft(grep);
-    setFilter(grep);
+    if (!new URLSearchParams(search).get("log")) return;
     navigate(hostHref(host.id, "logs"), { replace: true });
   }, [search, host.id, navigate]);
 
@@ -166,7 +180,7 @@ export default function RemoteLogs() {
     }
   }, [selected, lastKey]);
 
-  const sources = list.data?.sources ?? [];
+  const sources = useMemo(() => list.data?.sources ?? [], [list.data?.sources]);
   const current = sources.find((s) => s.id === selected) ?? null;
   const tail = useQuery({
     queryKey: widgetQueryKey(host.id, tailUrl(selected ?? "none", lines, filter)),

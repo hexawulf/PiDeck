@@ -57,15 +57,8 @@ const SettingsPanel: React.FC = () => {
     // isChangingPassword is handled by useAuth hook now
   };
 
-  // Display general error from the hook if it exists and no specific form message is set
-  // This is less common for form submissions but can be a fallback.
-  // Usually, the catch block in onSubmit is sufficient.
-  React.useEffect(() => {
-    if (changePasswordError && !message) {
-      setMessage({ type: 'error', text: changePasswordError || "An unexpected error occurred." });
-    }
-  }, [changePasswordError, message]);
-
+  const displayedMessage =
+    message ?? (changePasswordError ? { type: 'error' as const, text: changePasswordError } : null);
 
   return (
     <Card className="w-full max-w-lg mx-auto bg-pi-card border-pi-border">
@@ -77,11 +70,11 @@ const SettingsPanel: React.FC = () => {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          {message && (
-            <Alert variant={message.type === 'error' ? 'destructive' : 'default'} className={message.type === 'success' ? 'border-green-500 text-green-700 dark:border-green-600 dark:text-green-400' : ''}>
-              {message.type === 'success' ? <ShieldCheck className="h-4 w-4" /> : <ShieldAlert className="h-4 w-4" />}
-              <AlertTitle>{message.type === 'success' ? 'Success' : 'Error'}</AlertTitle>
-              <AlertDescription>{message.text}</AlertDescription>
+          {displayedMessage && (
+            <Alert variant={displayedMessage.type === 'error' ? 'destructive' : 'default'} className={displayedMessage.type === 'success' ? 'border-green-500 text-green-700 dark:border-green-600 dark:text-green-400' : ''}>
+              {displayedMessage.type === 'success' ? <ShieldCheck className="h-4 w-4" /> : <ShieldAlert className="h-4 w-4" />}
+              <AlertTitle>{displayedMessage.type === 'success' ? 'Success' : 'Error'}</AlertTitle>
+              <AlertDescription>{displayedMessage.text}</AlertDescription>
             </Alert>
           )}
 

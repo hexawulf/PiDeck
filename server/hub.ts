@@ -150,15 +150,15 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
   }
 
   // ---------- Error handler ----------
-  app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
-    const status = err?.status || err?.statusCode || 500;
-    const message = err?.message || "Internal Server Error";
+  app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+    const httpErr = err as { status?: number; statusCode?: number; message?: string } | null;
+    const status = httpErr?.status || httpErr?.statusCode || 500;
+    const message = httpErr?.message || "Internal Server Error";
     if (req.path.startsWith("/api")) {
       res.status(status).json({ message });
     } else {
       res.status(status).send("Internal error");
     }
-    // eslint-disable-next-line no-console
     console.error(err);
   });
 

@@ -73,14 +73,13 @@ export function agentLogsPathFromHubUrl(rawUrl: string, hostId: string): LogsReq
   const q = rawUrl.indexOf("?");
   const pathPart = (q === -1 ? rawUrl : rawUrl.slice(0, q)).slice(prefix.length);
   const query = q === -1 ? "" : rawUrl.slice(q + 1);
-  let sourceId: string | null = null;
   if (pathPart === "" || pathPart === "/") {
     if (query) return { error: "The source list takes no parameters" };
     return { path: "/api/agent/logs", sourceId: null };
   }
   const m = /^\/([a-z0-9_-]{1,64})$/.exec(pathPart);
   if (!m) return null;
-  sourceId = m[1];
+  const sourceId = m[1];
   if (query.includes("#")) return { error: "Bad query" };
   let params: URLSearchParams;
   try {

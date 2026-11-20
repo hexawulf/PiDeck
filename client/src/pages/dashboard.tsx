@@ -61,13 +61,13 @@ export default function Dashboard() {
     const onKey = (e: KeyboardEvent) => {
       // Esc inside a dialog (palette, confirm) only closes that dialog.
       if (e.key === "Escape" && !document.querySelector('[role="dialog"], [role="alertdialog"]')) {
-        setEditing(false);
+        dispatch({ type: "setEditing", editing: false });
         editToggle.current?.focus();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editing]);
+  }, [editing, dispatch]);
 
   // After a keyboard move the card's DOM node moves; put focus back on the
   // button that was pressed (or its sibling if that one is now disabled).

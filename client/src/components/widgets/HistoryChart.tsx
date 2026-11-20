@@ -81,9 +81,11 @@ export function HistoryChart({ id, label, series, current }: { id: string; label
   const query = useHistory(long ? range : undefined);
   const tick = long ? formatDayClock : formatClock;
 
+  const [mountTime] = useState(() => Date.now());
+  const now = query.dataUpdatedAt || mountTime;
+
   // Recompute only when a new history payload arrives or the range changes.
   const { points, scale, domain } = useMemo(() => {
-    const now = Date.now();
     const points = query.data ? toChartPoints(query.data, series, rangeMs, now) : [];
     let max = 0;
     for (const p of points) for (const s of series) max = Math.max(max, p[s.key] ?? 0);
@@ -98,7 +100,7 @@ export function HistoryChart({ id, label, series, current }: { id: string; label
       return q;
     });
     return { points: scaled, scale, domain: [now - rangeMs, now] as [number, number] };
-  }, [query.data, series, rangeMs]);
+  }, [query.data, series, rangeMs, now]);
 
   return (
     <div className="flex h-full flex-col gap-2">

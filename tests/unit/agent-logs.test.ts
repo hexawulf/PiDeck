@@ -28,7 +28,6 @@ const write = (name: string, text: string) => {
   fs.writeFileSync(p, text);
   return p;
 };
-const quiet = () => {};
 
 // ── fake Docker Engine on a unix socket ──────────────────────────────────
 const frame = (stream: 1 | 2, text: string) => {
