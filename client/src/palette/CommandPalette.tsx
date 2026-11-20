@@ -121,6 +121,11 @@ export function CommandPalette({
     } else if (e.key === "Enter") {
       e.preventDefault();
       run(current);
+    } else if (e.key === "Escape" && !e.defaultPrevented) {
+      // Handle Escape directly on the combobox so an immediate Escape press
+      // right after focus cannot race Radix DismissableLayer's layer-registration effect.
+      e.preventDefault();
+      onOpenChange(false);
     }
   };
 
