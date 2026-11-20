@@ -2,8 +2,10 @@ import { defineConfig, devices } from "@playwright/test";
 
 // E2E runs against a separate build on :5017 (5007 is PiTasker) (scripts/e2e-server.sh), never prod.
 // X-Forwarded-Proto mimics nginx so the `secure` session cookie is issued.
+// PW_CHROMIUM: optional browser binary path to use instead of Playwright's download.
 const PORT = Number(process.env.E2E_PORT || 5017);
 const baseURL = `http://localhost:${PORT}`;
+const executablePath = process.env.PW_CHROMIUM || undefined;
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -16,6 +18,7 @@ export default defineConfig({
     baseURL,
     extraHTTPHeaders: { "X-Forwarded-Proto": "https" },
     screenshot: "only-on-failure",
+    launchOptions: executablePath ? { executablePath } : undefined,
   },
   projects: [
     { name: "setup", testMatch: /auth\.setup\.ts/ },

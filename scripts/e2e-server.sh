@@ -4,15 +4,17 @@
 #              Never writes dist/ (prod, served by pm2 on :5006). Logs in with a
 #              throwaway password from .e2e/password via APP_PASSWORD_FILE;
 #              APP_PASSWORD is forced empty so a prod value in .env is ignored.
-#              PIDECK_SAMPLER=off: this build shares the prod database, and
-#              its sampler would double the prod history rows.
-#              PIDECK_DISABLE_SYSTEM_UPDATE=1: it also shares the prod host, so
-#              POST /api/system/update answers 409 instead of running apt.
+#              When PIDECK_TEST_PG_URL is set (CI and scratch local runs), a
+#              clean pideck_e2e database is recreated and migrated before boot.
+#              PIDECK_SAMPLER=off: prevents the 60s sampler from writing rows
+#              while tests run.
+#              PIDECK_DISABLE_SYSTEM_UPDATE=1: POST /api/system/update answers
+#              409 instead of running apt.
 #              Also starts two read-only agents (PIDECK_MODE=agent) on
 #              127.0.0.1:5018/5019 and points the hub at them (multi-host);
 #              the first serves remote logs from test fixtures (.e2e/agent-logs).
-# Modified:    2026-09-28
-# Usage:       scripts/e2e-server.sh [--dry-run]
+# Modified:    2026-11-20
+# Usage:       [PIDECK_TEST_PG_URL=postgres://…] scripts/e2e-server.sh [--dry-run]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,6 +25,7 @@ LOGDIR="$HOME/logs"; LOG="$LOGDIR/pideck-e2e-server-$(date +%Y%m%d-%H%M%S).log"
 
 if [ "${1:-}" = "--dry-run" ]; then
   echo "would build client → $OUT/public, server → $OUT/index.js"
+  [ -n "${PIDECK_TEST_PG_URL:-}" ] && echo "would recreate scratch database pideck_e2e from PIDECK_TEST_PG_URL"
   echo "would serve on :$PORT with APP_PASSWORD_FILE=$PWFILE (log: $LOG)"
   echo "would start e2e agents on 127.0.0.1:${E2E_AGENT_PORT:-5018} and :$(( ${E2E_AGENT_PORT:-5018} + 1 ))"
   exit 0
@@ -34,6 +37,46 @@ chmod 700 "$ROOT/.e2e"
 [ -s "$PWFILE" ] || { (umask 077; openssl rand -base64 24 > "$PWFILE"); }
 
 cd "$ROOT"
+
+DB_ENV=()
+if [ -n "${PIDECK_TEST_PG_URL:-}" ]; then
+  DB_URL="$(node -e 'const u=new URL(process.argv[1]); u.pathname="/pideck_e2e"; console.log(u.toString())' "$PIDECK_TEST_PG_URL")"
+  node -e '
+const pg = require("pg");
+(async () => {
+  const c = new pg.Client({ connectionString: process.argv[1] });
+  await c.connect();
+  await c.query("DROP DATABASE IF EXISTS pideck_e2e WITH (FORCE)");
+  await c.query("CREATE DATABASE pideck_e2e");
+  await c.end();
+})().catch((e) => { console.error(e.message); process.exit(1); });' "$PIDECK_TEST_PG_URL"
+  DATABASE_URL="$DB_URL" node scripts/migrate.mjs >>"$LOG" 2>&1
+  # Seed a few recent history samples for the hub so chart rendering tests
+  # (e.g. theme.spec.ts) see real curves even with PIDECK_SAMPLER=off.
+  # SQL $1..$9 placeholders live inside a single-quoted node script.
+  # shellcheck disable=SC2016
+  node -e '
+const pg = require("pg");
+(async () => {
+  const c = new pg.Client({ connectionString: process.argv[1] });
+  await c.connect();
+  const now = Date.now();
+  for (let i = 5; i >= 1; i--) {
+    const ts = new Date(now - i * 60_000).toISOString().replace("Z", "");
+    await c.query(
+      "INSERT INTO historical_metrics (timestamp, cpu_usage, memory_usage, temperature, disk_read_speed, disk_write_speed, network_rx, network_tx, host_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+      [ts, 18 + i * 2, 42 + i, 48 + i, 120 + i * 25, 80 + i * 15, 240 + i * 40, 110 + i * 20, "local"],
+    );
+  }
+  await c.end();
+})().catch((e) => { console.error(e.message); process.exit(1); });' "$DB_URL"
+  DB_ENV=(
+    "DATABASE_URL=$DB_URL"
+    "SESSION_SECRET=e2e-session-secret-test-only-0123456789abcdef"
+    "PIDECK_LOGS_DIR=$LOGDIR"
+  )
+fi
+
 npx vite build --outDir "$OUT/public" --emptyOutDir >>"$LOG" 2>&1
 # --splitting: the hub and the agent (PIDECK_MODE=agent) load separate chunks,
 # so an agent never loads the hub's packages. Stale chunks are removed first.
@@ -97,6 +140,7 @@ start_agent "$((AGENT_PORT + 1))" "another-agents-token-test-only-0123456789"
 
 echo "serving dist-dev on :$PORT with e2e agents on :$AGENT_PORT-$((AGENT_PORT + 2)) (log: $LOG)"
 env PATH="$FAKE_PATH" FAKE_SYSTEMCTL_LOG="$FAKE_SYSTEMCTL_LOG" PIDECK_SERVICES=nginx,ssh \
+  "${DB_ENV[@]}" \
   NODE_ENV=production CSP_ENFORCE=true PIDECK_SAMPLER=off PIDECK_DISABLE_SYSTEM_UPDATE=1 PORT="$PORT" APP_PASSWORD= APP_PASSWORD_FILE="$PWFILE" \
   PIDECK_HOSTS="e2e-agent=http://127.0.0.1:$AGENT_PORT,e2e-badtoken=http://127.0.0.1:$((AGENT_PORT + 1)),e2e-offline=http://127.0.0.1:$((AGENT_PORT + 2))" \
   PIDECK_HOST_TOKEN_E2E_AGENT="$AGENT_TOKEN" \

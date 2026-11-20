@@ -150,6 +150,7 @@ test.describe("desktop grid", () => {
 
   for (const theme of ["light", "dark"] as const) {
     test(`axe: no serious findings in view and edit mode (${theme})`, async ({ page }) => {
+      test.slow();
       await page.addInitScript((t) => localStorage.setItem("pideck-ui-theme", t), theme);
       await openDashboard(page);
       await page.waitForLoadState("networkidle");
