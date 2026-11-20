@@ -19,12 +19,13 @@ npm run dev:client       # Client only (Vite dev server)
 # Build for production
 npm run build            # Builds client + server bundle
 
-# Type checking (REQUIRED before PR)
+# Type checking and linting (REQUIRED before PR)
 npm run check
+npm run lint
 
 # Installer (production install on a host): see docs/INSTALL.md
 ./scripts/install.sh --dry-run
-npm run check:shell      # shellcheck scripts/*.sh tests/install/*.sh
+npm run check:shell      # shellcheck -x -a -P SCRIPTDIR scripts/*.sh tests/install/*.sh
 npm run test:install     # installer tests, no root (PATH stubs)
 
 # Database migrations (never `db:push` on a real install; see server/AGENTS.md)
@@ -38,7 +39,7 @@ PIDECK_TEST_PG_URL=postgres://postgres@127.0.0.1:5432/postgres npx vitest run
 
 ### Code Style
 - **TypeScript strict mode** enabled (`tsconfig.json`)
-- **No linter configured** - follow existing patterns in similar files
+- **ESLint** configured (`eslint.config.js`: `@eslint/js` + `typescript-eslint` + `eslint-plugin-react-hooks` for `client/src`) — run `npm run lint`
 - **Prettier**: Not configured, maintain consistency with surrounding code
 - **Imports**: Use path aliases `@/*` (client), `@shared/*` (shared types)
 
@@ -46,7 +47,7 @@ PIDECK_TEST_PG_URL=postgres://postgres@127.0.0.1:5432/postgres npx vitest run
 - **Commit format**: Conventional Commits recommended (feat:, fix:, chore:)
 - **Branch strategy**: Work on feature branches, merge to `main`
 - **PR requirements**: 
-  - ✅ Must pass `npm run check`
+  - ✅ Must pass `npm run check` and `npm run lint`
   - ✅ Test manually with `npm run dev`
   - ✅ No secrets/credentials in commits
 
@@ -112,12 +113,12 @@ rg -n "useQuery|useMutation" client/src/hooks
 
 ## Definition of Done
 Before creating a PR, verify:
-- [ ] `npm run check` passes (no TypeScript errors)
+- [ ] `npm run check` and `npm run lint` pass (no TypeScript or ESLint errors)
 - [ ] Code follows patterns from similar files (see sub-AGENTS.md)
 - [ ] No secrets/credentials in code or logs
 - [ ] Tested locally with `npm run dev`
 - [ ] API changes have corresponding type updates in `shared/schema.ts`
-- [ ] Touched `scripts/*.sh` or `deploy/`? `npm run check:shell` and `npm run test:install` pass
+- [ ] Touched `scripts/*.sh`, `scripts/install/*.sh`, or `deploy/`? `npm run check:shell` and `npm run test:install` pass
 
 ## Architecture Overview
 ```

@@ -119,12 +119,13 @@ npm run dev                         # http://localhost:5006, log in as admin / a
 ### Running tests
 ```bash
 npm run check          # TypeScript
+npm run lint           # ESLint (TS + React hooks)
 npm test               # unit tests (Vitest)
 npm run check:theme    # theme-token lint
-npm run check:shell    # shellcheck (installer scripts)
+npm run check:shell    # shellcheck (installer scripts & modules)
 npm run test:install   # installer tests (no root needed)
 npx playwright install chromium
-npm run test:e2e       # E2E on a separate build at :5017, never the prod dist/
+npm run test:e2e       # E2E on a separate build at :5017 (set PIDECK_TEST_PG_URL for a scratch DB)
 ```
 
 ## 📖 Usage
