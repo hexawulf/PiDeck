@@ -32,6 +32,7 @@ new_sandbox() {
     cd "$W/src" || exit 1
     mkdir -p scripts deploy
     cp "$ROOT/scripts/install.sh" "$ROOT/scripts/uninstall.sh" scripts/
+    cp -r "$ROOT/scripts/install" scripts/
     cp "$ROOT/tests/install/fake-helper.mjs" scripts/install-helper.mjs
     cp "$ROOT/tests/install/fake-migrate.mjs" scripts/migrate.mjs
     cp -r "$ROOT/deploy/." deploy/
@@ -222,7 +223,7 @@ inst --dry-run "${STD[@]}" --sudoers --lan-http --nvme-device /dev/nvme0 || bad 
 check "tree + \$HOME + /etc unchanged" test "$before" = "$(tree_sum)"
 check "prints what it would do" grep -q '\[dry-run\] would' "$W/out"
 check "no sudo/apt/psql/pm2 calls" test ! -s "$W/state/calls"
-check "prompts go to /dev/tty, never to a silenced stderr" bash -c "! grep -nE 'read -r[^|]*-p .*2>/dev/null' '$ROOT/scripts/install.sh' '$ROOT/scripts/uninstall.sh'"
+check "prompts go to /dev/tty, never to a silenced stderr" bash -c "! grep -nE 'read -r[^|]*-p .*2>/dev/null' '$ROOT/scripts/install.sh' '$ROOT/scripts/install/'*.sh '$ROOT/scripts/uninstall.sh'"
 check "dry-run log kept out of \$HOME" test ! -e "$W/home/logs"
 uninst --dry-run --purge || bad "uninstall dry run exit $?"
 check "uninstall --dry-run --purge changes nothing" test "$before" = "$(tree_sum)"
@@ -384,6 +385,11 @@ check "…one dist backup and one pull, then build and restart" bash -c "[ \"\$(
 check "…rollback still targets the build that was running" grep -q "git reset --keep $built " "$W/out"
 check "…one log file, no line written twice" bash -c "[ \"\$(grep -c 'the pull changed scripts/install.sh' '$log')\" = 1 ] && [ \"\$(grep -c 'continuing with the updated installer' '$log')\" = 1 ]"
 check "…no temp dir left behind" bash -c "! ls -d '$W'/tmp/pideck-install.* >/dev/null 2>&1"
+# A pulled change inside scripts/install/*.sh also triggers re-exec once.
+( cd "$W/src" && printf '\n# module v4\n' >> scripts/install/update.sh && git -c user.name=t -c user.email=t@t commit -qam "installer module v4" )
+: > "$W/state/calls"
+inst --update || { bad "update with a changed installer module exit $?"; tail -n 20 "$W/out"; }
+check "a pulled scripts/install/*.sh module also re-execs once" bash -c "grep -q 'the pull changed scripts/install.sh' '$W/out' && [ \"\$(grep -c 'continuing with the updated installer' '$W/out')\" = 1 ] && grep -q '# module v4' '$APP/scripts/install/update.sh'"
 ( cd "$W/src" && echo "// v3" >> ecosystem.config.cjs && git -c user.name=t -c user.email=t@t commit -qam v3 )
 touch "$W/state/migrate-fail"; : > "$W/state/calls"
 if inst --update; then bad "a failing migration was accepted"; else ok "a failing migration stops the update"; fi
