@@ -726,11 +726,24 @@ steps are manual. The agent runs as an admin user (here `zk`) from
    npm ci && npm run build
    { git archive --format=tar HEAD; tar -cf - dist; } | gzip \
      | ssh -p <port> root@<nas> 'mkdir -p /var/services/homes/zk/pideck-agent &&
-         tar -xzf - -C /var/services/homes/zk/pideck-agent &&
+         tar -xzif - -C /var/services/homes/zk/pideck-agent &&
          chown -R zk: /var/services/homes/zk/pideck-agent'
    ```
-   Then, as `zk` on the NAS: `cd ~/pideck-agent && $NPM ci --omit=dev`
-   (native modules build there for x86_64).
+   The stream holds **two** tar archives in a row (the release, then
+   `dist/`). Plain `tar -x` stops at the end of the first one and leaves
+   `dist/` out without an error, so keep the `-i` (`--ignore-zeros`), and
+   check that `dist/index.js` is there afterwards.
+
+   Then, as `zk` on the NAS, install the runtime dependencies (native
+   modules build there for x86_64):
+   ```bash
+   cd ~/pideck-agent
+   export PATH=/var/packages/Node.js_v22/target/usr/local/bin:$PATH
+   $NPM exec --yes --package=npm@11 -- npm ci --omit=dev
+   ```
+   The Node.js v22 package ships npm 10, and its `npm ci` rejects the npm 11
+   `package-lock.json` (`EUSAGE … Missing: <pkg> from lock file`). `npm exec`
+   fetches npm 11 once (CI uses 11.13) and runs it with the package's node.
 3. **`.env`** next to the script, mode 0600, owned by `zk`:
    ```
    PIDECK_MODE=agent
@@ -765,10 +778,16 @@ What to expect on DSM:
 - **Docker** widgets and Docker logs work when the agent user is in the
   `docker` group. That group is root-equivalent, so the agent only ever makes
   two read-only Docker API calls (container list, container logs).
+  Container Manager does not always create the group: if `/var/run/docker.sock`
+  is `root:root`, run (as root) `synogroup --add docker zk` and
+  `chgrp docker /var/run/docker.sock`. No Container Manager restart is
+  needed; dockerd gives the socket the `docker` group by itself at its next
+  start once the group exists.
 - **`/var/log/messages`** is `system:log 660`: add the agent user to `log`
   (`synogroup --memberadd log zk`, then restart the agent) to include it.
   Check this again after DSM updates, which may reset system groups.
-- **Updating**: repeat step 2 with the new release, `$NPM ci --omit=dev`,
+- **Updating**: repeat step 2 with the new release (including the
+  `npm exec --package=npm@11 -- npm ci --omit=dev` step),
   then `kill "$(cat ~/pideck-agent/agent.pid)"; pkill -u zk -f 'pideck-agent/dist/index.js'`
   and run the start script again. Update agents before the hub.
 
