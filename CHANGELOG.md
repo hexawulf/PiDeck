@@ -5,6 +5,21 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.0] - 2026-11-22
+
+Platform upgrades from the Dependabot backlog. No feature changes.
+
+### Changed
+- **Express 5** (5.3) with `@types/express` 5: routes use path-to-regexp v8 syntax (`/{*splat}`, `/api/hosts/:id/{*rest}`, `/api/hosts/{*rest}`) with the same matching as before. The host proxy still hands the raw `req.originalUrl` to the allowlist; `/api/hosts/<id>` without a path still gets the 404 catch-all and non-GET still gets 405 (#87).
+- **React 19** (19.3) with matching `@types/react` / `@types/react-dom` (#88).
+- Dependency updates: the minor/patch group (radix-ui, tanstack-query, drizzle-orm 0.45.4, pg 8.23, wouter 3.13, Playwright 1.65, Tailwind vite 4.3, firebase 0.16.7/1.13.11 matching the firebase 13.4 bundle …), vitest 5.1.1, jsdom 31, lucide-react 1.x (#73, #74, #85, #86).
+
+### Security
+- Dependabot alerts closed (dev tooling): postcss-selector-parser 6.1.6 and esbuild 0.25.12 for drizzle-kit's loader, via overrides (#89). `npm audit`: 0.
+
+### Upgrade notes
+- Hub only. Agents keep working unchanged; update each one with `./scripts/install.sh --update` on the agent host (prebuilt-bundle agents: rebuild the bundle and re-run `--agent --prebuilt`, see docs/INSTALL.md › Updating an agent) when convenient.
+
 ## [2.11.0] - 2026-11-13
 
 PD-16, PD-17 and PD-18, the last findings of the 2026-11-13 audit.
