@@ -105,7 +105,7 @@ export function WidgetFrame({
 }
 
 /** True while the element's content is taller or wider than its box. */
-function useOverflow(ref: React.RefObject<HTMLElement>): boolean {
+function useOverflow(ref: React.RefObject<HTMLElement | null>): boolean {
   const [over, setOver] = useState(false);
   useEffect(() => {
     const el = ref.current;
