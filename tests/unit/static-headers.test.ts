@@ -43,7 +43,7 @@ describe("hub static wiring", () => {
     serveStatic(app, dir);
     app.get("/api/known", (_req, res) => res.json({ ok: true }));
     app.use("/api", (_req, res) => res.status(404).json({ message: "Not found" }));
-    app.get("*", (_req, res) => {
+    app.get("/{*splat}", (_req, res) => {
       res.setHeader("Cache-Control", "no-cache");
       res.sendFile(path.join(dir, "index.html"));
     });
