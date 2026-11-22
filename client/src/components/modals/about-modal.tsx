@@ -93,7 +93,7 @@ export default function AboutModal() {
             <ul className="list-disc list-inside space-y-1">
               <li>Backend: Node.js, Express.js, TypeScript</li>
               <li>Metrics: /proc and /sys, read directly</li>
-              <li>Frontend: React 18, Vite, TypeScript</li>
+              <li>Frontend: React 19, Vite, TypeScript</li>
               <li>Styling: TailwindCSS, Shadcn/ui</li>
               <li>State Management: TanStack Query, zod-validated widgets</li>
               <li>Charts: Recharts</li>

@@ -2,7 +2,7 @@
 
 ## Project Snapshot
 - **Type**: Single full-stack web application (not a monorepo)
-- **Stack**: React 18 + Express + TypeScript + Vite + Drizzle ORM + PostgreSQL
+- **Stack**: React 19 + Express + TypeScript + Vite + Drizzle ORM + PostgreSQL
 - **Purpose**: Raspberry Pi system monitoring and management dashboard
 - **Structure**: `/client` (React SPA), `/server` (Express API), `/shared` (types/schema)
 - **Sub-packages**: See [client/AGENTS.md](client/AGENTS.md), [server/AGENTS.md](server/AGENTS.md), [shared/AGENTS.md](shared/AGENTS.md)
