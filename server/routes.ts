@@ -207,7 +207,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.all(["/api/auth/firebase-login", "/api/auth/firebase-login/"], (_req, res) => res.sendStatus(405));
 
   // Optional: block non-GET verb misuse on /api/auth/me (helps avoid compat fallthrough)
-  app.all("*", (req: Request, res: Response, next: NextFunction) => {
+  app.all("/{*splat}", (req: Request, res: Response, next: NextFunction) => {
     const p = req.path;
     if (req.method !== "GET" && (p === "/api/auth/me" || p === "/api/auth/me/")) return res.sendStatus(405);
     return next();
@@ -307,7 +307,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(await hostHub.list());
   });
   const auditRemoteLogRead = createRemoteLogAudit();
-  app.get("/api/hosts/:id/*", requireAuth, async (req, res) => {
+  app.get<{ id: string; rest?: string[] }>("/api/hosts/:id/{*rest}", requireAuth, async (req, res) => {
     // originalUrl is the raw path as sent: the allowlist check must see any
     // %-encoding, not Express's decoded req.params.
     const { status, body, logSource } = await hostHub.proxy(req.params.id, req.originalUrl);
@@ -317,7 +317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (line) console.log(line);
     res.status(status).json(body);
   });
-  app.all("/api/hosts/*", requireAuth, (req, res) =>
+  app.all("/api/hosts/{*rest}", requireAuth, (req, res) =>
     req.method === "GET"
       ? res.status(404).json({ message: "Not found" })
       : res.status(405).json({ message: "Remote hosts are read-only" }),

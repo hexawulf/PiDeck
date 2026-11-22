@@ -75,7 +75,7 @@ export function createAgentApp(opts: {
       next(err);
     }
   });
-  app.get("/api/agent/logs/:id", logsOff, async (req, res, next) => {
+  app.get<{ id: string }>("/api/agent/logs/:id", logsOff, async (req, res, next) => {
     try {
       const { lines, filter } = parseTailQuery(req.query as Record<string, unknown>);
       res.json(await readSource(logs, req.params.id, lines, filter));

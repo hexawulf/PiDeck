@@ -141,7 +141,7 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
 
   if (SERVE_BUILD) {
     // ---------- SPA fallback (public): client-side routes get index.html ----------
-    app.get("*", (_req, res) => {
+    app.get("/{*splat}", (_req, res) => {
       res.setHeader("Cache-Control", "no-cache");
       res.sendFile(path.join(staticDir, "index.html"));
     });
