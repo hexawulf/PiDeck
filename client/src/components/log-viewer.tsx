@@ -53,7 +53,7 @@ const LOG_LEVEL_REGEX = /(\b(ERROR|WARN|INFO|DEBUG|SUCCESS)\b)/gi;
 const LogLineHighlighter: React.FC<{ line: string }> = ({ line }) => {
   if (!line.trim()) return <>{"\u00A0"}</>;
 
-  const parts: (string | JSX.Element)[] = [];
+  const parts: (string | React.JSX.Element)[] = [];
   let lastIndex = 0;
 
   const combinedRegex = new RegExp(
