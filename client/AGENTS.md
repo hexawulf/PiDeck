@@ -1,7 +1,7 @@
 # Client (React Frontend) - Agent Instructions
 
 ## Package Identity
-**What**: React 18 SPA for PiDeck system monitoring dashboard  
+**What**: React 19 SPA for PiDeck system monitoring dashboard  
 **Tech**: TypeScript, Vite, TailwindCSS, TanStack Query, Wouter, Shadcn/ui
 
 ## Setup & Run

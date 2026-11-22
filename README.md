@@ -72,7 +72,7 @@ A sleek, full-stack web application for monitoring and managing Raspberry Pi ser
 - **Shell integration** via `child_process`
 
 ### Frontend
-- **React 18** with TypeScript
+- **React 19** with TypeScript
 - **Vite** for fast development and building
 - **TailwindCSS** for styling
 - **Shadcn/ui** component library
