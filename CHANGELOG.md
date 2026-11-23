@@ -5,6 +5,12 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Public landing page on `/`** for signed-out visitors: what PiDeck does, a dashboard preview drawn with theme tokens and demo data (no images, so it follows light/dark and never shows a real host), the install commands and a Sign in button. Signed-in users still go straight to `/dashboard`, and signed-out deep links still go to `/login`. Lazy chunk (~4 KB gzip), same-origin only.
+- The PiDeck title on the login page links back to `/`.
+
 ## [2.12.1] - 2026-11-23
 
 UI density and cleanup from the 2026-11-23 audit. No new features.
