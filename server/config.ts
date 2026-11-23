@@ -157,6 +157,17 @@ export function agentConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig |
   return { port, bind, tokenSha256 };
 }
 
+/**
+ * The hub's listen address (2.13.1). Default 0.0.0.0, so `install.sh --lan-http`
+ * (http://<ip>:5006) keeps working; set PIDECK_BIND=127.0.0.1 when a reverse proxy
+ * on the same host is the only client. Same rules as PIDECK_AGENT_BIND.
+ */
+export function hubBind(env: NodeJS.ProcessEnv = process.env): string | { error: string } {
+  const bind = (env.PIDECK_BIND ?? "").trim() || "0.0.0.0";
+  if (!/^([0-9.]+|[0-9a-f:]+|localhost)$/i.test(bind)) return { error: `PIDECK_BIND must be an IP address (got "${bind}")` };
+  return bind;
+}
+
 /** `timeoutMs`: PIDECK_HOST_TIMEOUT_<ID> (2.6.1), else the hub's default (5 s). */
 export type HostEntry = { id: string; label: string; url: string; token: string; timeoutMs?: number };
 

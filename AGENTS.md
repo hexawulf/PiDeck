@@ -64,7 +64,7 @@ PIDECK_TEST_PG_URL=postgres://postgres@127.0.0.1:5432/postgres npx vitest run
 - **Background jobs**: Update system (`server/services/system-update.ts`) and Cron › Run (`server/services/cron.ts`) start a job with a log in `~/logs` and never hold the request open for it or buffer its output
 - **CSRF**: state-changing `/api` requests must be same-origin (`server/middleware/sameOrigin.ts`, mounted first in `server/routes.ts`); the cookie is `SameSite=Strict` and only JSON bodies are parsed — never add `express.urlencoded` or a mutating GET
 - **pm2 actions**: go through `SystemService.pm2Action` (real process names only; refuses `all` and stopping PiDeck itself)
-- **Transport**: `PIDECK_INSECURE_HTTP=1` drops the cookie's `Secure` flag (LAN HTTP, `install.sh --lan-http`); `TRUST_PROXY` (default 1, `false` = no proxy); `PIDECK_CORS_ORIGIN` (default: no CORS); `COOKIE_DOMAIN` (default host-only)
+- **Transport**: `PIDECK_INSECURE_HTTP=1` drops the cookie's `Secure` flag (LAN HTTP, `install.sh --lan-http`); `PIDECK_BIND` = hub listen address (default `0.0.0.0`; `127.0.0.1` behind a same-host proxy); `TRUST_PROXY` (default 1, `false` = no proxy); `PIDECK_CORS_ORIGIN` (default: no CORS); `COOKIE_DOMAIN` (default host-only)
 - **Host logs**: `PIDECK_HOST_LOGS=[id:]Label=/abs/path,…` adds Logs-tab files (parsed in `server/config.ts`); no host paths are hard-coded
 - **Multi-host**: `PIDECK_MODE=agent` runs the read-only agent (no DB, token auth, GET allowlist in `server/agent-api.ts`); the hub reads `PIDECK_HOSTS` / `PIDECK_HOST_TOKEN_<ID>` / `PIDECK_HOST_LABELS` / `PIDECK_HOST_TIMEOUT_<ID>` (1–9 s, default 5) and proxies `/api/hosts/:id/*`. Plan: `docs/plans/multi-host.md`
 - **Every key** is documented in `.env.example`
