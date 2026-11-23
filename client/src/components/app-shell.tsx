@@ -185,26 +185,26 @@ export default function AppShell({ tab }: { tab: TabId | "hosts" }) {
 
       {user?.maintenance?.dbMigrationsPending && <DbMigrationBanner />}
       {user?.defaultPassword && (
-        <div role="status" className="mx-4 mt-4 rounded-xl border border-pi-warning px-4 py-2 text-center text-sm text-pi-text" data-testid="default-password-banner">
+        <div role="status" className="mx-4 mt-4 max-w-[78rem] rounded-xl xl:mx-auto border border-pi-warning px-4 py-2 text-center text-sm text-pi-text" data-testid="default-password-banner">
           The admin password is still the default (<code>admin</code>).{" "}
           <Link href="/settings" className="font-semibold underline">Change it in Settings</Link>.
         </div>
       )}
       {user?.transport?.insecureHttp && typeof window !== "undefined" && window.location.protocol === "http:" && (
-        <div className="mx-4 mt-4 rounded-xl border border-pi-warning px-4 py-2 text-center text-sm text-pi-text" data-testid="insecure-http-banner">
+        <div className="mx-4 mt-4 max-w-[78rem] rounded-xl xl:mx-auto border border-pi-warning px-4 py-2 text-center text-sm text-pi-text" data-testid="insecure-http-banner">
           Plain HTTP mode: the session cookie is sent unencrypted. Use only on a trusted LAN (docs/INSTALL.md).
         </div>
       )}
       {reboot.data?.rebootRequired && (
         // The banner itself never fades: a pulsing background drops the text below AA
         // contrast for half of every cycle. Only the small dot pulses, and only when motion is allowed.
-        <div role="status" className="mx-4 mt-4 rounded-xl bg-red-700 px-4 py-2 text-center text-pi-on-accent shadow-lg" data-testid="reboot-banner">
+        <div role="status" className="mx-4 mt-4 max-w-[78rem] rounded-xl xl:mx-auto bg-red-700 px-4 py-2 text-center text-pi-on-accent shadow-lg" data-testid="reboot-banner">
           <span aria-hidden className="mr-2 inline-block h-2 w-2 rounded-full bg-pi-on-accent align-middle motion-safe:animate-pulse" />
           ⚠️ System reboot required to activate latest kernel updates
         </div>
       )}
 
-      <main className="pt-16">
+      <main className="pt-6">
         <div className="mx-auto max-w-7xl px-4">
           <div className="sm:hidden">
             <HostSwitcher tab={tab} variant="bar" />
