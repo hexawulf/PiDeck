@@ -1,6 +1,7 @@
 // Public landing page on "/" for signed-out visitors (2.13): renders same-origin only, with no
 // CSP violations or console errors, in both themes and at phone width; Sign in goes to /login.
 // The signed-in "/" → /dashboard redirect is covered in navigation.spec.ts.
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 async function signedOut(browser: Browser, opts: { width?: number; height?: number; scheme?: "light" | "dark" } = {}) {
@@ -70,6 +71,9 @@ for (const scheme of ["light", "dark"] as const) {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
     await expect(page.getByTestId("landing-signin")).toBeInViewport();
+    // axe at phone width: the install <pre> scrolls sideways here, so it must be keyboard-focusable.
+    const axe = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+    expect(axe.violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target}`))).toEqual([]);
     expect(await cspViolations(page)).toEqual([]);
     expect(problems).toEqual([]);
     await ctx.close();
