@@ -118,9 +118,12 @@ function Tile({ h, hubVersion }: { h: HostTile; hubVersion: string | null }) {
             ))}
           </ul>
         )}
-        <p className="mt-3 text-xs text-pi-text-muted">
-          {h.local ? "Sampled by the hub" : `Last seen ${formatLastSeen(h.lastSeen)}`}
-        </p>
+        {/* Offline tiles already say "offline, last seen …" in their status line. */}
+        {h.status !== "offline" && (
+          <p className="mt-3 text-xs text-pi-text-muted">
+            {h.local ? "Sampled by the hub" : `Last seen ${formatLastSeen(h.lastSeen)}`}
+          </p>
+        )}
       </Link>
       {chip && (
         // A sibling of the tile's link (links can't nest), placed over its bottom edge.
