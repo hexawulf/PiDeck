@@ -105,9 +105,9 @@ function Tile({ h, hubVersion }: { h: HostTile; hubVersion: string | null }) {
             <Stat label="RAM" value={pct(s.memory)} />
             <Stat label="Disk" value={pct(s.diskUsage)} />
           </dl>
-        ) : (
-          <p className="text-sm text-pi-text-muted">{reachable ? "No sample yet" : `Last seen ${formatLastSeen(h.lastSeen)}`}</p>
-        )}
+        ) : reachable ? (
+          <p className="text-sm text-pi-text-muted">No sample yet</p>
+        ) : null}
         {s && reachable && s.rxKBs !== null && s.txKBs !== null && (
           <p className="mt-2 text-xs text-pi-text-muted tabular-nums">↓ {formatRate(s.rxKBs)} · ↑ {formatRate(s.txKBs)}</p>
         )}
