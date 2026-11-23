@@ -247,6 +247,7 @@ export default function Landing() {
           <pre
             className="self-start overflow-x-auto rounded-lg bg-pi-terminal-bg p-5 font-mono text-sm leading-relaxed text-pi-terminal-text"
             aria-label="Install commands"
+            tabIndex={0}
           >
             <code>
               <span className="text-pi-terminal-muted"># on the Pi that will run the dashboard</span>
