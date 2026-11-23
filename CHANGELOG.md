@@ -5,6 +5,23 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.1] - 2026-11-23
+
+UI density and cleanup from the 2026-11-23 audit. No new features.
+
+### Fixed
+- **Filesystem Usage is readable on phones**: the Mount column was squeezed to 0 px at 390 px wide; Free and Size now hide below the `sm` breakpoint.
+- **No more 1 MB `/run/credentials/*` rows** in Filesystem Usage: the tmpfs filter now matches the filesystem type, not the device name (snap `squashfs` mounts are hidden too).
+- **All hosts tiles say "last seen" once** (offline and wrong-token tiles repeated it up to three times).
+
+### Changed
+- **Less empty space above the tabs** (a leftover 64 px offset from the old fixed header) and banners line up with the content column.
+- **Apps**: the Docker or pm2 card spans the full width when the other is absent, with denser container rows; the copy-name button has an accessible label.
+- **Settings**: the Change Password card matches the Dashboard card's width and heading.
+
+### Removed
+- Unused `ui/scroll-area`, `ui/table` and `use-mobile` modules and the `@radix-ui/react-scroll-area` and `@tailwindcss/vite` dependencies; the unlisted `nanoid` import (now `crypto.randomUUID`); the dead `@assets` alias.
+
 ## [2.12.0] - 2026-11-22
 
 Platform upgrades from the Dependabot backlog. No feature changes.
