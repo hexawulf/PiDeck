@@ -141,9 +141,9 @@ export default function Login() {
                   <Server className="w-6 h-6 text-pi-on-accent" />
                 </div>
               </div>
-              <Link href="/dashboard">
-                <h1 className="text-2xl font-bold pi-text mb-2 cursor-pointer hover:text-primary">PiDeck</h1>
-              </Link>
+              <h1 className="text-2xl font-bold pi-text mb-2">
+                <Link href="/" className="hover:text-primary">PiDeck</Link>
+              </h1>
               <p className="pi-text-muted">Raspberry Pi Admin Dashboard</p>
             </div>
             

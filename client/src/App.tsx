@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Switch, Route, Redirect, Link } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
@@ -18,6 +19,22 @@ function Loading() {
     <div className="min-h-screen bg-pi-dark flex items-center justify-center">
       <div className="pi-text">Loading...</div>
     </div>
+  );
+}
+
+// Public landing page for signed-out visitors (own chunk: signed-in users never load it).
+const Landing = lazy(() => import("@/pages/landing"));
+
+/** "/": the landing page when signed out, the dashboard when signed in. */
+function Home() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) return <Loading />;
+  if (isAuthenticated) return <Redirect to="/dashboard" replace />;
+  return (
+    <Suspense fallback={<Loading />}>
+      <Landing />
+    </Suspense>
   );
 }
 
@@ -63,14 +80,12 @@ function RemoteHost({ hostId, tab }: { hostId: string; tab: string }) {
 }
 
 // Renamed to avoid confusion with wouter's <Router>
-function AppRoutes() {
+export function AppRoutes() {
   return (
     <Switch>
       {/* Public routes */}
       <Route path="/login" component={Login} />
-      <Route path="/">
-        <Redirect to="/dashboard" replace />
-      </Route>
+      <Route path="/" component={Home} />
 
       {/* Password change lives in Settings since 2.0 */}
       <Route path="/change-password">
