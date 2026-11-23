@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader } from '@/components/ui/card';
 import { useAuth } from '@/hooks/use-auth'; // Corrected import
 import { ShieldCheck, ShieldAlert, Loader2 } from 'lucide-react';
 
@@ -61,15 +61,15 @@ const SettingsPanel: React.FC = () => {
     message ?? (changePasswordError ? { type: 'error' as const, text: changePasswordError } : null);
 
   return (
-    <Card className="w-full max-w-lg mx-auto bg-pi-card border-pi-border">
+    <Card className="mx-auto w-full max-w-3xl border-pi-border bg-pi-card">
       <CardHeader>
-        <CardTitle className="text-2xl pi-text">Change Password</CardTitle>
+        <h2 className="pi-text text-2xl font-semibold leading-none tracking-tight">Change Password</h2>
         <CardDescription className="pi-text-muted">
           Update your account password. Choose a strong, unique password.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-6">
           {displayedMessage && (
             <Alert variant={displayedMessage.type === 'error' ? 'destructive' : 'default'} className={displayedMessage.type === 'success' ? 'border-green-500 text-green-700 dark:border-green-600 dark:text-green-400' : ''}>
               {displayedMessage.type === 'success' ? <ShieldCheck className="h-4 w-4" /> : <ShieldAlert className="h-4 w-4" />}
@@ -79,7 +79,7 @@ const SettingsPanel: React.FC = () => {
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="currentPassword" style={{color: 'var(--pi-text)'}}>Current Password</Label>
+            <Label htmlFor="currentPassword" className="text-pi-text">Current Password</Label>
             <Input
               id="currentPassword"
               type="password"
@@ -91,7 +91,7 @@ const SettingsPanel: React.FC = () => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="newPassword" style={{color: 'var(--pi-text)'}}>New Password</Label>
+            <Label htmlFor="newPassword" className="text-pi-text">New Password</Label>
             <Input
               id="newPassword"
               type="password"
@@ -103,7 +103,7 @@ const SettingsPanel: React.FC = () => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="confirmNewPassword" style={{color: 'var(--pi-text)'}}>Confirm New Password</Label>
+            <Label htmlFor="confirmNewPassword" className="text-pi-text">Confirm New Password</Label>
             <Input
               id="confirmNewPassword"
               type="password"
@@ -127,7 +127,7 @@ const SettingsPanel: React.FC = () => {
         </form>
       </CardContent>
       <CardFooter>
-        <p className="text-xs pi-text-muted text-center w-full">
+        <p className="max-w-md text-xs pi-text-muted">
           Ensure your new password is at least 8 characters long and includes uppercase, lowercase, number, and special characters.
         </p>
       </CardFooter>

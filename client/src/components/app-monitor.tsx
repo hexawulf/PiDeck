@@ -154,7 +154,7 @@ export default function AppMonitor() {
       <ServicesCard />
     </Suspense>
     {(dockerAbsent || pm2Absent) && (
-      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+      <div className={`grid grid-cols-1 gap-2 ${dockerAbsent && pm2Absent ? "lg:grid-cols-2" : ""}`}>
         {dockerAbsent && (
           <AbsentNote icon={Box} what="No Docker on this host" testId="docker-absent"
             detail={dockerContainers.data?.warning === "socket unavailable or permission denied" ? "(no socket, or this user isn't in the docker group)" : "(not installed or not responding)"} />
@@ -163,7 +163,7 @@ export default function AppMonitor() {
       </div>
     )}
     {!(dockerAbsent && pm2Absent) && (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className={`grid grid-cols-1 gap-6 ${dockerAbsent || pm2Absent ? "" : "lg:grid-cols-2"}`}>
        {/* Docker Containers (collapsed to one line above when absent) */}
        {!dockerAbsent && (
        <Card className="bg-pi-card border-pi-border">
@@ -217,11 +217,11 @@ export default function AppMonitor() {
                 <p className="pi-text-muted text-center py-4">No Docker containers found</p>
               )
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-2">
                 {dockerContainers.data.containers.map((container) => (
-                  <div key={container.id} className="flex items-center justify-between p-4 bg-pi-darker rounded-lg">
+                  <div key={container.id} className="flex items-center justify-between px-4 py-3 bg-pi-darker rounded-lg">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-3 mb-2">
+                      <div className="flex items-center space-x-3 mb-1">
                         <div className={`w-3 h-3 rounded-full ${getStatusColor(container.status)}`} />
                         <div className="flex items-center space-x-2">
                           <h4 className="font-medium pi-text truncate">{container.name}</h4>
@@ -229,6 +229,7 @@ export default function AppMonitor() {
                             variant="ghost"
                             size="sm"
                             onClick={() => copyToClipboard(container.name)}
+                            aria-label={`Copy ${container.name}`}
                             className="p-1 h-auto opacity-50 hover:opacity-100"
                           >
                             <Copy className="w-3 h-3" />

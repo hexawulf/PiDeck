@@ -2,8 +2,8 @@
  * downsample — shrink a time series for charting without hiding holes.
  * ────────────────────────────────────────────────────────────────────
  *  rows (sorted by t) ─► split where gap > 3× median spacing
- *                          │   (history is written only while a tab polls,
- *                          │    see TODOS.md "server-side sampler")
+ *                          │   (the hub samples every minute; a gap means
+ *                          │    the host was unreachable or the hub was down)
  *                          ▼
  *        segment A   {t, all keys null}   segment B   …
  *            │            gap marker          │
