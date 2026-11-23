@@ -16,13 +16,15 @@ import { initializeStorage, pool } from "./storage";
 import { checkSchema, schemaReady, schemaState } from "./db-schema";
 import { installCsp, installSecurityHeaders } from "./security";
 import { throttleTouch } from "./session-touch";
-import { cookieSecure, corsOrigins, insecureHttp, trustProxy } from "./config";
+import { cookieSecure, corsOrigins, hubBind, insecureHttp, trustProxy } from "./config";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ---------- config ----------
 const PORT = Number(process.env.PORT || 5006);
+const BIND = hubBind();
+if (typeof BIND !== "string") throw new Error(BIND.error);
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const SESSION_SECRET = process.env.SESSION_SECRET || "CHANGE_ME_SESSION_SECRET_LONG_RANDOM";
 const SESSION_COOKIE_DOMAIN =
@@ -162,7 +164,7 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
     console.error(err);
   });
 
-  server.listen({ port: PORT, host: "0.0.0.0" }, () => log(`serving on port ${PORT}`));
+  server.listen({ port: PORT, host: BIND }, () => log(`serving on ${BIND}:${PORT}`));
 
   // Graceful stop for pm2 reload / Ctrl-C: stop sampling, stop accepting
   // connections, exit. Keep-alive connections can hold server.close(), so
