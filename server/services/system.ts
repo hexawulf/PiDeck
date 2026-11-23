@@ -535,7 +535,9 @@ private static async getNetworkBandwidth(baseline: RateBaseline): Promise<Networ
 
   static async getFilesystemUsage(): Promise<Array<{ device: string; mount: string; type: string; size: number; used: number; avail: number; pcent: number }>> {
     try {
-      const { stdout } = await execAsync("df -PT --block-size=1 | grep -v '^Filesystem' | grep -vE '^(tmpfs|proc|sysfs|cgroup|overlay|devtmpfs)'");
+      // Filter on the type column, not the device name: systemd's per-unit
+      // credential mounts (/run/credentials/*) are tmpfs with device "none".
+      const { stdout } = await execAsync("df -PT --block-size=1 | awk 'NR > 1 && $2 !~ /^(tmpfs|devtmpfs|proc|sysfs|cgroup2?|overlay|squashfs)$/'");
       const lines = stdout.trim().split('\n');
       
       return lines.map(line => {
