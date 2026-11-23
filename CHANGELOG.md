@@ -5,6 +5,11 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.1] - 2026-11-23
+
+### Added
+- **`PIDECK_BIND`**: the hub's listen address. Default `0.0.0.0`, so `install.sh --lan-http` installs are unchanged; set `PIDECK_BIND=127.0.0.1` when a reverse proxy on the same host is the only client, so the port is not reachable from the network even without a firewall. Validated like `PIDECK_AGENT_BIND`; an invalid value stops startup with a clear error.
+
 ## [2.13.0] - 2026-11-23
 
 ### Added
