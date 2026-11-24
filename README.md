@@ -183,7 +183,7 @@ systemd service, and health-checks the result. See
 
 ## 🔄 Live Demo
 
-🌐 **[View Live Demo](https://pideck.piapps.dev)** *(pideck.piapps.dev)*
+🌐 **[View Live Demo](https://pideck.dev)** *(pideck.dev)*
 
 ## 📚 Documentation
 

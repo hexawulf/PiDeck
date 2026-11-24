@@ -20,18 +20,19 @@ const DESCRIPTION =
 
 describe("crawl files", () => {
   it("allows crawling and names the sitemap", () => {
-    expect(robots).toBe("User-agent: *\nAllow: /\n\nSitemap: https://piapps.dev/sitemap.xml\n");
+    expect(robots).toBe("User-agent: *\nAllow: /\n\nSitemap: https://pideck.dev/sitemap.xml\n");
   });
 
   it("is a sitemap for the canonical homepage", () => {
     expect(sitemap.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
     expect(sitemap).toContain('xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"');
-    expect(sitemap).toContain("<loc>https://piapps.dev/</loc>");
+    expect(sitemap).toContain("<loc>https://pideck.dev/</loc>");
     expect(sitemap).not.toContain("<!doctype html");
   });
 
   it("declares the canonical host and a short description", () => {
-    expect(html).toContain('<link rel="canonical" href="https://piapps.dev/" />');
+    expect(html).toContain('<link rel="canonical" href="https://pideck.dev/" />');
+    expect(html).toContain('<meta property="og:url" content="https://pideck.dev/" />');
     expect(html).toContain(`content="${DESCRIPTION}"`);
     expect(DESCRIPTION.length).toBeLessThanOrEqual(160);
   });
