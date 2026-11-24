@@ -75,9 +75,10 @@ jspm_packages/
 # Nuxt.js build / generate output
 .nuxt
 
-# Gatsby files
+# Gatsby output at the repo root. client/public is Vite's static dir
+# (robots.txt, sitemap.xml) and must stay tracked; server/public/ is below.
 .cache/
-public
+/public
 
 # Storybook build outputs
 .out
