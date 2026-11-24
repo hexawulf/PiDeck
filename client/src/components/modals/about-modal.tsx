@@ -15,6 +15,7 @@ declare const __RELEASE_DATE__: string;
 const APP_VERSION = typeof __APP_VERSION__ === "undefined" ? "dev" : __APP_VERSION__;
 const RELEASE_ISO = typeof __RELEASE_DATE__ === "undefined" ? "" : __RELEASE_DATE__;
 const REPO_URL = "https://github.com/hexawulf/PiDeck";
+const SITE_URL = "https://pideck.dev/";
 
 /** "2026-11-13" → "13 November 2026" (no Date parsing: the string is a calendar day, not an instant). */
 export function formatReleaseDate(iso: string): string {
@@ -109,6 +110,12 @@ export default function AboutModal() {
               Erling Wulf Weinreich (0xWulf) ·{" "}
               <a href="mailto:dev@0xwulf.dev" className="underline">dev@0xwulf.dev</a>
             </p>
+          </div>
+          <div>
+            <h2 className="font-bold mb-1">Website</h2>
+            <a href={SITE_URL} className="underline" target="_blank" rel="noopener noreferrer" data-testid="about-website">
+              pideck.dev
+            </a>
           </div>
           <div>
             <h2 className="font-bold mb-1">GitHub Repo</h2>

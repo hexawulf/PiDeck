@@ -15,6 +15,7 @@ test("Diagnostics line reflects prefs and copies to the clipboard", async ({ pag
   await page.getByRole("button", { name: "Pause auto-refresh" }).click();
 
   await page.getByRole("button", { name: "About PiDeck" }).click();
+  await expect(page.getByTestId("about-website")).toHaveAttribute("href", "https://pideck.dev/");
   const line = page.getByTestId("diagnostics-line");
   await expect(line).toContainText(/^PiDeck v\d+\.\d+\.\d+ · prefs v2 · widgets 19\/20 visible · refresh live \(paused\) · density comfortable · last prefs reset: Reset layout at \d{4}-/);
 
