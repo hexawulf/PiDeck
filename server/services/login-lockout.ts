@@ -1,3 +1,5 @@
+import { sanitizeLogValue } from "./log-sanitize";
+
 // Password sign-in lockout per client address (PD-17). It used to be one
 // counter on the admin row: five wrong passwords from anyone locked the
 // password login for everybody for 15 minutes. Now each address has its own
@@ -64,8 +66,7 @@ export const loginLockout = createLoginLockout();
 
 /** One log line per sign-in attempt. Never the password; control characters stripped. */
 export function authLogLine(f: { method: "password" | "google"; result: string; ip: string; email?: string; detail?: string }): string {
-  // eslint-disable-next-line no-control-regex -- intentionally strip control chars from log lines
-  const clean = (v: string) => v.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 120);
+  const clean = (v: string) => sanitizeLogValue(v, 120);
   const parts = [`[auth] sign-in method=${f.method} result=${clean(f.result)} ip=${clean(f.ip)}`];
   if (f.email) parts.push(`email=${clean(f.email)}`);
   if (f.detail) parts.push(`detail="${clean(f.detail).replace(/"/g, "'")}"`);

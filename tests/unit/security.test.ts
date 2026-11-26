@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { describe, expect, it } from "vitest";
 import { createCspReportHandler, cspDirectives, resolveFirebaseAuthOrigin } from "../../server/security";
+import { sanitizeLogValue } from "../../server/services/log-sanitize";
+import { authLogLine } from "../../server/services/login-lockout";
 
 describe("cspDirectives", () => {
   it("builds a baseline CSP with script hashes", () => {
@@ -87,5 +89,41 @@ describe("createCspReportHandler (API-002)", () => {
     t += 61_000;
     handler(makeReq("198.51.100.1"), makeRes() as unknown as Response);
     expect(logs).toHaveLength(3);
+  });
+
+  it("strips ANSI escape sequences and C0/C1/line-separator control characters (LOGGING-001)", () => {
+    const logs: string[] = [];
+    const handler = createCspReportHandler({ warn: (m) => logs.push(m) });
+    const req = {
+      ip: "198.51.100.9",
+      headers: {},
+      body: {
+        "csp-report": {
+          "violated-directive": "script-src\u001b[31mRED\u001b[0m",
+          "blocked-uri": "https://evil.example/\u009b2J\u2028fake\u2029line\r\n",
+          "document-uri": "/\u0000\u0007\u007fok",
+        },
+      },
+    } as unknown as Request;
+    handler(req, makeRes() as unknown as Response);
+    expect(logs).toHaveLength(1);
+    const hasControl = (s: string) =>
+      Array.from(s).some((ch) => {
+        const c = ch.charCodeAt(0);
+        return c <= 0x1f || (c >= 0x7f && c <= 0x9f) || c === 0x2028 || c === 0x2029;
+      });
+    expect(hasControl(logs[0])).toBe(false);
+    expect(logs[0]).not.toContain("[31m");
+    expect(logs[0]).toContain("directive=script-srcRED");
+
+    expect(sanitizeLogValue("\u001b]0;title\u0007safe\u0085next", 50)).toBe("safe next");
+    const authLine = authLogLine({
+      method: "google",
+      result: "rejected",
+      ip: "198.51.100.1\u001b[31m\u0085",
+      email: "user@example.com\u2028injected",
+    });
+    expect(hasControl(authLine)).toBe(false);
+    expect(authLine).not.toContain("[31m");
   });
 });

@@ -10,6 +10,7 @@ import path from "path";
 import express, { type Express, type Request, type Response } from "express";
 import helmet from "helmet";
 import { clientKey } from "./middleware/rateLimitLogin";
+import { sanitizeLogValue } from "./services/log-sanitize";
 
 const INLINE_SCRIPT_RE = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
 
@@ -178,7 +179,7 @@ export function createCspReportHandler(opts: CspReportHandlerOptions = {}) {
     }
 
     const r = (req.body && (req.body["csp-report"] ?? req.body)) || {};
-    const pick = (k: string) => String(r[k] ?? "").replace(/[\r\n]/g, " ").slice(0, 200);
+    const pick = (k: string) => sanitizeLogValue(r[k], 200);
     warn(
       `[csp] ${reportOnly ? "report-only" : "blocked"} directive=${pick("violated-directive")} blocked=${pick("blocked-uri")} page=${pick("document-uri")}`,
     );

@@ -34,6 +34,7 @@ import { schemaReady, schemaState } from "./db-schema";
 import { adminPasswordIsDefault, pool } from "./storage";
 import { createHealthHandler } from "./routes/health";
 import { getFirebasePublicConfig, verifyFirebaseLogin } from "./services/firebase-auth";
+import { sanitizeLogValue } from "./services/log-sanitize";
 
 type AuthSession = Request["session"] & {
   authenticated?: boolean;
@@ -144,7 +145,7 @@ export function createChangePasswordHandler(deps: ChangePasswordDeps = {}) {
       const { rowCount } = deps.deleteOtherSessions
         ? await deps.deleteOtherSessions(req.sessionID)
         : await pool.query("DELETE FROM user_sessions WHERE sid <> $1", [req.sessionID]);
-      console.log(`[auth] password changed; ended ${rowCount ?? 0} other session(s) ip=${ip}`);
+      console.log(`[auth] password changed; ended ${rowCount ?? 0} other session(s) ip=${sanitizeLogValue(ip, 120)}`);
 
       res.json({ message: "Password changed successfully." });
     } catch (error) {
@@ -325,7 +326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const s = req.session as AuthSession | undefined;
     const v = checkSession(s);
     if (v.ok) return true;
-    console.warn(`[auth] session ended reason=${v.reason}${s?.email ? ` email=${String(s.email).slice(0, 120)}` : ""} ip=${clientKey(req)}`);
+    console.warn(`[auth] session ended reason=${sanitizeLogValue(v.reason, 64)}${s?.email ? ` email=${sanitizeLogValue(s.email, 120)}` : ""} ip=${sanitizeLogValue(clientKey(req), 120)}`);
     if (s) {
       s.authenticated = false;
       s.destroy?.(() => {});
