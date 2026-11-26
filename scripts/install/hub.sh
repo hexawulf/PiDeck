@@ -58,17 +58,20 @@ preflight() {
   row "NVMe device" "${nvme:-none}" "NVMe Health"
 
   if [[ " ${MISSING_REQ[*]} " == *" node "* ]]; then
-    cat <<EOF
+    cat <<'EOF'
 
   Node.js 22.x is required. Install it from NodeSource with a signed apt
   repository (review each step; nothing is piped into a shell):
 
-    sudo install -d -m 0755 /etc/apt/keyrings
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o /tmp/nodesource.gpg.key
-    sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg /tmp/nodesource.gpg.key
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" > /tmp/nodesource.list
-    sudo install -m 0644 /tmp/nodesource.list /etc/apt/sources.list.d/nodesource.list
-    sudo apt-get update && sudo apt-get install -y nodejs
+    (
+      tmpdir="$(mktemp -d)" && trap 'rm -rf "$tmpdir"' EXIT &&
+      sudo install -d -m 0755 /etc/apt/keyrings &&
+      curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o "$tmpdir/nodesource.gpg.key" &&
+      sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg "$tmpdir/nodesource.gpg.key" &&
+      printf '%s\n' "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" > "$tmpdir/nodesource.list" &&
+      sudo install -m 0644 "$tmpdir/nodesource.list" /etc/apt/sources.list.d/nodesource.list &&
+      sudo apt-get update && sudo apt-get install -y nodejs
+    )
 
   Then run scripts/install.sh again.
 EOF
