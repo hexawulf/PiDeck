@@ -1,5 +1,6 @@
 // Host configuration from the environment (.env). Pure parsers are exported
 // for tests; the constants below are what the server uses.
+import crypto from "crypto";
 import os from "os";
 import path from "path";
 
@@ -291,6 +292,31 @@ export function diskMount(env: NodeJS.ProcessEnv = process.env, warn: (m: string
     return "/";
   }
   return raw;
+}
+
+/**
+ * SESSION_SECRET: in production, must be set, at least 32 characters after
+ * trimming, and must not start with the .env.example placeholder prefix
+ * ("CHANGE_ME"). Outside production, missing or placeholder values get an
+ * ephemeral random secret instead of a hard-coded fallback.
+ */
+export function resolveSessionSecret(env: NodeJS.ProcessEnv = process.env): string {
+  const isProduction = env.NODE_ENV === "production";
+  const secret = (env.SESSION_SECRET ?? "").trim();
+  if (isProduction) {
+    if (!secret) throw new Error("SESSION_SECRET must be set in production.");
+    if (/^CHANGE_ME/i.test(secret)) {
+      throw new Error("SESSION_SECRET must not use a placeholder value in production.");
+    }
+    if (secret.length < 32) {
+      throw new Error("SESSION_SECRET must be at least 32 characters in production.");
+    }
+    return secret;
+  }
+  if (!secret || /^CHANGE_ME/i.test(secret)) {
+    return crypto.randomBytes(32).toString("hex");
+  }
+  return secret;
 }
 
 /** PIDECK_SERVICE_ALERT_MINUTES: a listed systemd unit not active this long raises an alert (2.8). Default 3, 1–1440. */

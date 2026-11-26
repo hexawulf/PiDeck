@@ -16,7 +16,7 @@ import { initializeStorage, pool } from "./storage";
 import { checkSchema, schemaReady, schemaState } from "./db-schema";
 import { installCsp, installSecurityHeaders } from "./security";
 import { throttleTouch } from "./session-touch";
-import { cookieSecure, corsOrigins, hubBind, insecureHttp, trustProxy } from "./config";
+import { cookieSecure, corsOrigins, hubBind, insecureHttp, resolveSessionSecret, trustProxy } from "./config";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +26,7 @@ const PORT = Number(process.env.PORT || 5006);
 const BIND = hubBind();
 if (typeof BIND !== "string") throw new Error(BIND.error);
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
-const SESSION_SECRET = process.env.SESSION_SECRET || "CHANGE_ME_SESSION_SECRET_LONG_RANDOM";
+const SESSION_SECRET = resolveSessionSecret();
 const SESSION_COOKIE_DOMAIN =
   process.env.SESSION_COOKIE_DOMAIN || process.env.COOKIE_DOMAIN || undefined;
 const TRUST_PROXY = trustProxy();
@@ -109,10 +109,6 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
 
 // ---------- Mount real API routes ----------
 (async () => {
-  if (IS_PRODUCTION && !process.env.SESSION_SECRET) {
-    throw new Error("SESSION_SECRET must be set in production.");
-  }
-
   // Schema migrations are applied by `npm run db:migrate` (the installer runs
   // it), never here. With work pending: log, keep serving, banner, re-check
   // every minute; the sampler skips its writes until then (no crash loop).
