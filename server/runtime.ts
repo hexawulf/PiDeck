@@ -2,7 +2,7 @@
 // newest sample per host. Hub only: the agent never imports this (it pulls in
 // the database-backed alert store).
 import { createHostHub, type HostHub } from "./hosts";
-import { historyHours, offlineAlertMinutes, parseHosts, serviceAlertMinutes } from "./config";
+import { historyHours, offlineAlertMinutes, parseHosts, serviceAlertMinutes, warnCleartextHosts } from "./config";
 import type { CompactService } from "./services/systemd";
 import { createAlertManager, type AlertManager } from "./services/alerts";
 
@@ -34,14 +34,18 @@ export type HubRuntime = {
 let runtime: HubRuntime | null = null;
 
 export function hubRuntime(): HubRuntime {
-  runtime ??= {
-    hostHub: createHostHub({ hosts: parseHosts() }),
-    alerts: createAlertManager(),
-    lastSample: new Map(),
-    historyHours: historyHours(),
-    offlineMinutes: offlineAlertMinutes(),
-    serviceMinutes: serviceAlertMinutes(),
-    lastServices: new Map(),
-  };
+  if (!runtime) {
+    const hosts = parseHosts();
+    warnCleartextHosts(hosts);
+    runtime = {
+      hostHub: createHostHub({ hosts }),
+      alerts: createAlertManager(),
+      lastSample: new Map(),
+      historyHours: historyHours(),
+      offlineMinutes: offlineAlertMinutes(),
+      serviceMinutes: serviceAlertMinutes(),
+      lastServices: new Map(),
+    };
+  }
   return runtime;
 }

@@ -11,6 +11,8 @@ build/
 
 # Environment variables
 .env
+.env.*
+!.env.example
 .env.local
 .env.development.local
 .env.test.local
@@ -121,6 +123,8 @@ vite.config.ts.*
 *.db
 *.sqlite
 *.sqlite3
+*.dump
+*.sql.gz
 
 # PM2 files
 ecosystem.config.js
@@ -130,6 +134,9 @@ ecosystem.config.js
 *.pem
 *.crt
 *.key
+*.p12
+*.pfx
+*.jks
 
 # Docker
 .dockerignore
@@ -150,3 +157,5 @@ playwright-report/
 # Firebase Auth plan and credentials
 docs/plans/firebase-google-auth.md
 *firebase-service-account*.json
+*-firebase-adminsdk-*.json
+*service-account*.json

@@ -58,17 +58,20 @@ preflight() {
   row "NVMe device" "${nvme:-none}" "NVMe Health"
 
   if [[ " ${MISSING_REQ[*]} " == *" node "* ]]; then
-    cat <<EOF
+    cat <<'EOF'
 
   Node.js 22.x is required. Install it from NodeSource with a signed apt
   repository (review each step; nothing is piped into a shell):
 
-    sudo install -d -m 0755 /etc/apt/keyrings
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o /tmp/nodesource.gpg.key
-    sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg /tmp/nodesource.gpg.key
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" > /tmp/nodesource.list
-    sudo install -m 0644 /tmp/nodesource.list /etc/apt/sources.list.d/nodesource.list
-    sudo apt-get update && sudo apt-get install -y nodejs
+    (
+      tmpdir="$(mktemp -d)" && trap 'rm -rf "$tmpdir"' EXIT &&
+      sudo install -d -m 0755 /etc/apt/keyrings &&
+      curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o "$tmpdir/nodesource.gpg.key" &&
+      sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg "$tmpdir/nodesource.gpg.key" &&
+      printf '%s\n' "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" > "$tmpdir/nodesource.list" &&
+      sudo install -m 0644 "$tmpdir/nodesource.list" /etc/apt/sources.list.d/nodesource.list &&
+      sudo apt-get update && sudo apt-get install -y nodejs
+    )
 
   Then run scripts/install.sh again.
 EOF
@@ -117,17 +120,18 @@ write_env() {
   local -A want=(
     [NODE_ENV]=production
     [PORT]="$PORT"
+    [PIDECK_BIND]=127.0.0.1
     [PIDECK_LOGS_DIR]="$HOME/logs"
     [PM2_LOGS_DIR]="$HOME/.pm2/logs"
     [CSP_ENFORCE]=true
   )
   [ -n "$DATABASE_URL_VALUE" ] && want[DATABASE_URL]="$DATABASE_URL_VALUE"
-  if [ "$LAN_HTTP" = 1 ]; then want[PIDECK_INSECURE_HTTP]=1; want[TRUST_PROXY]=false; fi
+  if [ "$LAN_HTTP" = 1 ]; then want[PIDECK_INSECURE_HTTP]=1; want[TRUST_PROXY]=false; want[PIDECK_BIND]=0.0.0.0; fi
   [ -n "$NVME_DEVICE" ] && want[PIDECK_NVME_DEVICE]="$NVME_DEVICE"
   if ! env_has SESSION_SECRET; then
     if [ "$DRY_RUN" = 1 ]; then want[SESSION_SECRET]="(generated)"; else want[SESSION_SECRET]="$(openssl rand -hex 32)"; fi
   fi
-  local order=(NODE_ENV PORT SESSION_SECRET DATABASE_URL CSP_ENFORCE PIDECK_LOGS_DIR PM2_LOGS_DIR PIDECK_INSECURE_HTTP TRUST_PROXY PIDECK_NVME_DEVICE)
+  local order=(NODE_ENV PORT PIDECK_BIND SESSION_SECRET DATABASE_URL CSP_ENFORCE PIDECK_LOGS_DIR PM2_LOGS_DIR PIDECK_INSECURE_HTTP TRUST_PROXY PIDECK_NVME_DEVICE)
   local header=0
   for k in "${order[@]}"; do
     [ -n "${want[$k]+x}" ] || continue

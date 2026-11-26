@@ -1,24 +1,25 @@
 #!/bin/bash
-# Author:      0xWulf (zk@hexawulf.dev)
-# Description: Start the PiDeck agent on the DS920+ (DSM has no systemd unit
-#              for us). Run by DSM Task Scheduler as user zk at boot:
-#                bash /var/services/homes/zk/pideck-agent/start-agent.sh
+# Author:      0xWulf
+# Description: Start the PiDeck agent on Synology DSM (DSM has no systemd unit
+#              for us). Run by DSM Task Scheduler as your non-root user at boot:
+#                bash /var/services/homes/<user>/pideck-agent/start-agent.sh
 #              Keeps one agent running, restarts it with backoff, logs to
 #              ~/logs/pideck-agent-YYYYMMDD.log. Settings: .env next to this
 #              script (0600). --dry-run prints what it would do.
-# Modified:    2026-09-29
+# Modified:    2026-11-26
 set -euo pipefail
 
-APP_DIR=/var/services/homes/zk/pideck-agent
-NODE=/var/packages/Node.js_v22/target/usr/local/bin/node
-LOG_DIR=/var/services/homes/zk/logs
+APP_DIR="${PIDECK_APP_DIR:-$HOME/pideck-agent}"
+NODE="${PIDECK_NODE:-/var/packages/Node.js_v22/target/usr/local/bin/node}"
+LOG_DIR="${PIDECK_LOG_DIR:-$HOME/logs}"
 PID_FILE="$APP_DIR/agent.pid"
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_DIR/pideck-agent-$(date +%Y%m%d).log"; }
 
-if [ "$(id -un)" != "zk" ]; then echo "run as zk, not $(id -un)" >&2; exit 1; fi
+if [ "$(id -u)" -eq 0 ]; then echo "run as a non-root user, not root" >&2; exit 1; fi
+if [ -n "${PIDECK_USER:-}" ] && [ "$(id -un)" != "$PIDECK_USER" ]; then echo "run as $PIDECK_USER, not $(id -un)" >&2; exit 1; fi
 [ -x "$NODE" ] || { echo "Node.js v22 package missing: $NODE" >&2; exit 1; }
 [ -f "$APP_DIR/.env" ] || { echo "missing $APP_DIR/.env" >&2; exit 1; }
 

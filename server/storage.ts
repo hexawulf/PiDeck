@@ -75,20 +75,37 @@ let adminUsesDefault = false;
 export const adminPasswordIsDefault = () => adminUsesDefault;
 export const markAdminPasswordChanged = () => { adminUsesDefault = false; };
 
-async function ensureAdminUserExists() {
+export async function ensureAdminUserExists(
+  deps: { store?: IStorage; env?: NodeJS.ProcessEnv } = {},
+): Promise<{ seeded: boolean; usesDefault: boolean }> {
+  const store = deps.store ?? storage;
+  const env = deps.env ?? process.env;
+  const isProduction = env.NODE_ENV === "production";
   try {
-    let admin = await storage.getUserByUsername("admin");
+    let admin = await store.getUserByUsername("admin");
+    let seeded = false;
     if (!admin) {
+      if (isProduction) {
+        adminUsesDefault = false;
+        console.warn(
+          "[PgStorage] No admin user found in production — refusing to auto-seed the default password. " +
+            "Set an admin password with scripts/install.sh --reset-password (or node scripts/install-helper.mjs set-admin) or configure APP_PASSWORD_FILE.",
+        );
+        return { seeded: false, usesDefault: false };
+      }
       console.log("[PgStorage] Admin user not found — creating default admin.");
-      admin = await storage.createUser({ username: "admin", password_hash: DEFAULT_ADMIN_HASH });
+      admin = await store.createUser({ username: "admin", password_hash: DEFAULT_ADMIN_HASH });
+      seeded = true;
       console.log("[PgStorage] Default admin user created.");
     }
     adminUsesDefault = await bcrypt.compare("admin", admin.password_hash);
     if (adminUsesDefault) {
       console.warn("[PgStorage] The admin password is still the default. Set one with scripts/install.sh --reset-password or in Settings.");
     }
+    return { seeded, usesDefault: adminUsesDefault };
   } catch (error) {
     console.error("[PgStorage] Error ensuring admin user exists:", error);
+    return { seeded: false, usesDefault: adminUsesDefault };
   }
 }
 

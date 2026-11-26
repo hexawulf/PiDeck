@@ -5,6 +5,49 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.0] - 2026-11-26
+
+Security hardening release from the 2026-11-26 full-stack security audit (#103, report in `docs/security/SECURITY_AUDIT_2026-11-26.md`).
+
+### Behaviour changes
+- **CSP enforces by default in production (`WEB-002`)**: `Content-Security-Policy` is now enforcing when `NODE_ENV=production` unless `CSP_REPORT_ONLY=true` is explicitly set; `X-Frame-Options` defaults to `DENY`.
+- **Hub binds loopback by default in production (`CONTAINERS-001`)**: `PIDECK_BIND` defaults to `127.0.0.1` in production unless `PIDECK_INSECURE_HTTP=1` is set; `TRUST_PROXY` defaults to `false` when `PIDECK_INSECURE_HTTP=1`.
+- **No default `admin`/`admin` auto-seeding in production (`SECRETS-003`)**: first-boot production startup refuses to auto-seed hardcoded default credentials and gates production API routes if a legacy default password is still active.
+- **`SESSION_SECRET` ≥ 32 characters required in production (`SECRETS-002`)**: missing, placeholder (`CHANGE_ME*`), or short (`< 32` chars) session secrets are rejected at startup in production; non-production falls back to an ephemeral random secret.
+
+### Security
+- **Authentication, sessions & access control**:
+  - `AUTHN-001`: CLI `set-admin` password reset now clears `user_sessions`.
+  - `AUTHN-002`: `POST /api/auth/change-password` now enforces login rate-limiting, lockout, and session ID regeneration before revoking other sessions.
+  - `AUTHN-006`: `express-session` `proxy` option aligns with resolved `trustProxy()`.
+  - `AUTHN-007`: Firebase ID token verification passes `checkRevoked = true`.
+  - `AUTHN-008`: `agentAuth` replaces full-map `clear()` on cap overflow with expired/oldest-entry eviction.
+  - `AUTHZ-001`, `AUTHZ-002`: replaced prefix-based login bypass with exact-path matching, attached explicit `requireAuth` on privileged hub routes, and removed shadowed duplicate `GET /api/pm2/processes`.
+  - `LOGIC-003`: enforced login lockout in `APP_PASSWORD`-only / missing-admin-row mode.
+- **DoS, ReDoS & API surface**:
+  - `API-001`: capped `rateLimitLogin` and `loginLockout` maps (10k entries, O(1) eviction), throttled lockout `prune()`, and validated `CF-Connecting-IP` with `net.isIP()`.
+  - `API-002`: added bounded per-IP and global rate limiting to `POST /csp-report`.
+  - `API-004`, `API-005`, `API-006`: added short TTL caching on `/api/health`, `/api/metrics/nvme`, and `/api/power-status`; rejected unknown `hostLogs` IDs before bypassing cache; removed PID disclosure from `X-PiDeck-Instance` and gated `maintenance.dbMigrationsPending` behind auth.
+  - `INJECTION-001`, `INJECTION-002`: hardened log-filter `hasNestedQuantifier()` against ReDoS bypasses, capped hub log lines to 8 KB, and fixed quadratic backtracking in `redactLine`.
+  - `LOGIC-004`: bounded concurrent detached spawns in `POST /api/cron/run`.
+- **Web, CSP & CSRF**:
+  - `WEB-001`: removed `*.firebaseapp.com` / `*.firebaseio.com` CSP wildcards in favor of the configured Firebase auth domain.
+  - `WEB-003`: added restrictive `Permissions-Policy` header.
+  - `WEB-004`: tightened `sameOriginAllowed` to enforce `Sec-Fetch-Site` and full scheme+host origin matching.
+- **Logging, privacy & crypto**:
+  - `LOGGING-001`, `LOGGING-002`, `LOGGING-003`, `LOGGING-004`: stripped ANSI/control chars from logged untrusted strings, masked 5xx and `smartctl` stderr error messages, added structured security audit logs for auth/mutation/log-read events, and extended `redactLine` for `Cookie`/`Set-Cookie`, `private_key`/`session_id`, and PEM blocks.
+  - `CRYPTO-003`: added startup warning for non-loopback `http://` URLs in `PIDECK_HOSTS`.
+  - `SECRETS-004`, `SECRETS-005`: expanded `.gitignore` for `.env.*`, Firebase service accounts, keys, and DB dumps; scrubbed example/template/doc placeholders.
+- **Containers, infrastructure, installer & CI/CD**:
+  - `CONTAINERS-002`: added `PIDECK_DOCKER_SOCKET` / `PIDECK_AGENT_DOCKER_SOCKET` / `DOCKER_HOST` support and documented Docker socket proxy usage.
+  - `DEPS-002`, `INJECTION-003`, `INFRA-005`: hardened NodeSource temp-dir handling with `mktemp -d` + cleanup trap, validated `PIDECK_DB_NAME`/`PIDECK_DB_USER` before `psql`, and prevented plain-HTTP agent auto-binding to public IPv4 without explicit `--agent-bind`.
+  - `INFRA-002` (partial): added safe baseline systemd sandboxing (`PrivateTmp`, `LockPersonality`, `RestrictRealtime` on hub; additional read-only directives on agent) while preserving setuid `sudo` compatibility for `--sudoers`.
+  - `INFRA-003`: hardened nginx templates with TLS 1.2/1.3, `ssl_session_tickets off`, `server_tokens off`, security headers, and conditional `$connection_upgrade`.
+  - `CICD-001`, `CICD-003`, `CICD-005`: added `--ignore-scripts` to CI `npm ci`/`npm install -g`, added `github-actions` to Dependabot, and pinned CI `postgres:18` service image to an immutable `@sha256` digest.
+
+### Upgrade notes
+- Hub only. Agents stay on 2.13.x and continue working unchanged.
+
 ## [2.13.3] - 2026-11-24
 
 ### Changed

@@ -29,17 +29,20 @@ export type OriginCheck = {
 /** Is this request allowed to change state? Pure, for tests. */
 export function sameOriginAllowed({ method, host, origin, secFetchSite, allowedOrigins = [] }: OriginCheck): boolean {
   if (SAFE_METHODS.has(method.toUpperCase())) return true;
+  if (origin !== undefined && allowedOrigins.includes(origin.replace(/\/+$/, ""))) return true;
+  if (secFetchSite !== undefined && secFetchSite !== "same-origin" && secFetchSite !== "none") {
+    return false;
+  }
   if (origin !== undefined) {
-    if (allowedOrigins.includes(origin.replace(/\/+$/, ""))) return true;
-    let originHost: string;
+    let parsed: URL;
     try {
-      originHost = new URL(origin).host; // "null" (sandboxed page) and junk throw
+      parsed = new URL(origin); // "null" (sandboxed page) and junk throw
     } catch {
       return false;
     }
-    return !!host && originHost.toLowerCase() === host.toLowerCase();
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    return !!host && parsed.host.toLowerCase() === host.toLowerCase();
   }
-  if (secFetchSite !== undefined) return secFetchSite === "same-origin" || secFetchSite === "none";
   return true;
 }
 

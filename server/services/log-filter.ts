@@ -31,21 +31,64 @@ export function parsePattern(raw: unknown): Pattern | null {
   return { kind: "literal", source: pattern };
 }
 
+const MAX_BOUNDED_REPEAT = 100;
+
 /**
- * True if a group that itself contains a quantifier or alternation is
- * quantified again: (a+)+, (a*)*, (a|a)+, (.*)*, (a?)*, (?:x+){2,}. Escapes and
- * character classes are skipped. Deliberately conservative: it also rejects
- * harmless forms like (foo|bar)+.
+ * True if a regex is susceptible to catastrophic/polynomial backtracking:
+ * - nested quantifiers on groups: (a+)+, (a*)*, (a|a)+, (.*)*, (a?)*, (?:x+){2,}
+ * - backreferences (\1..\9, \k<name>) or lookarounds ((?=...), (?!...), (?<=...), (?<!...))
+ * - excessive bounded repeats ({101,}, {0,999})
+ * - 3+ unbounded quantifiers (*, +, {n,}), or 2 unbounded quantifiers that are
+ *   not distinct single literal characters (blocks a+a+, .*.*, \w+\w+, etc. while
+ *   still allowing harmless forms like a+b* and \(a+\)+).
  */
 export function hasNestedQuantifier(source: string): boolean {
   const groups: boolean[] = []; // per open group: contains a quantifier or "|"?
+  const unboundedAtoms: string[] = []; // literal char (lowercased) or "*" for non-literal
   let inClass = false;
+  let lastAtom: string | null = null; // single literal char (lowercased) or "*" for class/wildcard/group
+
+  const recordUnbounded = (atom: string | null) => {
+    unboundedAtoms.push(atom ?? "*");
+  };
+
   for (let i = 0; i < source.length; i++) {
     const c = source[i];
-    if (c === "\\") { i++; continue; }
-    if (inClass) { if (c === "]") inClass = false; continue; }
-    if (c === "[") { inClass = true; continue; }
-    if (c === "(") { groups.push(false); continue; }
+    if (c === "\\") {
+      const next = source[i + 1];
+      if (!next) break;
+      if (!inClass) {
+        // Backreferences (\1..\9 or \k<...>) can cause exponential backtracking
+        if ((next >= "1" && next <= "9") || (next === "k" && source[i + 2] === "<")) {
+          return true;
+        }
+        // Shorthand character classes (\d, \D, \w, \W, \s, \S) are non-literal atoms
+        lastAtom = /[dDwWsS]/.test(next) ? "*" : next.toLowerCase();
+      }
+      i++;
+      continue;
+    }
+    if (inClass) {
+      if (c === "]") {
+        inClass = false;
+        lastAtom = "*";
+      }
+      continue;
+    }
+    if (c === "[") {
+      inClass = true;
+      continue;
+    }
+    if (c === "(") {
+      // Reject lookarounds (?=...), (?!...), (?<=...), (?<!...)
+      if (source[i + 1] === "?" && (source[i + 2] === "=" || source[i + 2] === "!" || source[i + 2] === "<")) {
+        const after = source[i + 2] === "<" ? source[i + 3] : source[i + 2];
+        if (after === "=" || after === "!") return true;
+      }
+      groups.push(false);
+      lastAtom = null;
+      continue;
+    }
     if (c === ")") {
       const risky = groups.pop() ?? false;
       const next = source[i + 1];
@@ -54,12 +97,54 @@ export function hasNestedQuantifier(source: string): boolean {
       if (groups.length && (risky || next === "*" || next === "+" || next === "{" || next === "?")) {
         groups[groups.length - 1] = true;
       }
+      lastAtom = "*";
       continue;
     }
-    const quantifier = c === "*" || c === "+" || c === "{" || (c === "?" && source[i - 1] !== "(");
+    if (c === "{") {
+      const close = source.indexOf("}", i + 1);
+      if (close !== -1) {
+        const body = source.slice(i + 1, close);
+        const m = /^(\d+)(?:,(\d*))?$/.exec(body);
+        if (m) {
+          const min = Number(m[1]);
+          const hasComma = body.includes(",");
+          const max = m[2] ? Number(m[2]) : undefined;
+          if (min > MAX_BOUNDED_REPEAT || (max !== undefined && max > MAX_BOUNDED_REPEAT)) {
+            return true;
+          }
+          if (hasComma && max === undefined) {
+            recordUnbounded(lastAtom);
+          }
+          if (groups.length) groups[groups.length - 1] = true;
+          i = close;
+          lastAtom = null;
+          continue;
+        }
+      }
+    }
+    const isUnbounded = c === "*" || c === "+";
+    const quantifier = isUnbounded || c === "{" || (c === "?" && source[i - 1] !== "(");
+    if (isUnbounded) {
+      recordUnbounded(lastAtom);
+      lastAtom = null;
+    } else if (quantifier) {
+      lastAtom = null;
+    } else if (c === ".") {
+      lastAtom = "*";
+    } else if (c === "|" || c === "^" || c === "$") {
+      lastAtom = null;
+    } else {
+      lastAtom = c.toLowerCase();
+    }
     if (groups.length && (quantifier || c === "|")) {
       groups[groups.length - 1] = true;
     }
+  }
+
+  if (unboundedAtoms.length >= 3) return true;
+  if (unboundedAtoms.length === 2) {
+    const [a, b] = unboundedAtoms;
+    if (a === "*" || b === "*" || a === b) return true;
   }
   return false;
 }

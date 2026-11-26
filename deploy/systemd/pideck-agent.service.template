@@ -21,6 +21,14 @@ RestartSec=5
 # (smartctl, ufw) needs setuid sudo.
 ProtectSystem=full
 PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

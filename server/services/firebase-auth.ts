@@ -8,6 +8,7 @@ import {
   type Credential,
 } from "firebase-admin/app";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
+import { sanitizeLogValue } from "./log-sanitize";
 
 export interface FirebasePublicConfig {
   enabled: boolean;
@@ -134,9 +135,9 @@ export async function verifyFirebaseLogin(
 
   let decoded: DecodedIdToken;
   try {
-    decoded = await getAuth(app).verifyIdToken(idToken.trim());
+    decoded = await getAuth(app).verifyIdToken(idToken.trim(), true);
   } catch (e: unknown) {
-    console.warn("[Firebase] Failed to verify ID token:", e instanceof Error ? e.message : e);
+    console.warn("[Firebase] Failed to verify ID token:", sanitizeLogValue(e instanceof Error ? e.message : e, 200));
     throw new HttpError(401, "Invalid or expired Firebase ID token.", { cause: e });
   }
 
@@ -152,7 +153,7 @@ export async function verifyFirebaseLogin(
   }
 
   if (!allowedEmails.includes(email)) {
-    console.warn(`[Firebase Auth] Access denied: Account '${email}' is not in FIREBASE_ALLOWED_EMAILS.`);
+    console.warn(`[Firebase Auth] Access denied: Account '${sanitizeLogValue(email, 120)}' is not in FIREBASE_ALLOWED_EMAILS.`);
     throw new HttpError(403, `Account '${email}' is not authorized to access PiDeck.`);
   }
 

@@ -5,10 +5,13 @@ import { PIDECK_LOGS_DIR, hostLogs } from '../config';
 import { lineFilter, LogFilterError } from '../services/log-filter';
 import { tailFile } from '../services/agent-logs/sources';
 import { redactLine } from '../services/agent-logs/redact';
+import { clientKey } from '../middleware/rateLimitLogin';
+import { sanitizeLogValue } from '../services/log-sanitize';
 
 const r = Router();
 const LARGE_LOG_BYTES = 50 * 1024 * 1024;
 const MAX_TAIL_LINES = 5000;
+export const MAX_LOG_LINE_LENGTH = 8 * 1024;
 // The list scans ~/logs (160+ files on piapps), nginx and the configured
 // logs; reads and list refreshes within this window share one scan (PD-16).
 const LIST_CACHE_MS = 5_000;
@@ -192,6 +195,8 @@ async function getAllLogs(): Promise<LogItem[]> {
 }
 
 let listCache: { at: number; logs: Promise<LogItem[]> } | null = null;
+let lastForcedRefresh = 0;
+export const LOG_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
 
 /** getAllLogs(), shared for LIST_CACHE_MS (an in-flight scan is shared too). */
 function cachedLogs(fresh = false): Promise<LogItem[]> {
@@ -208,13 +213,18 @@ function cachedLogs(fresh = false): Promise<LogItem[]> {
 /** Test hook: forget the cached list. */
 export function resetLogListCache(): void {
   listCache = null;
+  lastForcedRefresh = 0;
 }
 
-// Get log file by ID. An id missing from the cached list gets one fresh scan
-// before it is called unknown (a log created in the last few seconds).
+// Get log file by ID. Reject malformed IDs early and throttle forced cache
+// refreshes so unknown-ID sprays cannot bypass the 5s scan cache (API-005).
 async function getLogById(id: string): Promise<LogItem | null> {
+  if (!LOG_ID_RE.test(id)) return null;
   const hit = (await cachedLogs()).find(log => log.id === id);
   if (hit) return hit;
+  const now = Date.now();
+  if (now - lastForcedRefresh < LIST_CACHE_MS) return null;
+  lastForcedRefresh = now;
   return (await cachedLogs(true)).find(log => log.id === id) || null;
 }
 
@@ -263,7 +273,8 @@ r.get('/:id', async (req, res) => {
     let redacted = 0;
     const out: string[] = [];
     for (const line of lines) {
-      const r = redactLine(line);
+      const capped = line.length > MAX_LOG_LINE_LENGTH ? `${line.slice(0, MAX_LOG_LINE_LENGTH)}… [truncated]` : line;
+      const r = redactLine(capped);
       if (keep && !keep(r.text)) continue;
       redacted += r.count;
       out.push(r.text);
@@ -276,7 +287,13 @@ r.get('/:id', async (req, res) => {
       const safeName = log.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       res.setHeader('Content-Disposition', `attachment; filename="${safeName}.log"`);
     }
-    
+
+    const sessionUser = (req.session as { userId?: number } | undefined)?.userId ?? '?';
+    const action = req.query.download === '1' ? 'download' : 'read';
+    console.log(
+      `[audit] local-log action=${action} id=${sanitizeLogValue(log.id, 80)} user=${sessionUser} ip=${sanitizeLogValue(clientKey(req), 64)}`,
+    );
+
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.send(text);
   } catch (error) {

@@ -168,6 +168,28 @@ describe("failure limiter", () => {
     l.reset("a");
     expect(l.blocked("a")).toBe(false);
   });
+  it("evicts oldest/expired entries instead of clearing all blocked IPs on overflow (AUTHN-008)", () => {
+    let t = 0;
+    const l = createFailureLimiter({ max: 2, windowMs: 1000, maxEntries: 3, now: () => t });
+    l.fail("expired");
+    t = 500;
+    l.fail("attacker");
+    l.fail("attacker");
+    expect(l.blocked("attacker")).toBe(true);
+    l.fail("other");
+    // Adding a 4th IP at t=1100 prunes the expired entry without losing "attacker"
+    t = 1100;
+    l.fail("new-ip");
+    expect(l.blocked("attacker")).toBe(true);
+    expect(l.size()).toBe(3);
+
+    // Refresh "attacker", then overflow with another IP: oldest ("other") is evicted, "attacker" stays blocked
+    l.fail("attacker");
+    l.fail("overflow-ip");
+    expect(l.size()).toBe(3);
+    expect(l.blocked("attacker")).toBe(true);
+    expect(l.blocked("other")).toBe(false);
+  });
 });
 
 describe("allowlist and hub path normalisation", () => {

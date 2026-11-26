@@ -22,7 +22,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:18 # production (piapps) runs PostgreSQL 18
+        image: postgres:18@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b # PostgreSQL 18.7
         env:
           POSTGRES_PASSWORD: ci
         ports:
@@ -51,10 +51,10 @@ jobs:
       # rimraf under firebase-admin) differently and refuses `npm ci`.
       # piapps runs npm 11.13; match it.
       - name: Align npm version
-        run: npm install -g npm@11.13.0
+        run: npm install -g --ignore-scripts npm@11.13.0
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-audit --no-fund --ignore-scripts
 
       - name: Typecheck
         run: npm run check
@@ -83,7 +83,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:18
+        image: postgres:18@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b # PostgreSQL 18.7
         env:
           POSTGRES_PASSWORD: ci
         ports:
@@ -108,10 +108,10 @@ jobs:
           cache: npm
 
       - name: Align npm version
-        run: npm install -g npm@11.13.0
+        run: npm install -g --ignore-scripts npm@11.13.0
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-audit --no-fund --ignore-scripts
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium

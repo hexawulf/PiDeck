@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { cookieSecure, corsOrigins, defaultHostLogs, hostLogs, insecureHttp, parseHostLogs, parseHosts, trustProxy } from "../../server/config";
+import { cookieSecure, corsOrigins, defaultHostLogs, hostLogs, insecureHttp, parseHostLogs, parseHosts, trustProxy, warnCleartextHosts } from "../../server/config";
 import { transportWarning } from "@/components/transport-notice";
 
 const PM2 = "/home/op/.pm2/logs";
@@ -106,5 +106,41 @@ describe("PIDECK_HOST_TIMEOUT_<ID> (2.6.1)", () => {
       expect(parseHosts(env({ PIDECK_HOST_TIMEOUT_DS920: bad }), warn)[0].timeoutMs).toBeUndefined();
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("PIDECK_HOST_TIMEOUT_DS920"));
     }
+  });
+});
+
+describe("PIDECK_HOSTS cleartext HTTP warning (CRYPTO-003)", () => {
+  const TOKEN = "t".repeat(64);
+
+  it("warns on non-loopback http:// agent URLs", () => {
+    const warn = vi.fn();
+    const hosts = parseHosts(
+      {
+        PIDECK_HOSTS: "remote=http://198.51.100.10:5016",
+        PIDECK_HOST_TOKEN_REMOTE: TOKEN,
+      },
+      () => {},
+    );
+    expect(hosts).toHaveLength(1);
+    const warnings = warnCleartextHosts(hosts, warn);
+    expect(warnings).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("cleartext http://"));
+  });
+
+  it("does not warn for loopback http:// or https:// agent URLs", () => {
+    const warn = vi.fn();
+    const hosts = parseHosts(
+      {
+        PIDECK_HOSTS: "local1=http://127.0.0.1:5016,local2=http://localhost:5016,local3=http://[::1]:5016,tls=https://198.51.100.20:5016",
+        PIDECK_HOST_TOKEN_LOCAL1: TOKEN,
+        PIDECK_HOST_TOKEN_LOCAL2: TOKEN,
+        PIDECK_HOST_TOKEN_LOCAL3: TOKEN,
+        PIDECK_HOST_TOKEN_TLS: TOKEN,
+      },
+      () => {},
+    );
+    expect(hosts).toHaveLength(4);
+    expect(warnCleartextHosts(hosts, warn)).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

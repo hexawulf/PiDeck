@@ -7,8 +7,15 @@
 # ── 3b. database ───────────────────────────────────────────────────────
 DB_NAME="${PIDECK_DB_NAME:-pideck}"
 DB_USER="${PIDECK_DB_USER:-pideck}"
+validate_pg_ident() {
+  local label="$1" val="$2"
+  [[ "$val" =~ ^[a-zA-Z_][a-zA-Z0-9_]{0,62}$ ]] \
+    || die "invalid $label '$val' (must match ^[a-zA-Z_][a-zA-Z0-9_]{0,62}$)"
+}
 database() {
   step "Database"
+  validate_pg_ident PIDECK_DB_NAME "$DB_NAME"
+  validate_pg_ident PIDECK_DB_USER "$DB_USER"
   if [ -n "$DB_URL" ]; then
     DATABASE_URL_VALUE="$DB_URL"
     if env_has DATABASE_URL && [ "$(env_get DATABASE_URL)" != "$DB_URL" ]; then

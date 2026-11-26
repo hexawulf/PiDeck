@@ -32,6 +32,14 @@ describe("redactLine: secrets are replaced", () => {
     // URL credentials
     ["postgres://pideck:CHANGE_ME@localhost:5432/pideck", `postgres://pideck:${R}@localhost:5432/pideck`],
     ["fetching https://user:p4ss@example.org/repo.git", `fetching https://user:${R}@example.org/repo.git`],
+    // Cookie / Set-Cookie headers, private_key / session_id, PEM private keys (LOGGING-004)
+    ["Cookie: pideck.sid=s%3Aabcdef123456; theme=dark", `Cookie: ${R}`],
+    ["Set-Cookie: pideck.sid=s%3Axyz789; Path=/; HttpOnly; Secure", `Set-Cookie: ${R}`],
+    ['{"Cookie":"pideck.sid=secret123"}', `{"Cookie":"${R}"}`],
+    ["session_id=abc123def456 user=admin", `session_id=${R} user=admin`],
+    ['{"private_key": "MIIEvQIBADANBgkqhkiG9w0"}', `{"private_key": "${R}"}`],
+    ["key: -----BEGIN RSA PRIVATE KEY----- MIIEpAIBAAKCAQEA -----END RSA PRIVATE KEY-----", `key: ${R}`],
+    ["-----BEGIN PRIVATE KEY-----", R],
   ])("%s", (input, expected) => {
     expect(redactLine(input).text).toBe(expected);
   });
@@ -44,6 +52,16 @@ describe("redactLine: secrets are replaced", () => {
 
   it("a password without a URL user is caught when its key names it", () => {
     expect(redactLine("REDIS_PASSWORD=onlypass").text).toBe(`REDIS_PASSWORD=${R}`);
+  });
+
+  it("handles adversarial dot/hyphen strings in linear time (INJECTION-002)", () => {
+    const evil = "a.".repeat(10_000) + "a-".repeat(10_000) + "x";
+    const start = performance.now();
+    const res = redactLine(evil);
+    const elapsed = performance.now() - start;
+    expect(res.count).toBe(0);
+    expect(res.text).toBe(evil);
+    expect(elapsed).toBeLessThan(100);
   });
 });
 

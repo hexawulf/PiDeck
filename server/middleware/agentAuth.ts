@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import { sanitizeLogValue } from "../services/log-sanitize";
 
 // Agent token auth: `Authorization: Bearer <token>`, compared as SHA-256
 // digests with timingSafeEqual. The agent only ever holds the hash
@@ -31,13 +32,30 @@ export function bearerToken(header: string | undefined): string | null {
  * token is fixed. (The token is 256 bits: the limit exists to cut noise and
  * log spam, not to make guessing feasible or not.)
  */
-export function createFailureLimiter({ max = 10, windowMs = 10 * 60 * 1000, now = Date.now } = {}) {
+export function createFailureLimiter({ max = 10, windowMs = 10 * 60 * 1000, maxEntries = 10_000, now = Date.now } = {}) {
   const failures = new Map<string, { count: number; reset: number }>();
+  const evictIfFull = (t: number) => {
+    if (failures.size < maxEntries) return;
+    for (const [k, v] of failures) {
+      if (t > v.reset) failures.delete(k);
+    }
+    while (failures.size >= maxEntries) {
+      const oldest = failures.keys().next().value;
+      if (oldest === undefined) break;
+      failures.delete(oldest);
+    }
+  };
   const entry = (key: string) => {
     const t = now();
     let e = failures.get(key);
     if (!e || t > e.reset) {
+      if (e) failures.delete(key);
+      else evictIfFull(t);
       e = { count: 0, reset: t + windowMs };
+      failures.set(key, e);
+    } else {
+      // Refresh recency so active offenders are not evicted before idle entries.
+      failures.delete(key);
       failures.set(key, e);
     }
     return e;
@@ -49,17 +67,41 @@ export function createFailureLimiter({ max = 10, windowMs = 10 * 60 * 1000, now 
     },
     fail: (key: string) => {
       entry(key).count += 1;
-      if (failures.size > 10_000) failures.clear(); // bounded memory under a spray
     },
     reset: (key: string) => {
       failures.delete(key);
     },
     retryAfterSec: (key: string) => Math.max(1, Math.ceil(((failures.get(key)?.reset ?? now()) - now()) / 1000)),
+    size: () => failures.size,
   };
 }
 
+export interface AgentAuthOptions {
+  warn?: (msg: string) => void;
+  logThrottleMs?: number;
+  now?: () => number;
+}
+
 /** 401 (no detail) unless the bearer token matches; 429 after repeated failures. */
-export function agentAuth(expectedHex: string, limiter = createFailureLimiter()) {
+export function agentAuth(expectedHex: string, limiter = createFailureLimiter(), opts: AgentAuthOptions = {}) {
+  const warn = opts.warn ?? ((msg: string) => console.warn(msg));
+  const logThrottleMs = opts.logThrottleMs ?? 60_000;
+  const nowFn = opts.now ?? Date.now;
+  const lastLog = new Map<string, number>();
+
+  const auditFailure = (key: string, status: 401 | 429, reqPath: string) => {
+    const t = nowFn();
+    const bucketKey = `${status}:${key}`;
+    const prev = lastLog.get(bucketKey);
+    if (prev !== undefined && t - prev < logThrottleMs) return;
+    if (lastLog.size >= 10_000) {
+      const oldest = lastLog.keys().next().value;
+      if (oldest !== undefined) lastLog.delete(oldest);
+    }
+    lastLog.set(bucketKey, t);
+    warn(`[audit] agent-auth result=${status} ip=${sanitizeLogValue(key, 64)} path=${sanitizeLogValue(reqPath, 120)}`);
+  };
+
   return (req: Request, res: Response, next: NextFunction) => {
     const key = req.ip || req.socket.remoteAddress || "unknown";
     if (tokenMatches(expectedHex, bearerToken(req.headers.authorization))) {
@@ -67,10 +109,12 @@ export function agentAuth(expectedHex: string, limiter = createFailureLimiter())
       return next();
     }
     if (limiter.blocked(key)) {
+      auditFailure(key, 429, req.path);
       res.setHeader("Retry-After", String(limiter.retryAfterSec(key)));
       return res.status(429).json({ message: "Too many attempts" });
     }
     limiter.fail(key);
+    auditFailure(key, 401, req.path);
     return res.status(401).json({ message: "Unauthorized" });
   };
 }

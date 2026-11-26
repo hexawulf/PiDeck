@@ -16,15 +16,14 @@ import thermalZonesRouter from "./routes/thermalZones";
 import powerStatusRouter from "./routes/powerStatus";
 import { createSystemUpdateHandler, createSystemUpdateStatusHandler } from "./routes/system-update";
 import { updateRunner } from "./services/system-update";
-import { readCrontab, runCronEntry } from "./services/cron";
-import { unavailable } from "./services/unavailable";
+import { CronRunConflictError, readCrontab, runCronEntry } from "./services/cron";
 
 import { loginSchema } from "@shared/schema";
 import { clientKey, rateLimitLogin } from "./middleware/rateLimitLogin";
 import { authLogLine, loginLockout } from "./services/login-lockout";
 import { checkSession } from "./session-policy";
 import { requireSameOrigin } from "./middleware/sameOrigin";
-import { envPasswordMatches } from "./services/env-password";
+import { envPasswordMatches, expectedEnvPassword } from "./services/env-password";
 import { cookieSecure, insecureHttp } from "./config";
 import { hubRuntime } from "./runtime";
 import { createRemoteLogAudit } from "./agent-api";
@@ -34,6 +33,7 @@ import { schemaReady, schemaState } from "./db-schema";
 import { adminPasswordIsDefault, pool } from "./storage";
 import { createHealthHandler } from "./routes/health";
 import { getFirebasePublicConfig, verifyFirebaseLogin } from "./services/firebase-auth";
+import { sanitizeLogValue } from "./services/log-sanitize";
 
 type AuthSession = Request["session"] & {
   authenticated?: boolean;
@@ -42,7 +42,6 @@ type AuthSession = Request["session"] & {
   authMethod?: string;
   email?: string;
 };
-type AuthRequest = Request & { __loginBypass?: boolean; session: AuthSession };
 
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
@@ -53,13 +52,112 @@ const passwordChangeSchema = z.object({
   path: ["confirmNewPassword"],
 });
 
-export async function registerRoutes(app: Express): Promise<Server> {
-  // Instance fingerprint header
-  app.use((_req, res, next) => {
-    res.setHeader("X-PiDeck-Instance", process.pid.toString());
-    next();
-  });
+export interface ChangePasswordDeps {
+  lockout?: Pick<typeof loginLockout, "lockedFor" | "failure" | "success">;
+  validatePassword?: typeof AuthService.validatePassword;
+  validatePasswordStrength?: typeof AuthService.validatePasswordStrength;
+  hashPassword?: typeof AuthService.hashPassword;
+  updateUser?: (user: NonNullable<Awaited<ReturnType<typeof AuthService.validatePassword>>["user"]>) => Promise<unknown>;
+  markPasswordChanged?: () => void;
+  deleteOtherSessions?: (keepSid: string) => Promise<{ rowCount?: number | null }>;
+}
 
+export function createChangePasswordHandler(deps: ChangePasswordDeps = {}) {
+  const lockout = deps.lockout ?? loginLockout;
+  const validatePassword = deps.validatePassword ?? AuthService.validatePassword.bind(AuthService);
+  const validatePasswordStrength =
+    deps.validatePasswordStrength ?? AuthService.validatePasswordStrength.bind(AuthService);
+  const hashPassword = deps.hashPassword ?? AuthService.hashPassword.bind(AuthService);
+
+  return async (req: Request, res: Response) => {
+    try {
+      const ip = clientKey(req);
+      const lockedMs = lockout.lockedFor(ip);
+      if (lockedMs > 0) {
+        console.warn(authLogLine({ method: "password", result: "change-locked", ip }));
+        return res.status(403).json({
+          message: `Too many failed attempts from this address. Please try again in about ${Math.ceil(lockedMs / 60000)} minutes.`,
+        });
+      }
+
+      const parsed = passwordChangeSchema.parse(req.body);
+
+      const validation = await validatePassword(parsed.currentPassword);
+      if (!validation.isValid) {
+        const nowLocked = validation.error === "invalid_password" && lockout.failure(ip);
+        console.warn(
+          authLogLine({
+            method: "password",
+            result: nowLocked ? "change-bad-password-locked" : "change-bad-password",
+            ip,
+          }),
+        );
+        return res.status(401).json({ message: "Current password is incorrect." });
+      }
+      lockout.success(ip);
+
+      const strengthCheck = validatePasswordStrength(parsed.newPassword);
+      if (!strengthCheck.isValid) {
+        console.warn(authLogLine({ method: "password", result: "change-weak-password", ip }));
+        return res.status(400).json({ message: strengthCheck.message });
+      }
+
+      const user = validation.user;
+      if (!user) {
+        return res.status(500).json({ message: "User not found." });
+      }
+
+      const newHash = await hashPassword(parsed.newPassword);
+      user.password_hash = newHash;
+      user.last_password_change = new Date();
+      if (deps.updateUser) {
+        await deps.updateUser(user);
+        deps.markPasswordChanged?.();
+      } else {
+        const { storage, markAdminPasswordChanged } = await import("./storage");
+        await storage.updateUser(user);
+        markAdminPasswordChanged();
+      }
+
+      // Regenerate caller's session ID so pre-change session IDs cannot be reused.
+      const prevSession = req.session as AuthSession;
+      const preserved = {
+        userId: prevSession.userId ?? user.id,
+        createdAt: Date.now(),
+        authMethod: prevSession.authMethod,
+        email: prevSession.email,
+      };
+      await new Promise<void>((resolve, reject) => {
+        req.session.regenerate((err) => {
+          if (err) return reject(err);
+          const nextSession = req.session as AuthSession;
+          nextSession.authenticated = true;
+          nextSession.userId = preserved.userId;
+          nextSession.createdAt = preserved.createdAt;
+          if (preserved.authMethod) nextSession.authMethod = preserved.authMethod;
+          if (preserved.email) nextSession.email = preserved.email;
+          req.session.save((saveErr) => (saveErr ? reject(saveErr) : resolve()));
+        });
+      });
+
+      // Every other session ends with the old password (PD-18); this regenerated one stays.
+      const { rowCount } = deps.deleteOtherSessions
+        ? await deps.deleteOtherSessions(req.sessionID)
+        : await pool.query("DELETE FROM user_sessions WHERE sid <> $1", [req.sessionID]);
+      console.log(`[auth] password changed; ended ${rowCount ?? 0} other session(s) ip=${sanitizeLogValue(ip, 120)}`);
+
+      res.json({ message: "Password changed successfully." });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid input", errors: error.issues });
+      }
+      console.error("Change password error:", error);
+      res.status(500).json({ message: "Failed to change password." });
+    }
+  };
+}
+
+export async function registerRoutes(app: Express): Promise<Server> {
   // Cache-Control headers for all API responses
   app.use((req, res, next) => {
     if (req.path.startsWith("/api/")) {
@@ -74,19 +172,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Health (public): database reachable and schema migrated (PD-21).
   app.get("/api/health", createHealthHandler({ ping: () => pool.query("SELECT 1"), schemaReady }));
-
-  // --- Auth bypass marker (belt & suspenders) ---
-  // Mark ONLY the login POST to bypass any stray guards mounted elsewhere.
-  app.use((req, _res, next) => {
-    const url = (req.originalUrl || req.url || "").toLowerCase();
-    if (
-      req.method === "POST" &&
-      (url.startsWith("/api/auth/login") || url.startsWith("/auth/login") || url.startsWith("/api/auth/firebase-login"))
-    ) {
-      (req as AuthRequest).__loginBypass = true;
-    }
-    next();
-  });
 
   // --- Auth routes (OPEN): must be defined BEFORE protected mounts ---
 
@@ -111,7 +196,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : await AuthService.validatePassword(password);
 
       if (!validationResult.isValid) {
-        const nowLocked = validationResult.error === "invalid_password" && loginLockout.failure(ip);
+        const shouldCountFailure =
+          validationResult.error === "invalid_password" || expectedEnvPassword() !== "";
+        const nowLocked = shouldCountFailure && loginLockout.failure(ip);
         console.warn(authLogLine({ method: "password", result: nowLocked ? "bad-password-locked" : validationResult.error ?? "failed", ip }));
         return res.status(401).json({ message: "Invalid username or password." });
       }
@@ -221,7 +308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const s = req.session as AuthSession | undefined;
     const v = checkSession(s);
     if (v.ok) return true;
-    console.warn(`[auth] session ended reason=${v.reason}${s?.email ? ` email=${String(s.email).slice(0, 120)}` : ""} ip=${clientKey(req)}`);
+    console.warn(`[auth] session ended reason=${sanitizeLogValue(v.reason, 64)}${s?.email ? ` email=${sanitizeLogValue(s.email, 120)}` : ""} ip=${sanitizeLogValue(clientKey(req), 120)}`);
     if (s) {
       s.authenticated = false;
       s.destroy?.(() => {});
@@ -230,11 +317,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   app.post("/api/auth/logout", (req, res) => {
+    const s = req.session as AuthSession | undefined;
+    const actor = s?.userId ?? "?";
+    const ip = sanitizeLogValue(clientKey(req), 64);
     req.session.destroy((err) => {
       if (err) {
         console.error("Session destroy error:", err);
+        console.warn(`[audit] auth action=logout result=error user=${actor} ip=${ip}`);
         return res.status(500).json({ message: "Logout failed" });
       }
+      console.log(`[audit] auth action=logout result=ok user=${actor} ip=${ip}`);
       res.json({ message: "Logout successful" });
     });
   });
@@ -243,11 +335,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // (Secure cookie over plain HTTP) and warn in PIDECK_INSECURE_HTTP mode.
   app.get("/api/auth/me", (req, res) => {
     const transport = { secureCookie: cookieSecure(), insecureHttp: insecureHttp() };
-    // Pending schema migrations (M0): a banner tells the operator to run --update.
-    const maintenance = { dbMigrationsPending: schemaState().checked && !schemaReady() };
     const firebase = getFirebasePublicConfig();
     const session = req.session as AuthSession | undefined;
     if (session?.authenticated && sessionStillValid(req)) {
+      // Pending schema migrations (M0): a banner tells the operator to run --update.
+      const maintenance = { dbMigrationsPending: schemaState().checked && !schemaReady() };
       // historyHours: how far back history goes (PIDECK_HISTORY_HOURS), so charts offer 3d/7d only when kept.
       res.json({
         authenticated: true,
@@ -261,38 +353,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         firebase,
       });
     } else {
-      res.json({ authenticated: false, transport, maintenance, firebase });
+      res.json({ authenticated: false, transport, firebase });
     }
   });
 
-  // --- Auth middleware & wrapper ---
+  // --- Auth middleware & fail-closed /api barrier (AUTHZ-001) ---
+  const DEFAULT_PW_ALLOWED = new Set(["/api/auth/me", "/api/auth/logout", "/api/auth/change-password"]);
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
-    if ((req as AuthRequest).__loginBypass) return next(); // hard bypass for POST /api/auth/login or /api/auth/firebase-login
     if (!(req.session as AuthSession | undefined)?.authenticated || !sessionStillValid(req)) {
       return res.status(401).json({ message: "Authentication required" });
+    }
+    if (process.env.NODE_ENV === "production" && adminPasswordIsDefault()) {
+      const pathOnly = (req.originalUrl || req.url || "").split("?")[0].toLowerCase().replace(/\/+$/, "");
+      if (!DEFAULT_PW_ALLOWED.has(pathOnly)) {
+        return res.status(403).json({
+          message: "Default admin password must be changed before accessing this endpoint.",
+        });
+      }
     }
     next();
   };
 
-  const requireAuthUnlessLogin = (req: Request, res: Response, next: NextFunction) => {
-    const url = (req.originalUrl || req.url || "").toLowerCase();
-    if (
-      url.startsWith("/api/auth/login") ||
-      url.startsWith("/auth/login") ||
-      url.startsWith("/api/auth/firebase-login")
-    ) {
-      return next();
-    }
-    return requireAuth(req, res, next);
-  };
+  // Single fail-closed barrier for all /api/* routes mounted below public auth/health routes.
+  app.use("/api", requireAuth);
 
-  // --- Protected mounts (USE the skip-wrapper) ---
-  app.use("/api", requireAuthUnlessLogin, systemRouter);
-  app.use("/api", requireAuthUnlessLogin, metricsRouter);
-  app.use("/api", requireAuthUnlessLogin, networkRouter);
-  app.use("/api", requireAuthUnlessLogin, dockerRouter);
-  app.use("/api", requireAuthUnlessLogin, pm2Router);
-  app.use("/api/hostlogs", requireAuthUnlessLogin, hostLogsRouter);
+  // --- Protected mounts ---
+  app.use("/api", requireAuth, systemRouter);
+  app.use("/api", requireAuth, metricsRouter);
+  app.use("/api", requireAuth, networkRouter);
+  app.use("/api", requireAuth, dockerRouter);
+  app.use("/api", requireAuth, pm2Router);
+  app.use("/api/hostlogs", requireAuth, hostLogsRouter);
   // These two routers declare full /api/metrics/* paths; app.get keeps req.url intact.
   app.get("/api/metrics/thermal-zones", requireAuth, thermalZonesRouter);
   app.get("/api/metrics/power-status", requireAuth, powerStatusRouter);
@@ -323,74 +414,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
       : res.status(405).json({ message: "Remote hosts are read-only" }),
   );
 
-  // These ad-hoc endpoints are also protected by the wrapper above
+  // Explicit requireAuth on every privileged ad-hoc route (defense-in-depth, AUTHZ-002).
   // 409 without running anything when PIDECK_DISABLE_SYSTEM_UPDATE=1 (E2E builds).
   // POST starts the job and answers 202; GET reports how it is going.
-  app.post("/api/system/update", createSystemUpdateHandler({ runner: updateRunner() }));
-  app.get("/api/system/update", createSystemUpdateStatusHandler({ runner: updateRunner() }));
+  app.post("/api/system/update", requireAuth, createSystemUpdateHandler({ runner: updateRunner() }));
+  app.get("/api/system/update", requireAuth, createSystemUpdateStatusHandler({ runner: updateRunner() }));
 
-  app.get("/api/reboot-check", rebootCheckHandler);
+  app.get("/api/reboot-check", requireAuth, rebootCheckHandler);
   // Read-only systemd units on the hub itself (agents serve the same route).
   app.get("/api/services", requireAuth, servicesHandler);
 
   // Docker container actions (listing handled by dockerRouter via Dockerode)
-  app.post("/api/docker/containers/:id/restart", async (req, res) => {
+  const auditActor = (req: Request) => {
+    const s = req.session as AuthSession | undefined;
+    return `user=${s?.userId ?? "?"} ip=${sanitizeLogValue(clientKey(req), 64)}`;
+  };
+
+  app.post("/api/docker/containers/:id/restart", requireAuth, async (req, res) => {
+    const id = String(req.params.id);
+    const target = sanitizeLogValue(id, 80);
     try {
-      await SystemService.restartDockerContainer(req.params.id);
+      await SystemService.restartDockerContainer(id);
+      console.log(`[audit] docker action=restart container=${target} result=ok ${auditActor(req)}`);
       res.json({ message: "Container restarted successfully" });
     } catch (error) {
       console.error("Restart container error:", error);
+      console.warn(`[audit] docker action=restart container=${target} result=error ${auditActor(req)}`);
       res.status(500).json({ message: "Failed to restart container" });
     }
   });
 
-  app.post("/api/docker/containers/:id/stop", async (req, res) => {
+  app.post("/api/docker/containers/:id/stop", requireAuth, async (req, res) => {
+    const id = String(req.params.id);
+    const target = sanitizeLogValue(id, 80);
     try {
-      await SystemService.stopDockerContainer(req.params.id);
+      await SystemService.stopDockerContainer(id);
+      console.log(`[audit] docker action=stop container=${target} result=ok ${auditActor(req)}`);
       res.json({ message: "Container stopped successfully" });
     } catch (error) {
       console.error("Stop container error:", error);
+      console.warn(`[audit] docker action=stop container=${target} result=error ${auditActor(req)}`);
       res.status(500).json({ message: "Failed to stop container" });
     }
   });
 
-  app.post("/api/docker/containers/:id/start", async (req, res) => {
+  app.post("/api/docker/containers/:id/start", requireAuth, async (req, res) => {
+    const id = String(req.params.id);
+    const target = sanitizeLogValue(id, 80);
     try {
-      await SystemService.startDockerContainer(req.params.id);
+      await SystemService.startDockerContainer(id);
+      console.log(`[audit] docker action=start container=${target} result=ok ${auditActor(req)}`);
       res.json({ message: "Container started successfully" });
     } catch (error) {
       console.error("Start container error:", error);
+      console.warn(`[audit] docker action=start container=${target} result=error ${auditActor(req)}`);
       res.status(500).json({ message: "Failed to start container" });
     }
   });
 
-  // PM2 helpers (protected)
-  app.get("/api/pm2/processes", async (_req, res) => {
-    try {
-      const processes = await SystemService.getPM2Processes();
-      res.json(processes ?? unavailable("not-installed", "pm2 isn't installed on this host."));
-    } catch (error) {
-      console.error("Get PM2 processes error:", error);
-      res.status(500).json({ message: "Failed to get PM2 processes" });
-    }
-  });
-
+  // PM2 actions (GET /api/pm2/processes is served by pm2Router mounted above).
   // 400 bad name · 404 not a pm2 process · 409 PiDeck stopping itself (services/system.ts).
   for (const action of ["restart", "stop"] as const) {
-    app.post(`/api/pm2/processes/:name/${action}`, async (req, res) => {
+    app.post(`/api/pm2/processes/:name/${action}`, requireAuth, async (req, res) => {
+      const name = String(req.params.name);
+      const target = sanitizeLogValue(name, 80);
       try {
-        await SystemService.pm2Action(action, req.params.name);
+        await SystemService.pm2Action(action, name);
+        console.log(`[audit] pm2 action=${action} name=${target} result=ok ${auditActor(req)}`);
         res.json({ message: action === "stop" ? "Process stopped successfully" : "Process restarted successfully" });
       } catch (error) {
-        if (error instanceof Pm2ActionError) return res.status(error.status).json({ message: error.message });
+        if (error instanceof Pm2ActionError) {
+          console.warn(`[audit] pm2 action=${action} name=${target} result=${error.status} ${auditActor(req)}`);
+          return res.status(error.status).json({ message: error.message });
+        }
         console.error(`${action} PM2 process error:`, error);
+        console.warn(`[audit] pm2 action=${action} name=${target} result=error ${auditActor(req)}`);
         res.status(500).json({ message: `Failed to ${action} process` });
       }
     });
   }
 
   // Cron helpers (protected)
-  app.get("/api/cron/jobs", async (_req, res) => {
+  app.get("/api/cron/jobs", requireAuth, async (_req, res) => {
     try {
       const jobs = await SystemService.getCronJobs();
       res.json(jobs);
@@ -404,68 +509,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // must be one the crontab holds right now: nothing else can be run this way.
   //   200 finished with exit 0 · 500 finished with another exit code ·
   //   202 still running after 10 s (it keeps going; output in the named log)
-  app.post("/api/cron/run", async (req, res) => {
+  app.post("/api/cron/run", requireAuth, async (req, res) => {
     try {
       const requestedCommand = req.body?.command;
       if (typeof requestedCommand !== "string" || !requestedCommand) {
         return res.status(400).json({ message: "Command is required" });
       }
+      const cmdLabel = sanitizeLogValue(requestedCommand, 120);
       const entry = (await readCrontab()).find((job) => job.command === requestedCommand);
       if (!entry) {
+        console.warn(`[audit] cron action=run command="${cmdLabel}" result=rejected ${auditActor(req)}`);
         return res.status(403).json({ message: "Invalid or not allowed cron command." });
       }
       const result = await runCronEntry(entry);
       if (result.state === "running") {
+        console.log(`[audit] cron action=run command="${cmdLabel}" result=running ${auditActor(req)}`);
         return res.status(202).json({ message: "Cron job started; it is still running", ...result });
       }
+      console.log(`[audit] cron action=run command="${cmdLabel}" result=exit:${result.exitCode ?? "killed"} ${auditActor(req)}`);
       if (result.exitCode === 0) return res.json({ message: "Cron job executed successfully", ...result });
       res.status(500).json({ message: `Cron job failed (exit code ${result.exitCode ?? "none: killed"})`, ...result });
     } catch (error) {
+      if (error instanceof CronRunConflictError) {
+        console.warn(`[audit] cron action=run result=conflict ${auditActor(req)}`);
+        return res.status(error.status).json({ message: error.message });
+      }
       console.error("Run cron job error:", error);
+      console.warn(`[audit] cron action=run result=error ${auditActor(req)}`);
       res.status(500).json({ message: "Failed to execute cron job" });
     }
   });
 
   // --- Password change (protected) ---
-  app.post("/api/auth/change-password", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const parsed = passwordChangeSchema.parse(req.body);
-
-      const validation = await AuthService.validatePassword(parsed.currentPassword);
-      if (!validation.isValid) {
-        return res.status(401).json({ message: "Current password is incorrect." });
-      }
-
-      const strengthCheck = AuthService.validatePasswordStrength(parsed.newPassword);
-      if (!strengthCheck.isValid) {
-        return res.status(400).json({ message: strengthCheck.message });
-      }
-
-      const user = validation.user;
-      if (!user) {
-        return res.status(500).json({ message: "User not found." });
-      }
-
-      const newHash = await AuthService.hashPassword(parsed.newPassword);
-      user.password_hash = newHash;
-      user.last_password_change = new Date();
-      const { storage, markAdminPasswordChanged } = await import("./storage");
-      await storage.updateUser(user);
-      markAdminPasswordChanged();
-
-      // Every other session ends with the old password (PD-18); this one stays.
-      const { rowCount } = await pool.query("DELETE FROM user_sessions WHERE sid <> $1", [req.sessionID]);
-      console.log(`[auth] password changed; ended ${rowCount ?? 0} other session(s) ip=${clientKey(req)}`);
-
-      res.json({ message: "Password changed successfully." });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid input", errors: error.issues });
-      }
-      console.error("Change password error:", error);
-      res.status(500).json({ message: "Failed to change password." });
-    }
-  });
+  app.post("/api/auth/change-password", requireAuth, rateLimitLogin, createChangePasswordHandler());
 
   const httpServer = createServer(app);
   return httpServer;

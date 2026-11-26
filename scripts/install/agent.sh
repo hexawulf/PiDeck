@@ -17,7 +17,27 @@ AGENT_PREBUILT_MARKER="$CONFIG_DIR/agent-prebuilt"
 AGENT_TOKEN=""          # set only when this run made a (new) token
 AGENT_TOKEN_FILE=""
 
-lan_ip() { hostname -I 2>/dev/null | awk '{print $1}'; }
+is_private_ipv4() {
+  local ip="$1" a b c d
+  [[ "$ip" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+  a=$((10#${BASH_REMATCH[1]})); b=$((10#${BASH_REMATCH[2]}))
+  c=$((10#${BASH_REMATCH[3]})); d=$((10#${BASH_REMATCH[4]}))
+  (( a <= 255 && b <= 255 && c <= 255 && d <= 255 )) || return 1
+  # RFC1918 (10/8, 172.16/12, 192.168/16), loopback (127/8), CGNAT (100.64/10), link-local (169.254/16)
+  (( a == 10 || a == 127 )) && return 0
+  (( a == 172 && b >= 16 && b <= 31 )) && return 0
+  (( a == 192 && b == 168 )) && return 0
+  (( a == 100 && b >= 64 && b <= 127 )) && return 0
+  (( a == 169 && b == 254 )) && return 0
+  return 1
+}
+lan_ip() {
+  local a
+  for a in $(hostname -I 2>/dev/null); do
+    is_private_ipv4 "$a" && { printf '%s\n' "$a"; return 0; }
+  done
+  hostname -I 2>/dev/null | awk '{print $1}'
+}
 # A host id for the hub: this host's short name, lower-case, [a-z0-9-]{1,32}.
 suggest_host_id() {
   local h; h="$(hostname -s 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-\n' '-' | cut -c1-32)"
@@ -273,7 +293,12 @@ agent_install() {
   AGENT_BIND="${AGENT_BIND:-$(env_get PIDECK_AGENT_BIND)}"
   if [ -z "$AGENT_BIND" ]; then
     AGENT_BIND="$(lan_ip)"
-    [ -n "$AGENT_BIND" ] || { AGENT_BIND=127.0.0.1; warn "no LAN address found; binding to 127.0.0.1 (pass --agent-bind)"; }
+    if [ -z "$AGENT_BIND" ]; then
+      AGENT_BIND=127.0.0.1
+      warn "no LAN address found; binding to 127.0.0.1 (pass --agent-bind)"
+    elif ! is_private_ipv4 "$AGENT_BIND"; then
+      die "refusing to auto-bind plain-HTTP agent to non-private address $AGENT_BIND; pass --agent-bind explicitly (e.g. a WireGuard tunnel IP or 127.0.0.1)"
+    fi
   fi
   dropin_merge
   preflight

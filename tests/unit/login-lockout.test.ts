@@ -34,6 +34,12 @@ describe("createLoginLockout", () => {
     l.failure("c");
     expect(l.size()).toBe(1);
   });
+
+  it("caps tracked entries with oldest-entry eviction (API-001)", () => {
+    const l = createLoginLockout(() => 1_000_000, { maxEntries: 3 });
+    for (let i = 0; i < 10; i++) l.failure(`198.51.100.${i}`);
+    expect(l.size()).toBe(3);
+  });
 });
 
 describe("authLogLine", () => {

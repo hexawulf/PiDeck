@@ -2,7 +2,7 @@
 // server/index.ts unless PIDECK_MODE=agent. SPA public, /api protected.
 import "./env";
 import path from "path";
-import express, { type Request, type Response, type NextFunction } from "express";
+import express from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import cors from "cors";
@@ -15,8 +15,9 @@ import { startSampler } from "./services/sampler";
 import { initializeStorage, pool } from "./storage";
 import { checkSchema, schemaReady, schemaState } from "./db-schema";
 import { installCsp, installSecurityHeaders } from "./security";
+import { createErrorHandler } from "./middleware/errorHandler";
 import { throttleTouch } from "./session-touch";
-import { cookieSecure, corsOrigins, hubBind, insecureHttp, trustProxy } from "./config";
+import { cookieSecure, corsOrigins, hubBind, insecureHttp, resolveSessionSecret, trustProxy } from "./config";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +27,7 @@ const PORT = Number(process.env.PORT || 5006);
 const BIND = hubBind();
 if (typeof BIND !== "string") throw new Error(BIND.error);
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
-const SESSION_SECRET = process.env.SESSION_SECRET || "CHANGE_ME_SESSION_SECRET_LONG_RANDOM";
+const SESSION_SECRET = resolveSessionSecret();
 const SESSION_COOKIE_DOMAIN =
   process.env.SESSION_COOKIE_DOMAIN || process.env.COOKIE_DOMAIN || undefined;
 const TRUST_PROXY = trustProxy();
@@ -63,7 +64,7 @@ app.use(
     resave: false,
     saveUninitialized: false,
     rolling: true,
-    proxy: true,
+    // Inherit app.get("trust proxy") so TRUST_PROXY=false is respected (AUTHN-006).
     cookie: {
       httpOnly: true,
       // Secure in production; PIDECK_INSECURE_HTTP=1 lets a plain-HTTP LAN install log in.
@@ -109,10 +110,6 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
 
 // ---------- Mount real API routes ----------
 (async () => {
-  if (IS_PRODUCTION && !process.env.SESSION_SECRET) {
-    throw new Error("SESSION_SECRET must be set in production.");
-  }
-
   // Schema migrations are applied by `npm run db:migrate` (the installer runs
   // it), never here. With work pending: log, keep serving, banner, re-check
   // every minute; the sampler skips its writes until then (no crash loop).
@@ -152,17 +149,7 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
   }
 
   // ---------- Error handler ----------
-  app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
-    const httpErr = err as { status?: number; statusCode?: number; message?: string } | null;
-    const status = httpErr?.status || httpErr?.statusCode || 500;
-    const message = httpErr?.message || "Internal Server Error";
-    if (req.path.startsWith("/api")) {
-      res.status(status).json({ message });
-    } else {
-      res.status(status).send("Internal error");
-    }
-    console.error(err);
-  });
+  app.use(createErrorHandler());
 
   server.listen({ port: PORT, host: BIND }, () => log(`serving on ${BIND}:${PORT}`));
 
