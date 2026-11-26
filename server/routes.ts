@@ -266,10 +266,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- Auth middleware & wrapper ---
+  const DEFAULT_PW_ALLOWED = new Set(["/api/auth/me", "/api/auth/logout", "/api/auth/change-password"]);
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     if ((req as AuthRequest).__loginBypass) return next(); // hard bypass for POST /api/auth/login or /api/auth/firebase-login
     if (!(req.session as AuthSession | undefined)?.authenticated || !sessionStillValid(req)) {
       return res.status(401).json({ message: "Authentication required" });
+    }
+    if (process.env.NODE_ENV === "production" && adminPasswordIsDefault()) {
+      const pathOnly = (req.originalUrl || req.url || "").split("?")[0].toLowerCase().replace(/\/+$/, "");
+      if (!DEFAULT_PW_ALLOWED.has(pathOnly)) {
+        return res.status(403).json({
+          message: "Default admin password must be changed before accessing this endpoint.",
+        });
+      }
     }
     next();
   };

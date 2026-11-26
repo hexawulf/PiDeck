@@ -837,11 +837,15 @@ sudo apt-get install -y postgresql lm-sensors smartmontools
 sudo -u postgres createuser -P pideck && sudo -u postgres createdb -O pideck pideck
 cp .env.example .env && chmod 600 .env && nano .env   # SESSION_SECRET, DATABASE_URL, PORT, ...
 npm ci && npm run db:migrate && npm run build
+scripts/install.sh --reset-password                    # creates/sets the admin password (prod never seeds admin/admin)
 pm2 start ecosystem.config.cjs && pm2 save             # or a systemd unit from deploy/systemd/
 ```
 
-Then log in with `admin` / `admin` and change the password in Settings (a
-banner reminds you until you do).
+In production (`NODE_ENV=production`), PiDeck refuses to auto-seed a default
+`admin` / `admin` password on an empty database. Set the admin password with
+`scripts/install.sh --reset-password` (or configure `APP_PASSWORD_FILE`) before
+logging in. If an existing installation still has the legacy default password,
+change it immediately in Settings or via `--reset-password`.
 
 ## For contributors
 
