@@ -30,8 +30,8 @@ cd PiDeck
 ```
 
 At the end it prints the URL, the service status command and the log paths.
-If it generated the admin password, it shows that password **once**. The
-password is also stored in `~/.config/pideck/admin-password` (mode 0600).
+If it generated the admin password, it shows that password **once**. Save it
+in your password manager: the installer never stores it on disk.
 
 Unattended variants:
 
@@ -119,7 +119,7 @@ backed up to `<file>.bak.<timestamp>`.
 | `--reset-password` | | Replace the admin password even if it was changed in Settings. |
 | `--public-url URL` | `PIDECK_PUBLIC_URL` | URL shown in the final message. |
 | `--skip-health` | | Skip the health check. |
-| `--check-login` | `PIDECK_CHECK_LOGIN_FILE` | The admin password was changed in the UI (so `~/.config/pideck/admin-password` is stale): ask for it (hidden) and still test the login round-trip. For scripts, the env form names a 0600 file holding it. Without this flag the login test is skipped with a warning. |
+| `--check-login` | `PIDECK_CHECK_LOGIN_FILE` | The installer did not set the admin password in this run (it never stores it): ask for it (hidden) and still test the login round-trip. For scripts, the env form names a 0600 file holding it. Without this flag the login test is skipped with a warning. |
 | | `PIDECK_DB_NAME`, `PIDECK_DB_USER` | Local database and role names (default `pideck`). |
 | | `NO_COLOR=1` | No colours (also automatic when output isn't a terminal). |
 | `--agent` | | Install this machine as a read-only agent ([below](#add-another-machine-agent)). |
@@ -209,14 +209,16 @@ replaces that seed:
 - **`--yes`:** generates one. It is shown once, at the end.
 - **`--admin-password-file F`:** uses your file.
 
-The password is kept in `~/.config/pideck/admin-password` (0600, directory
-0700). The file lives outside the repository and is used by the health
-check's login round-trip.
+The password is **never stored on disk** (2.14.1). It exists only in the
+installer's temporary directory for that run, which is enough for the health
+check's login round-trip. Installers up to 2.14.0 kept it in
+`~/.config/pideck/admin-password`; the next run deletes that file (and still
+uses it for its login check if it matches).
 
-**Changing it later:** use **Settings › Change password** in the UI. That
-updates the database, so the file becomes stale. Re-runs notice this
-("changed in the UI — keeping it"), leave your password alone and skip the
-login round-trip. To make the installer set a new one (for example, if you
+**Changing it later:** use **Settings › Change password** in the UI. Re-runs
+see a custom password ("changed in the UI — keeping it"), leave it alone and
+skip the login round-trip with a warning; add `--check-login` to type it and
+test the login anyway. To make the installer set a new one (for example, if you
 forgot it), run `./scripts/install.sh --reset-password`.
 
 **Database password vs admin password:** these are unrelated. The database

@@ -2,7 +2,7 @@
 
 A sleek, full-stack web application for monitoring and managing Raspberry Pi servers. Built with modern technologies, PiDeck provides a centralized control hub for system monitoring, service management, and log analysis.
 
-**Current version: 2.14.0** — public landing page for signed-out visitors, Google Firebase Authentication (Sign in with Google) with strict server-side email allowlisting & offline break-glass fallback, multi-host (LAN machines and cloud VPSes over WireGuard) with remote logs (files, journald, Docker; secrets redacted on the agent), read-only systemd services with alerts, per-host history and alerts, an "All hosts" overview and Synology DSM support, through small read-only agents, plus the one-command installer with schema migrations. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
+**Current version: 2.14.1** — public landing page for signed-out visitors, Google Firebase Authentication (Sign in with Google) with strict server-side email allowlisting & offline break-glass fallback, multi-host (LAN machines and cloud VPSes over WireGuard) with remote logs (files, journald, Docker; secrets redacted on the agent), read-only systemd services with alerts, per-host history and alerts, an "All hosts" overview and Synology DSM support, through small read-only agents, plus the one-command installer with schema migrations. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
 
 ![PiDeck 2.2 dashboard (light theme)](./docs/screenshots/dashboard.png)
 
@@ -132,7 +132,7 @@ npm run test:e2e       # E2E on a separate build at :5017 (set PIDECK_TEST_PG_UR
 ## 📖 Usage
 
 ### Initial Login
-- Installed with `scripts/install.sh`: the admin password it printed once (also in `~/.config/pideck/admin-password`, mode 0600)
+- Installed with `scripts/install.sh`: the admin password it printed once (never stored on disk; save it in your password manager)
 - Installed by hand: `admin` (a banner reminds you to change it in **Settings**)
 - Sessions last 24 hours
 

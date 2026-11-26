@@ -27,10 +27,10 @@
 
 - **`SECRETS-001` (High — ROTATE REQUIRED):** Verify that `UyGM****bXI3` is not configured in `APP_PASSWORD`, `APP_PASSWORD_FILE`, the PostgreSQL `users` table, or any other service, and **rotate immediately** if still active. Do **not** rewrite shared git history. Consider a private GitHub Security Advisory if a deployed instance was affected.
 - **`CICD-002` (Medium — GitHub Ruleset):** Add a `required_status_checks` rule to the `protect-main` repository ruleset requiring `check-and-test` and `e2e` to pass before merging to `main`.
-- **`CONTAINERS-002` (Medium — Partial PR `866114d` + Manual Host Action):** This PR adds `PIDECK_DOCKER_SOCKET` / `PIDECK_AGENT_DOCKER_SOCKET` support; consider deploying a read-only Docker socket proxy on hosts and removing the PiDeck service user from the `docker` group.
+- **`CONTAINERS-002` (Medium — Partial PR `866114d`; host step: Accepted risk, 2026-11-26):** This PR adds `PIDECK_DOCKER_SOCKET` / `PIDECK_AGENT_DOCKER_SOCKET` support. The operator's deployment runs PiDeck as an account that is in the `docker` group for its other work, so a socket proxy would not reduce what a compromised PiDeck process can reach. No proxy is deployed. Installs that run PiDeck as a dedicated user should use a read-only socket proxy and keep that user out of the `docker` group.
 - **`CICD-003` (Low — Partial PR `64f307a` + Manual GitHub Setting):** This PR adds `github-actions` to `.github/dependabot.yml`; enable **Dependabot security updates** in GitHub Settings → Code security and analysis.
 - **`CICD-004` (Low — GitHub Setting):** Enable **Private Vulnerability Reporting** in GitHub Settings → Code security and analysis so researchers can follow `SECURITY.md`.
-- **`CRYPTO-002` (Low — Deferred — Needs Decision):** Decide whether to stop persisting `~/.config/pideck/admin-password` permanently on disk (currently used by automated `--update` login round-trip checks; removing it requires migrating to `--check-login` or an opt-in flag).
+- **`CRYPTO-002` (Low — Fixed in 2.14.1):** The installer no longer stores the admin password. It keeps it in its temporary directory for the current run only, prints a generated password once, and deletes a legacy `~/.config/pideck/admin-password` file on the next run. Later runs skip the login round-trip unless `--check-login` is given.
 - **`CICD-006` (Info — Optional GitHub Setting):** Optionally enable *"Require actions to be pinned to a full-length commit SHA"* in GitHub Settings → Actions → General and add a `.github/CODEOWNERS` file.
 
 ---
@@ -907,9 +907,9 @@ The following security controls are well-implemented and should be preserved in 
 
 ## 8. Recommendations beyond this PR
 
-1. **Adopt a read-only Docker socket proxy (`CONTAINERS-002`):** On hosts where PiDeck only needs container status/logs, route `PIDECK_DOCKER_SOCKET` / `PIDECK_AGENT_DOCKER_SOCKET` through a read-only socket proxy and remove the service user from the `docker` group.
+1. **Read-only Docker socket proxy (`CONTAINERS-002`) — accepted risk for this deployment:** useful only where PiDeck runs as a dedicated user outside the `docker` group; then route `PIDECK_DOCKER_SOCKET` / `PIDECK_AGENT_DOCKER_SOCKET` through a read-only socket proxy.
 2. **Require encrypted transport for hub-to-agent traffic (`CRYPTO-003`):** Run hub-to-agent links over WireGuard/VPN or HTTPS (ideally with mTLS) rather than plain `http://` on shared networks.
-3. **Decide on installer plaintext password persistence (`CRYPTO-002`):** Replace `~/.config/pideck/admin-password` persistence with ephemeral verification or an explicit opt-in flag.
+3. **Installer plaintext password persistence (`CRYPTO-002`) — fixed in 2.14.1:** the password is used for one run only and never written to `~/.config/pideck`.
 4. **Enforce SHA-pinning & `CODEOWNERS` in GitHub (`CICD-006`):** Enable repository-level SHA-pinning enforcement for GitHub Actions and add `.github/CODEOWNERS` for security-critical paths (`server/security.ts`, `server/middleware/`, `deploy/`, `.github/`).
 5. **Add automated secret scanning in CI / pre-commit:** Configure `gitleaks` in pre-commit or GitHub Actions to prevent future accidental credential commits.
 
