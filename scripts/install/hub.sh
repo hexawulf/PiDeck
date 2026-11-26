@@ -117,17 +117,18 @@ write_env() {
   local -A want=(
     [NODE_ENV]=production
     [PORT]="$PORT"
+    [PIDECK_BIND]=127.0.0.1
     [PIDECK_LOGS_DIR]="$HOME/logs"
     [PM2_LOGS_DIR]="$HOME/.pm2/logs"
     [CSP_ENFORCE]=true
   )
   [ -n "$DATABASE_URL_VALUE" ] && want[DATABASE_URL]="$DATABASE_URL_VALUE"
-  if [ "$LAN_HTTP" = 1 ]; then want[PIDECK_INSECURE_HTTP]=1; want[TRUST_PROXY]=false; fi
+  if [ "$LAN_HTTP" = 1 ]; then want[PIDECK_INSECURE_HTTP]=1; want[TRUST_PROXY]=false; want[PIDECK_BIND]=0.0.0.0; fi
   [ -n "$NVME_DEVICE" ] && want[PIDECK_NVME_DEVICE]="$NVME_DEVICE"
   if ! env_has SESSION_SECRET; then
     if [ "$DRY_RUN" = 1 ]; then want[SESSION_SECRET]="(generated)"; else want[SESSION_SECRET]="$(openssl rand -hex 32)"; fi
   fi
-  local order=(NODE_ENV PORT SESSION_SECRET DATABASE_URL CSP_ENFORCE PIDECK_LOGS_DIR PM2_LOGS_DIR PIDECK_INSECURE_HTTP TRUST_PROXY PIDECK_NVME_DEVICE)
+  local order=(NODE_ENV PORT PIDECK_BIND SESSION_SECRET DATABASE_URL CSP_ENFORCE PIDECK_LOGS_DIR PM2_LOGS_DIR PIDECK_INSECURE_HTTP TRUST_PROXY PIDECK_NVME_DEVICE)
   local header=0
   for k in "${order[@]}"; do
     [ -n "${want[$k]+x}" ] || continue

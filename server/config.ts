@@ -117,7 +117,7 @@ export function cookieSecure(env: NodeJS.ProcessEnv = process.env): boolean {
  */
 export function trustProxy(env: NodeJS.ProcessEnv = process.env): boolean | number | string {
   const v = env.TRUST_PROXY?.trim();
-  if (!v) return 1;
+  if (!v) return insecureHttp(env) ? false : 1;
   if (/^(false|0|no|off)$/i.test(v)) return false;
   if (/^(true|yes|on)$/i.test(v)) return true;
   if (/^\d+$/.test(v)) return Number(v);
@@ -159,12 +159,14 @@ export function agentConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig |
 }
 
 /**
- * The hub's listen address (2.13.1). Default 0.0.0.0, so `install.sh --lan-http`
- * (http://<ip>:5006) keeps working; set PIDECK_BIND=127.0.0.1 when a reverse proxy
- * on the same host is the only client. Same rules as PIDECK_AGENT_BIND.
+ * The hub's listen address (2.13.1). In production behind a reverse proxy
+ * (the default when PIDECK_INSECURE_HTTP is not "1"), defaults to 127.0.0.1 so
+ * clients cannot bypass the proxy and spoof X-Forwarded-For. Outside production
+ * or with PIDECK_INSECURE_HTTP=1 (--lan-http), defaults to 0.0.0.0.
  */
 export function hubBind(env: NodeJS.ProcessEnv = process.env): string | { error: string } {
-  const bind = (env.PIDECK_BIND ?? "").trim() || "0.0.0.0";
+  const fallback = env.NODE_ENV === "production" && !insecureHttp(env) ? "127.0.0.1" : "0.0.0.0";
+  const bind = (env.PIDECK_BIND ?? "").trim() || fallback;
   if (!/^([0-9.]+|[0-9a-f:]+|localhost)$/i.test(bind)) return { error: `PIDECK_BIND must be an IP address (got "${bind}")` };
   return bind;
 }
