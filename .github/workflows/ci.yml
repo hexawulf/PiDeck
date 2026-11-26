@@ -51,10 +51,10 @@ jobs:
       # rimraf under firebase-admin) differently and refuses `npm ci`.
       # piapps runs npm 11.13; match it.
       - name: Align npm version
-        run: npm install -g npm@11.13.0
+        run: npm install -g --ignore-scripts npm@11.13.0
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-audit --no-fund --ignore-scripts
 
       - name: Typecheck
         run: npm run check
@@ -108,10 +108,10 @@ jobs:
           cache: npm
 
       - name: Align npm version
-        run: npm install -g npm@11.13.0
+        run: npm install -g --ignore-scripts npm@11.13.0
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-audit --no-fund --ignore-scripts
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
