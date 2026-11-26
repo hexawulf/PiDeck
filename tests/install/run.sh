@@ -170,7 +170,7 @@ EOF
   # hostname -I: the LAN address plus whatever $S/addrs holds (a tunnel address that is up).
   stub hostname <<EOF
 #!/usr/bin/env bash
-case "\${1:-}" in -I) echo "192.0.2.10 fd00::10 \$(cat "$S/addrs" 2>/dev/null)" ;; -s) echo "Agent-Box" ;; *) echo agent-box ;; esac
+case "\${1:-}" in -I) echo "\${FAKE_LAN_IP:-10.20.30.10} fd00::10 \$(cat "$S/addrs" 2>/dev/null)" ;; -s) echo "Agent-Box" ;; *) echo agent-box ;; esac
 EOF
   # uname -m: the real machine unless $S/arch says otherwise (x86_64 runs on a Pi).
   stub uname <<EOF
@@ -182,6 +182,7 @@ EOF
 # Run the installer/uninstaller in the sandbox (stdin closed = non-interactive).
 inst() { (cd "$APP" && env -i PATH="$W/bin:$PATH" HOME="$W/home" TMPDIR="$W/tmp" TERM=dumb \
   PIDECK_ETC_DIR="$W/etc" PIDECK_TEST_STATE="$W/state" FAKE_UID="${FAKE_UID:-1000}" \
+  FAKE_LAN_IP="${FAKE_LAN_IP:-}" \
   PIDECK_ADD_HOST_TOKEN="${PIDECK_ADD_HOST_TOKEN:-}" PIDECK_CHECK_LOGIN_FILE="${PIDECK_CHECK_LOGIN_FILE:-}" \
   PIDECK_DB_NAME="${PIDECK_DB_NAME:-}" PIDECK_DB_USER="${PIDECK_DB_USER:-}" \
   "$APP/scripts/install.sh" "$@" </dev/null > "$W/out" 2>&1); }
@@ -422,14 +423,14 @@ new_sandbox "--agent install, re-run, rotate, update, uninstall"
 inst "${AGENT[@]}" --sudoers --nvme-device /dev/nvme0 || { bad "install exit $?"; tail -n 25 "$W/out"; }
 check "no Postgres at all (no psql, no migrate, no admin password)" bash -c "! grep -qE '^(psql|npx|sudo -u postgres|migrate|helper db-dump)' '$W/state/calls' && test ! -e '$W/home/.config/pideck/admin-password'"
 check ".env is 0600 and says agent mode" bash -c "test \"\$(stat -c %a '$APP/.env')\" = 600 && grep -qx PIDECK_MODE=agent '$APP/.env'"
-check ".env binds the LAN address, port 5016" bash -c "grep -qx PIDECK_AGENT_BIND=192.0.2.10 '$APP/.env' && grep -qx PIDECK_AGENT_PORT=5016 '$APP/.env'"
+check ".env binds the LAN address, port 5016" bash -c "grep -qx PIDECK_AGENT_BIND=10.20.30.10 '$APP/.env' && grep -qx PIDECK_AGENT_PORT=5016 '$APP/.env'"
 check ".env has no hub secrets" bash -c "! grep -qE '^(SESSION_SECRET|DATABASE_URL)=' '$APP/.env'"
 TOKEN="$(agent_token)"
 check "token: 32 random bytes (64 hex), shown once on the terminal" bash -c "[[ '$TOKEN' =~ ^[0-9a-f]{64}\$ ]] && test \"\$(grep -cF '$TOKEN' '$W/out')\" = 1"
 check "only its SHA-256 is stored" bash -c "test \"\$(printf %s '$TOKEN' | sha256sum | cut -d' ' -f1)\" = '$(agent_hash)' && ! grep -qF '$TOKEN' '$APP/.env'"
 log="$(latest_log)"
 check "token never in the log" bash -c "test -s '$log' && ! grep -qF '$TOKEN' '$log'"
-check "prints the exact hub command" grep -q -- '--add-host agent-box --url http://192.0.2.10:5016' "$W/out"
+check "prints the exact hub command" grep -q -- '--add-host agent-box --url http://10.20.30.10:5016' "$W/out"
 unit="$W/etc/systemd/system/pideck-agent.service"
 check "pideck-agent unit rendered, verified, installed 0644, started" bash -c "test \"\$(stat -c %a '$unit')\" = 644 && ! grep -q '@[A-Z_]*@' '$unit' && grep -qx 'Environment=PIDECK_MODE=agent' '$unit' && grep -q '^systemd-analyze verify' '$W/state/calls' && grep -q '^systemctl enable --now pideck-agent' '$W/state/calls'"
 check "no hub service, no pm2" bash -c "test ! -e '$W/etc/systemd/system/pideck.service' && ! grep -q '^pm2 ' '$W/state/calls'"
@@ -450,7 +451,7 @@ old_hash="$(agent_hash)"
 inst "${AGENT[@]}" --rotate-token || bad "rotate exit $?"
 NEW="$(agent_token)"
 check "--rotate-token: new hash, old one gone, .bak kept, shown once" bash -c "test '$(agent_hash)' != '$old_hash' && test \"\$(printf %s '$NEW' | sha256sum | cut -d' ' -f1)\" = '$(agent_hash)' && ls '$APP'/.env.bak.* >/dev/null && test \"\$(grep -c '^PIDECK_AGENT_TOKEN_SHA256=' '$APP/.env')\" = 1"
-check "--rotate-token: other .env values untouched" bash -c "grep -qx PIDECK_AGENT_BIND=192.0.2.10 '$APP/.env' && grep -qx PIDECK_MODE=agent '$APP/.env'"
+check "--rotate-token: other .env values untouched" bash -c "grep -qx PIDECK_AGENT_BIND=10.20.30.10 '$APP/.env' && grep -qx PIDECK_MODE=agent '$APP/.env'"
 ( cd "$W/src" && echo "// v2" >> ecosystem.config.cjs && git -c user.name=t -c user.email=t@t commit -qam v2 )
 : > "$W/state/calls"
 inst --update || { bad "update exit $?"; tail -n 20 "$W/out"; }
@@ -609,6 +610,13 @@ if PIDECK_DB_NAME="pideck'; DROP TABLE users;--" inst "${STD[@]}"; then bad "bad
 check "says invalid PIDECK_DB_NAME and never runs psql" bash -c "grep -q 'invalid PIDECK_DB_NAME' '$W/out' && ! grep -q psql '$W/state/calls' 2>/dev/null"
 if PIDECK_DB_USER="1bad-user" inst "${STD[@]}"; then bad "bad DB_USER accepted"; else ok "rejects invalid PIDECK_DB_USER"; fi
 check "says invalid PIDECK_DB_USER and never runs psql" bash -c "grep -q 'invalid PIDECK_DB_USER' '$W/out' && ! grep -q psql '$W/state/calls' 2>/dev/null"
+cleanup
+
+new_sandbox "--agent refuses auto-binding to a public IPv4 without --agent-bind (INFRA-005)"
+if FAKE_LAN_IP=203.0.113.10 inst --agent --yes; then bad "auto-bound public IPv4"; else ok "refuses auto-binding public IPv4"; fi
+check "says refusing to auto-bind and writes nothing" bash -c "grep -q 'refusing to auto-bind plain-HTTP agent to non-private address 203.0.113.10' '$W/out' && test ! -e '$APP/.env'"
+FAKE_LAN_IP=203.0.113.10 inst --agent --yes --agent-bind 203.0.113.10 --dry-run || bad "explicit --agent-bind override failed"
+check "explicit --agent-bind overrides public IPv4 guard" grep -q 'read-only agent on 203.0.113.10:5016' "$W/out"
 cleanup
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
