@@ -62,4 +62,46 @@ describe("createHealthHandler", () => {
     expect(res.statusCode).toBe(503);
     expect(res.body).toMatchObject({ ok: false, db: true, schema: false });
   });
+
+  it("caches DB ping for cacheMs and deduplicates concurrent pings (API-004)", async () => {
+    let t = 10_000;
+    let calls = 0;
+    let resolvePing!: () => void;
+    const handler = createHealthHandler({
+      ping: () => {
+        calls += 1;
+        return new Promise<void>((resolve) => { resolvePing = resolve; });
+      },
+      schemaReady: () => true,
+      cacheMs: 5_000,
+      now: () => t,
+    });
+
+    // Two concurrent requests share one in-flight ping
+    const r1 = fakeRes();
+    const r2 = fakeRes();
+    const p1 = handler(fakeReq, r1 as unknown as Response);
+    const p2 = handler(fakeReq, r2 as unknown as Response);
+    expect(calls).toBe(1);
+    resolvePing();
+    await Promise.all([p1, p2]);
+    expect(r1.statusCode).toBe(200);
+    expect(r2.statusCode).toBe(200);
+
+    // Within TTL: served from cache without calling ping again
+    t += 2_000;
+    const r3 = fakeRes();
+    await handler(fakeReq, r3 as unknown as Response);
+    expect(calls).toBe(1);
+    expect(r3.statusCode).toBe(200);
+
+    // After TTL: triggers a fresh ping
+    t += 4_000;
+    const r4 = fakeRes();
+    const p4 = handler(fakeReq, r4 as unknown as Response);
+    expect(calls).toBe(2);
+    resolvePing();
+    await p4;
+    expect(r4.statusCode).toBe(200);
+  });
 });
