@@ -38,6 +38,21 @@ describe("hasNestedQuantifier", () => {
 
   it.each(["a+b*", "(ab)+", "(error|warn)", "(\\d{4})-\\d+", "[(a+)]+", "\\(a+\\)+", "(?:ab)*", "^\\[\\w+\\]"])(
     "allows %s", (src) => expect(hasNestedQuantifier(src)).toBe(false));
+
+  it.each([
+    "a+a+",
+    ".*.*",
+    "\\w+\\w+",
+    "[a-z]+[a-z]+",
+    "a+b+c+",
+    "(a)\\1+",
+    "(?<x>a)\\k<x>+",
+    "(?=a+)a+",
+    "a{200}",
+  ])("flags ReDoS bypass pattern %s (INJECTION-001)", (src) => {
+    expect(hasNestedQuantifier(src)).toBe(true);
+    rejects(() => lineFilter(`/${src}/`), /regex too complex/);
+  });
 });
 
 describe("lineFilter (hostLogs)", () => {

@@ -9,6 +9,7 @@ import { redactLine } from '../services/agent-logs/redact';
 const r = Router();
 const LARGE_LOG_BYTES = 50 * 1024 * 1024;
 const MAX_TAIL_LINES = 5000;
+export const MAX_LOG_LINE_LENGTH = 8 * 1024;
 // The list scans ~/logs (160+ files on piapps), nginx and the configured
 // logs; reads and list refreshes within this window share one scan (PD-16).
 const LIST_CACHE_MS = 5_000;
@@ -263,7 +264,8 @@ r.get('/:id', async (req, res) => {
     let redacted = 0;
     const out: string[] = [];
     for (const line of lines) {
-      const r = redactLine(line);
+      const capped = line.length > MAX_LOG_LINE_LENGTH ? `${line.slice(0, MAX_LOG_LINE_LENGTH)}… [truncated]` : line;
+      const r = redactLine(capped);
       if (keep && !keep(r.text)) continue;
       redacted += r.count;
       out.push(r.text);
