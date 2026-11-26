@@ -57,6 +57,15 @@ describe("hub /api auth barrier (AUTHZ-001)", () => {
     expect((await fetch(base + "/api/auth/firebase-login")).status).toBe(405);
     expect((await fetch(base + "/api/auth/me")).status).toBe(200);
   });
+
+  it("omits X-PiDeck-Instance PID header and unauthenticated maintenance state (API-006)", async () => {
+    const res = await fetch(base + "/api/auth/me");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-pideck-instance")).toBeNull();
+    const body = await res.json();
+    expect(body).toMatchObject({ authenticated: false });
+    expect(body).not.toHaveProperty("maintenance");
+  });
 });
 
 describe("privileged hub route authz (AUTHZ-002)", () => {

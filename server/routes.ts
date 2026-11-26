@@ -157,12 +157,6 @@ export function createChangePasswordHandler(deps: ChangePasswordDeps = {}) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Instance fingerprint header
-  app.use((_req, res, next) => {
-    res.setHeader("X-PiDeck-Instance", process.pid.toString());
-    next();
-  });
-
   // Cache-Control headers for all API responses
   app.use((req, res, next) => {
     if (req.path.startsWith("/api/")) {
@@ -333,11 +327,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // (Secure cookie over plain HTTP) and warn in PIDECK_INSECURE_HTTP mode.
   app.get("/api/auth/me", (req, res) => {
     const transport = { secureCookie: cookieSecure(), insecureHttp: insecureHttp() };
-    // Pending schema migrations (M0): a banner tells the operator to run --update.
-    const maintenance = { dbMigrationsPending: schemaState().checked && !schemaReady() };
     const firebase = getFirebasePublicConfig();
     const session = req.session as AuthSession | undefined;
     if (session?.authenticated && sessionStillValid(req)) {
+      // Pending schema migrations (M0): a banner tells the operator to run --update.
+      const maintenance = { dbMigrationsPending: schemaState().checked && !schemaReady() };
       // historyHours: how far back history goes (PIDECK_HISTORY_HOURS), so charts offer 3d/7d only when kept.
       res.json({
         authenticated: true,
@@ -351,7 +345,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         firebase,
       });
     } else {
-      res.json({ authenticated: false, transport, maintenance, firebase });
+      res.json({ authenticated: false, transport, firebase });
     }
   });
 
