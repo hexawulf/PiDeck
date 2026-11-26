@@ -15,16 +15,12 @@ Environment=NODE_ENV=production
 ExecStart=@NODE@ @APP_DIR@/dist/index.js
 Restart=on-failure
 RestartSec=5
-# Baseline sandboxing (override NoNewPrivileges=false in a drop-in if using --sudoers for smartctl/ufw/apt-get).
-NoNewPrivileges=true
+# No NoNewPrivileges=, ProtectSystem=, ProtectKernel*, ProtectControlGroups=, or UMask=:
+# hub System Update and optional --sudoers rules (smartctl, ufw, apt-get) need setuid sudo
+# and write access to system paths.
 PrivateTmp=true
-ProtectSystem=full
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
 LockPersonality=true
 RestrictRealtime=true
-UMask=0027
 
 [Install]
 WantedBy=multi-user.target

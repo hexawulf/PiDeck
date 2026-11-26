@@ -11,11 +11,11 @@
 | **Critical** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | **High** | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |
 | **Medium** | 23 | 14 | 14 | 0 | 0 | 12 | 1 | 1 | 0 | 0 |
-| **Low** | 32 | 28 | 27 | 1 | 0 | 25 | 1 | 1 | 1 | 0 |
+| **Low** | 32 | 28 | 27 | 1 | 0 | 24 | 2 | 1 | 1 | 0 |
 | **Info** | 4 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 4 |
-| **Total** | **60** | **47** | **46** | **1** | **0** | **37** | **2** | **3** | **1** | **4** |
+| **Total** | **60** | **47** | **46** | **1** | **0** | **36** | **3** | **3** | **1** | **4** |
 
-*Note: 13 raw findings were merged as cross-layer duplicates during independent verification (60 raw → 47 unique). `LOGGING-001` was downgraded from Medium to Low. 39 findings (37 full + 2 partial) are fixed in this PR across 40 fix commits (`AUTHZ-002` includes follow-up TypeScript narrowing commit `08ac004`).*
+*Note: 13 raw findings were merged as cross-layer duplicates during independent verification (60 raw → 47 unique). `LOGGING-001` was downgraded from Medium to Low. 39 findings (36 full + 3 partial) are addressed in this PR.*
 
 ### Top 3 risks in plain language
 
@@ -614,7 +614,7 @@ Findings are ordered by severity (**High → Medium → Low → Info**) and grou
 - **Exploit scenario:** An attacker achieving code execution inside the Node.js service faces a broader local privilege-escalation and persistence surface via shared `/tmp`, kernel tunables, or setuid binaries.
 - **Preconditions:** Service deployed via systemd and attacker obtains code execution in Node.js.
 - **Recommended fix:** Add safe baseline directives (`PrivateTmp=true`, `ProtectKernelTunables=true`, `ProtectKernelModules=true`, `ProtectControlGroups=true`, `LockPersonality=true`, `RestrictRealtime=true`, `UMask=0027`, plus `RestrictNamespaces=true` and `RestrictAddressFamilies` on the agent) to the templates.
-- **Status:** `Fixed (2a299fe)`
+- **Status:** `Partial — NoNewPrivileges/ProtectSystem not applied: conflicts with --sudoers` (`2a299fe`, adjusted for `--sudoers` compatibility)
 
 #### [LOW] INFRA-003 — Nginx reverse-proxy templates omit explicit TLS protocol/cipher hardening and docs config forwards unconditional Connection: upgrade
 - **Location:** `deploy/nginx/pideck.conf.example:17-38`, `docs/nginx/pideck.piapps.dev.conf:7-25`
