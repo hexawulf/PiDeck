@@ -182,6 +182,11 @@ export const HOST_TIMEOUT_MAX_S = 9;
 
 const HOST_ID = /^[a-z0-9-]{1,32}$/;
 
+function isLoopbackHostname(hostname: string): boolean {
+  const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return h === "localhost" || h === "::1" || h === "0:0:0:0:0:0:0:1" || /^127(?:\.\d{1,3}){3}$/.test(h);
+}
+
 function pairs(value: string | undefined, name: string, warn: (m: string) => void): [string, string][] {
   const out: [string, string][] = [];
   for (const raw of (value || "").split(",")) {
@@ -250,6 +255,31 @@ export function parseHosts(
     else if (label) host.label = label.slice(0, 64);
   }
   return hosts;
+}
+
+/**
+ * Emit a startup security warning for any remote host configured with a
+ * non-loopback cleartext http:// URL (CRYPTO-003).
+ */
+export function warnCleartextHosts(
+  hosts: readonly HostEntry[],
+  warn: (msg: string) => void = (m) => console.warn(m),
+): string[] {
+  const warnings: string[] = [];
+  for (const host of hosts) {
+    let parsed: URL;
+    try {
+      parsed = new URL(host.url);
+    } catch {
+      continue;
+    }
+    if (parsed.protocol === "http:" && !isLoopbackHostname(parsed.hostname)) {
+      const msg = `[security] PIDECK_HOSTS: host "${host.id}" uses cleartext http:// (${parsed.origin}); bearer tokens are unencrypted unless protected by HTTPS or a VPN/WireGuard tunnel`;
+      warnings.push(msg);
+      warn(msg);
+    }
+  }
+  return warnings;
 }
 
 /** An integer env value clamped to [min, max]; invalid → fallback with a warning. */
