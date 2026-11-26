@@ -98,6 +98,7 @@ export function createChangePasswordHandler(deps: ChangePasswordDeps = {}) {
 
       const strengthCheck = validatePasswordStrength(parsed.newPassword);
       if (!strengthCheck.isValid) {
+        console.warn(authLogLine({ method: "password", result: "change-weak-password", ip }));
         return res.status(400).json({ message: strengthCheck.message });
       }
 
@@ -314,11 +315,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   app.post("/api/auth/logout", (req, res) => {
+    const s = req.session as AuthSession | undefined;
+    const actor = s?.userId ?? "?";
+    const ip = sanitizeLogValue(clientKey(req), 64);
     req.session.destroy((err) => {
       if (err) {
         console.error("Session destroy error:", err);
+        console.warn(`[audit] auth action=logout result=error user=${actor} ip=${ip}`);
         return res.status(500).json({ message: "Logout failed" });
       }
+      console.log(`[audit] auth action=logout result=ok user=${actor} ip=${ip}`);
       res.json({ message: "Logout successful" });
     });
   });
@@ -417,32 +423,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/services", requireAuth, servicesHandler);
 
   // Docker container actions (listing handled by dockerRouter via Dockerode)
+  const auditActor = (req: Request) => {
+    const s = req.session as AuthSession | undefined;
+    return `user=${s?.userId ?? "?"} ip=${sanitizeLogValue(clientKey(req), 64)}`;
+  };
+
   app.post("/api/docker/containers/:id/restart", requireAuth, async (req, res) => {
+    const target = sanitizeLogValue(req.params.id, 80);
     try {
       await SystemService.restartDockerContainer(req.params.id);
+      console.log(`[audit] docker action=restart container=${target} result=ok ${auditActor(req)}`);
       res.json({ message: "Container restarted successfully" });
     } catch (error) {
       console.error("Restart container error:", error);
+      console.warn(`[audit] docker action=restart container=${target} result=error ${auditActor(req)}`);
       res.status(500).json({ message: "Failed to restart container" });
     }
   });
 
   app.post("/api/docker/containers/:id/stop", requireAuth, async (req, res) => {
+    const target = sanitizeLogValue(req.params.id, 80);
     try {
       await SystemService.stopDockerContainer(req.params.id);
+      console.log(`[audit] docker action=stop container=${target} result=ok ${auditActor(req)}`);
       res.json({ message: "Container stopped successfully" });
     } catch (error) {
       console.error("Stop container error:", error);
+      console.warn(`[audit] docker action=stop container=${target} result=error ${auditActor(req)}`);
       res.status(500).json({ message: "Failed to stop container" });
     }
   });
 
   app.post("/api/docker/containers/:id/start", requireAuth, async (req, res) => {
+    const target = sanitizeLogValue(req.params.id, 80);
     try {
       await SystemService.startDockerContainer(req.params.id);
+      console.log(`[audit] docker action=start container=${target} result=ok ${auditActor(req)}`);
       res.json({ message: "Container started successfully" });
     } catch (error) {
       console.error("Start container error:", error);
+      console.warn(`[audit] docker action=start container=${target} result=error ${auditActor(req)}`);
       res.status(500).json({ message: "Failed to start container" });
     }
   });
@@ -451,12 +471,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // 400 bad name · 404 not a pm2 process · 409 PiDeck stopping itself (services/system.ts).
   for (const action of ["restart", "stop"] as const) {
     app.post(`/api/pm2/processes/:name/${action}`, requireAuth, async (req, res) => {
+      const target = sanitizeLogValue(req.params.name, 80);
       try {
         await SystemService.pm2Action(action, req.params.name);
+        console.log(`[audit] pm2 action=${action} name=${target} result=ok ${auditActor(req)}`);
         res.json({ message: action === "stop" ? "Process stopped successfully" : "Process restarted successfully" });
       } catch (error) {
-        if (error instanceof Pm2ActionError) return res.status(error.status).json({ message: error.message });
+        if (error instanceof Pm2ActionError) {
+          console.warn(`[audit] pm2 action=${action} name=${target} result=${error.status} ${auditActor(req)}`);
+          return res.status(error.status).json({ message: error.message });
+        }
         console.error(`${action} PM2 process error:`, error);
+        console.warn(`[audit] pm2 action=${action} name=${target} result=error ${auditActor(req)}`);
         res.status(500).json({ message: `Failed to ${action} process` });
       }
     });
@@ -483,18 +509,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof requestedCommand !== "string" || !requestedCommand) {
         return res.status(400).json({ message: "Command is required" });
       }
+      const cmdLabel = sanitizeLogValue(requestedCommand, 120);
       const entry = (await readCrontab()).find((job) => job.command === requestedCommand);
       if (!entry) {
+        console.warn(`[audit] cron action=run command="${cmdLabel}" result=rejected ${auditActor(req)}`);
         return res.status(403).json({ message: "Invalid or not allowed cron command." });
       }
       const result = await runCronEntry(entry);
       if (result.state === "running") {
+        console.log(`[audit] cron action=run command="${cmdLabel}" result=running ${auditActor(req)}`);
         return res.status(202).json({ message: "Cron job started; it is still running", ...result });
       }
+      console.log(`[audit] cron action=run command="${cmdLabel}" result=exit:${result.exitCode ?? "killed"} ${auditActor(req)}`);
       if (result.exitCode === 0) return res.json({ message: "Cron job executed successfully", ...result });
       res.status(500).json({ message: `Cron job failed (exit code ${result.exitCode ?? "none: killed"})`, ...result });
     } catch (error) {
       console.error("Run cron job error:", error);
+      console.warn(`[audit] cron action=run result=error ${auditActor(req)}`);
       res.status(500).json({ message: "Failed to execute cron job" });
     }
   });

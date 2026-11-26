@@ -1,6 +1,7 @@
 import net from 'net';
 import type { Request, Response, NextFunction } from 'express';
 import { trustCloudflare } from '../config';
+import { sanitizeLogValue } from '../services/log-sanitize';
 
 const WINDOW_MS = 10 * 60 * 1000; // 10 min
 const MAX_ATTEMPTS = 10;
@@ -30,12 +31,14 @@ export function createRateLimitLogin(opts?: {
   windowMs?: number;
   maxAttempts?: number;
   now?: () => number;
+  warn?: (msg: string) => void;
 }) {
   const bucket = new Map<string, { count: number; reset: number }>();
   const maxEntries = opts?.maxEntries ?? MAX_RATE_LIMIT_ENTRIES;
   const windowMs = opts?.windowMs ?? WINDOW_MS;
   const maxAttempts = opts?.maxAttempts ?? MAX_ATTEMPTS;
   const nowFn = opts?.now ?? Date.now;
+  const warn = opts?.warn ?? ((msg: string) => console.warn(msg));
 
   setInterval(() => {
     const now = nowFn();
@@ -62,6 +65,9 @@ export function createRateLimitLogin(opts?: {
     }
     bucket.set(ip, entry);
     if (entry.count > maxAttempts) {
+      warn(
+        `[audit] rate-limit result=429 ip=${sanitizeLogValue(ip, 64)} path=${sanitizeLogValue((req.originalUrl || req.path || '').split('?')[0], 120)}`,
+      );
       res.setHeader('Retry-After', Math.ceil((entry.reset - now) / 1000).toString());
       return res.status(429).json({ message: 'Too many login attempts. Try again later.' });
     }

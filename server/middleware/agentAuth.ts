@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import { sanitizeLogValue } from "../services/log-sanitize";
 
 // Agent token auth: `Authorization: Bearer <token>`, compared as SHA-256
 // digests with timingSafeEqual. The agent only ever holds the hash
@@ -75,8 +76,32 @@ export function createFailureLimiter({ max = 10, windowMs = 10 * 60 * 1000, maxE
   };
 }
 
+export interface AgentAuthOptions {
+  warn?: (msg: string) => void;
+  logThrottleMs?: number;
+  now?: () => number;
+}
+
 /** 401 (no detail) unless the bearer token matches; 429 after repeated failures. */
-export function agentAuth(expectedHex: string, limiter = createFailureLimiter()) {
+export function agentAuth(expectedHex: string, limiter = createFailureLimiter(), opts: AgentAuthOptions = {}) {
+  const warn = opts.warn ?? ((msg: string) => console.warn(msg));
+  const logThrottleMs = opts.logThrottleMs ?? 60_000;
+  const nowFn = opts.now ?? Date.now;
+  const lastLog = new Map<string, number>();
+
+  const auditFailure = (key: string, status: 401 | 429, reqPath: string) => {
+    const t = nowFn();
+    const bucketKey = `${status}:${key}`;
+    const prev = lastLog.get(bucketKey);
+    if (prev !== undefined && t - prev < logThrottleMs) return;
+    if (lastLog.size >= 10_000) {
+      const oldest = lastLog.keys().next().value;
+      if (oldest !== undefined) lastLog.delete(oldest);
+    }
+    lastLog.set(bucketKey, t);
+    warn(`[audit] agent-auth result=${status} ip=${sanitizeLogValue(key, 64)} path=${sanitizeLogValue(reqPath, 120)}`);
+  };
+
   return (req: Request, res: Response, next: NextFunction) => {
     const key = req.ip || req.socket.remoteAddress || "unknown";
     if (tokenMatches(expectedHex, bearerToken(req.headers.authorization))) {
@@ -84,10 +109,12 @@ export function agentAuth(expectedHex: string, limiter = createFailureLimiter())
       return next();
     }
     if (limiter.blocked(key)) {
+      auditFailure(key, 429, req.path);
       res.setHeader("Retry-After", String(limiter.retryAfterSec(key)));
       return res.status(429).json({ message: "Too many attempts" });
     }
     limiter.fail(key);
+    auditFailure(key, 401, req.path);
     return res.status(401).json({ message: "Unauthorized" });
   };
 }

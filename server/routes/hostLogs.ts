@@ -5,6 +5,8 @@ import { PIDECK_LOGS_DIR, hostLogs } from '../config';
 import { lineFilter, LogFilterError } from '../services/log-filter';
 import { tailFile } from '../services/agent-logs/sources';
 import { redactLine } from '../services/agent-logs/redact';
+import { clientKey } from '../middleware/rateLimitLogin';
+import { sanitizeLogValue } from '../services/log-sanitize';
 
 const r = Router();
 const LARGE_LOG_BYTES = 50 * 1024 * 1024;
@@ -285,7 +287,13 @@ r.get('/:id', async (req, res) => {
       const safeName = log.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       res.setHeader('Content-Disposition', `attachment; filename="${safeName}.log"`);
     }
-    
+
+    const sessionUser = (req.session as { userId?: number } | undefined)?.userId ?? '?';
+    const action = req.query.download === '1' ? 'download' : 'read';
+    console.log(
+      `[audit] local-log action=${action} id=${sanitizeLogValue(log.id, 80)} user=${sessionUser} ip=${sanitizeLogValue(clientKey(req), 64)}`,
+    );
+
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.send(text);
   } catch (error) {

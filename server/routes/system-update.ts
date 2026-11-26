@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { isDsm } from "../services/platform";
 import { UpdateAlreadyRunning, type UpdateRunner } from "../services/system-update";
+import { clientKey } from "../middleware/rateLimitLogin";
+import { sanitizeLogValue } from "../services/log-sanitize";
 
 // POST /api/system/update starts `sudo apt-get update && sudo apt-get upgrade -y`
 // as a background job and answers 202 at once; GET /api/system/update reports
@@ -20,7 +22,8 @@ type Deps = {
 };
 
 export function createSystemUpdateHandler({ runner, env = process.env, dsm = isDsm }: Deps) {
-  return (_req: Request, res: Response) => {
+  return (req: Request, res: Response) => {
+    const actor = `user=${(req.session as { userId?: number } | undefined)?.userId ?? "?"} ip=${sanitizeLogValue(clientKey(req), 64)}`;
     if (systemUpdateDisabled(env)) {
       return res.status(409).json({ message: SYSTEM_UPDATE_DISABLED_MESSAGE });
     }
@@ -29,12 +32,15 @@ export function createSystemUpdateHandler({ runner, env = process.env, dsm = isD
     }
     try {
       const status = runner.start();
+      console.log(`[audit] system-update action=start result=ok ${actor}`);
       res.status(202).json({ message: "System update started", ...status });
     } catch (error) {
       if (error instanceof UpdateAlreadyRunning) {
+        console.warn(`[audit] system-update action=start result=already-running ${actor}`);
         return res.status(409).json({ message: error.message, ...runner.status() });
       }
       console.error("System update error:", error);
+      console.warn(`[audit] system-update action=start result=error ${actor}`);
       res.status(500).json({ message: "Failed to start the system update" });
     }
   };
