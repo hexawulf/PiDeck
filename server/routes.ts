@@ -17,7 +17,6 @@ import powerStatusRouter from "./routes/powerStatus";
 import { createSystemUpdateHandler, createSystemUpdateStatusHandler } from "./routes/system-update";
 import { updateRunner } from "./services/system-update";
 import { readCrontab, runCronEntry } from "./services/cron";
-import { unavailable } from "./services/unavailable";
 
 import { loginSchema } from "@shared/schema";
 import { clientKey, rateLimitLogin } from "./middleware/rateLimitLogin";
@@ -413,18 +412,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       : res.status(405).json({ message: "Remote hosts are read-only" }),
   );
 
-  // These ad-hoc endpoints are also protected by the wrapper above
+  // Explicit requireAuth on every privileged ad-hoc route (defense-in-depth, AUTHZ-002).
   // 409 without running anything when PIDECK_DISABLE_SYSTEM_UPDATE=1 (E2E builds).
   // POST starts the job and answers 202; GET reports how it is going.
-  app.post("/api/system/update", createSystemUpdateHandler({ runner: updateRunner() }));
-  app.get("/api/system/update", createSystemUpdateStatusHandler({ runner: updateRunner() }));
+  app.post("/api/system/update", requireAuth, createSystemUpdateHandler({ runner: updateRunner() }));
+  app.get("/api/system/update", requireAuth, createSystemUpdateStatusHandler({ runner: updateRunner() }));
 
-  app.get("/api/reboot-check", rebootCheckHandler);
+  app.get("/api/reboot-check", requireAuth, rebootCheckHandler);
   // Read-only systemd units on the hub itself (agents serve the same route).
   app.get("/api/services", requireAuth, servicesHandler);
 
   // Docker container actions (listing handled by dockerRouter via Dockerode)
-  app.post("/api/docker/containers/:id/restart", async (req, res) => {
+  app.post("/api/docker/containers/:id/restart", requireAuth, async (req, res) => {
     try {
       await SystemService.restartDockerContainer(req.params.id);
       res.json({ message: "Container restarted successfully" });
@@ -434,7 +433,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/docker/containers/:id/stop", async (req, res) => {
+  app.post("/api/docker/containers/:id/stop", requireAuth, async (req, res) => {
     try {
       await SystemService.stopDockerContainer(req.params.id);
       res.json({ message: "Container stopped successfully" });
@@ -444,7 +443,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/docker/containers/:id/start", async (req, res) => {
+  app.post("/api/docker/containers/:id/start", requireAuth, async (req, res) => {
     try {
       await SystemService.startDockerContainer(req.params.id);
       res.json({ message: "Container started successfully" });
@@ -454,20 +453,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // PM2 helpers (protected)
-  app.get("/api/pm2/processes", async (_req, res) => {
-    try {
-      const processes = await SystemService.getPM2Processes();
-      res.json(processes ?? unavailable("not-installed", "pm2 isn't installed on this host."));
-    } catch (error) {
-      console.error("Get PM2 processes error:", error);
-      res.status(500).json({ message: "Failed to get PM2 processes" });
-    }
-  });
-
+  // PM2 actions (GET /api/pm2/processes is served by pm2Router mounted above).
   // 400 bad name · 404 not a pm2 process · 409 PiDeck stopping itself (services/system.ts).
   for (const action of ["restart", "stop"] as const) {
-    app.post(`/api/pm2/processes/:name/${action}`, async (req, res) => {
+    app.post(`/api/pm2/processes/:name/${action}`, requireAuth, async (req, res) => {
       try {
         await SystemService.pm2Action(action, req.params.name);
         res.json({ message: action === "stop" ? "Process stopped successfully" : "Process restarted successfully" });
@@ -480,7 +469,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   // Cron helpers (protected)
-  app.get("/api/cron/jobs", async (_req, res) => {
+  app.get("/api/cron/jobs", requireAuth, async (_req, res) => {
     try {
       const jobs = await SystemService.getCronJobs();
       res.json(jobs);
@@ -494,7 +483,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // must be one the crontab holds right now: nothing else can be run this way.
   //   200 finished with exit 0 · 500 finished with another exit code ·
   //   202 still running after 10 s (it keeps going; output in the named log)
-  app.post("/api/cron/run", async (req, res) => {
+  app.post("/api/cron/run", requireAuth, async (req, res) => {
     try {
       const requestedCommand = req.body?.command;
       if (typeof requestedCommand !== "string" || !requestedCommand) {

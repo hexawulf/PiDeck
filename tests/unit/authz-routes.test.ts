@@ -58,3 +58,41 @@ describe("hub /api auth barrier (AUTHZ-001)", () => {
     expect((await fetch(base + "/api/auth/me")).status).toBe(200);
   });
 });
+
+describe("privileged hub route authz (AUTHZ-002)", () => {
+  it("passes requireAuth directly on privileged routes and removes duplicate GET /api/pm2/processes", () => {
+    const src = fs.readFileSync(path.resolve("server/routes.ts"), "utf8");
+    expect(src).not.toMatch(/app\.get\(["']\/api\/pm2\/processes["']/);
+    for (const pattern of [
+      /app\.post\(["']\/api\/system\/update["'],\s*requireAuth,/,
+      /app\.get\(["']\/api\/system\/update["'],\s*requireAuth,/,
+      /app\.get\(["']\/api\/reboot-check["'],\s*requireAuth,/,
+      /app\.post\(["']\/api\/docker\/containers\/:id\/restart["'],\s*requireAuth,/,
+      /app\.post\(["']\/api\/docker\/containers\/:id\/stop["'],\s*requireAuth,/,
+      /app\.post\(["']\/api\/docker\/containers\/:id\/start["'],\s*requireAuth,/,
+      /app\.post\(`\/api\/pm2\/processes\/:name\/\$\{action\}`,\s*requireAuth,/,
+      /app\.get\(["']\/api\/cron\/jobs["'],\s*requireAuth,/,
+      /app\.post\(["']\/api\/cron\/run["'],\s*requireAuth,/,
+    ]) {
+      expect(src).toMatch(pattern);
+    }
+  });
+
+  it("rejects unauthenticated requests to privileged routes with 401", async () => {
+    for (const [method, p] of [
+      ["POST", "/api/system/update"],
+      ["GET", "/api/system/update"],
+      ["GET", "/api/reboot-check"],
+      ["POST", "/api/docker/containers/abc/restart"],
+      ["POST", "/api/docker/containers/abc/stop"],
+      ["POST", "/api/docker/containers/abc/start"],
+      ["POST", "/api/pm2/processes/demo/restart"],
+      ["POST", "/api/pm2/processes/demo/stop"],
+      ["GET", "/api/cron/jobs"],
+      ["POST", "/api/cron/run"],
+    ] as const) {
+      const res = await fetch(base + p, { method });
+      expect(res.status, `${method} ${p}`).toBe(401);
+    }
+  });
+});
