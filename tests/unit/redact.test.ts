@@ -45,6 +45,16 @@ describe("redactLine: secrets are replaced", () => {
   it("a password without a URL user is caught when its key names it", () => {
     expect(redactLine("REDIS_PASSWORD=onlypass").text).toBe(`REDIS_PASSWORD=${R}`);
   });
+
+  it("handles adversarial dot/hyphen strings in linear time (INJECTION-002)", () => {
+    const evil = "a.".repeat(10_000) + "a-".repeat(10_000) + "x";
+    const start = performance.now();
+    const res = redactLine(evil);
+    const elapsed = performance.now() - start;
+    expect(res.count).toBe(0);
+    expect(res.text).toBe(evil);
+    expect(elapsed).toBeLessThan(100);
+  });
 });
 
 describe("redactLine: false positives stay untouched", () => {

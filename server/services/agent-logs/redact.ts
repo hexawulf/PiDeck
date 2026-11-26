@@ -33,14 +33,14 @@ const RULES: Rule[] = [
   },
   {
     name: "url-credentials",
-    re: /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s@/]+)@/gi,
+    re: /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s@/]+)@/gi,
     replace: (_m, scheme, user) => `${scheme}${user}:${REDACTED}@`,
   },
   {
     // key (ending in a secret word) = or : value; the key may be quoted (JSON),
     // and a quoted value is redacted up to its closing quote (spaces included).
     name: "key-value",
-    re: /\b([A-Za-z0-9_.-]*(?:password|passwd|passphrase|token|secret|api[_-]?key))(["']?\s*[=:]\s*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s"',;&}[\]]+)/gi,
+    re: /(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]*(?:password|passwd|passphrase|token|secret|api[_-]?key))(["']?\s*[=:]\s*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s"',;&}[\]]+)/gi,
     replace: (m, key, sep, value) => {
       const quote = value[0] === '"' || value[0] === "'" ? value[0] : "";
       const inner = quote ? value.slice(1, -1) : value;
