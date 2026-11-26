@@ -377,14 +377,14 @@ What a remote host shows (2.4): the live dashboard cards and a read-only
 Apps tab (Docker and pm2 lists, no buttons). History charts, Quick Actions,
 Logs and Cron stay the hub's own for now.
 
-### Walkthrough: hub `piapps` (192.168.50.102) + agent `piapps2` (192.168.50.120)
+### Walkthrough: hub `hub` (192.0.2.1) + agent `node2` (192.0.2.10)
 
-**1. On the agent machine (piapps2)**, clone PiDeck and install it as an agent:
+**1. On the agent machine (node2)**, clone PiDeck and install it as an agent:
 
 ```bash
 git clone https://github.com/hexawulf/PiDeck.git && cd PiDeck
-./scripts/install.sh --agent --hub-ip 192.168.50.102 --dry-run   # read it first
-./scripts/install.sh --agent --hub-ip 192.168.50.102 --sudoers
+./scripts/install.sh --agent --hub-ip 192.0.2.1 --dry-run   # read it first
+./scripts/install.sh --agent --hub-ip 192.0.2.1 --sudoers
 ```
 
 This builds PiDeck and writes `.env` (`PIDECK_MODE=agent`, bind address,
@@ -397,35 +397,35 @@ Health and Firewall; an agent's rule has no apt-get lines).
 **2. Firewall on the agent**: allow only the hub to reach port 5016:
 
 ```bash
-sudo ufw allow from 192.168.50.102 to any port 5016 proto tcp
+sudo ufw allow from 192.0.2.1 to any port 5016 proto tcp
 ```
 
 or let the installer add exactly that rule with
-`--ufw-allow-from 192.168.50.102` (it records it, so `uninstall.sh` removes
+`--ufw-allow-from 192.0.2.1` (it records it, so `uninstall.sh` removes
 it again). The agent speaks plain HTTP on the LAN: the token plus this
 single-source rule are what protect it. Don't expose port 5016 anywhere else.
 
-**3. On the hub (piapps)**, add the host and paste the token when asked
+**3. On the hub (hub)**, add the host and paste the token when asked
 (the input is hidden):
 
 ```bash
 cd ~/PiDeck
-./scripts/install.sh --add-host piapps2 --url http://192.168.50.120:5016 --label "piapps2 (LAN)"
+./scripts/install.sh --add-host node2 --url http://192.0.2.10:5016 --label "node2 (LAN)"
 pm2 restart pideck --update-env          # or: sudo systemctl restart pideck
 ```
 
 `--add-host` first calls the agent's `/api/agent/info` with the token. It
 stops if the token is rejected or the agent can't be reached (add
 `--skip-health` to add it anyway). Then it appends `PIDECK_HOSTS`,
-`PIDECK_HOST_TOKEN_PIAPPS2` and `PIDECK_HOST_LABELS` to `.env`, keeping a
+`PIDECK_HOST_TOKEN_NODE2` and `PIDECK_HOST_LABELS` to `.env`, keeping a
 `.bak`. For scripts, the token can come from `--token-file F` (mode 0600) or
 `PIDECK_ADD_HOST_TOKEN` instead of the prompt.
 
-**4. Check it:** open the dashboard, pick piapps2 in the header switcher,
+**4. Check it:** open the dashboard, pick node2 in the header switcher,
 and watch its cards fill in. Stop the agent for a moment
-(`sudo systemctl stop pideck-agent`): its cards say "piapps2 is offline (last
-seen …)", and they recover once it is started again. On piapps2,
-`ss -ltnp | grep 5016` should show it listening on 192.168.50.120 only.
+(`sudo systemctl stop pideck-agent`): its cards say "node2 is offline (last
+seen …)", and they recover once it is started again. On node2,
+`ss -ltnp | grep 5016` should show it listening on 192.0.2.10 only.
 
 ### Status dots
 
@@ -449,7 +449,7 @@ not. Update agents **before** the hub, so they serve `/api/agent/sample`.
 On the agent: `./scripts/install.sh --agent --rotate-token`. This prints a
 new token once and replaces the hash (keeping a `.bak`); the old token stops
 working at once. Then on the hub:
-`./scripts/install.sh --add-host piapps2 --url http://192.168.50.120:5016 --replace`,
+`./scripts/install.sh --add-host node2 --url http://192.0.2.10:5016 --replace`,
 paste the new token, and restart the hub.
 
 ### Remove a host
@@ -535,7 +535,7 @@ routes exactly one /32 to the other.
    PrivateKey = <the hub's private key>
 
    [Peer]
-   # piapps4
+   # vps1
    PublicKey = <vps public key>
    AllowedIPs = 10.77.0.4/32
    Endpoint = <vps public IP>:51821
@@ -557,7 +557,7 @@ routes exactly one /32 to the other.
    on a small VPS (the agent itself needs about 90 MB). Both land in
    `/etc/systemd/system/pideck-agent.service.d/10-install.conf`; a re-run
    without them keeps them, a re-run with a new value changes just that one.
-5. **Hub**: `./scripts/install.sh --add-host piapps4 --url http://10.77.0.4:5016 --label piapps4`,
+5. **Hub**: `./scripts/install.sh --add-host vps1 --url http://10.77.0.4:5016 --label vps1`,
    paste the token, restart the hub. Far-away hosts may want
    `PIDECK_HOST_TIMEOUT_<ID>` (the default 5 s covers ~250 ms round trips).
 6. **Check** from outside the tunnel (the VPS's public address, another LAN
@@ -611,24 +611,24 @@ shows the host's Logs tab once the agent reports `capabilities.logs`
 | `PIDECK_AGENT_DOCKER_LOGS` | off | `on` lists **every** container (running and stopped; new ones appear by themselves) and tails its logs. |
 | `PIDECK_AGENT_DOCKER_SOCKET` | `/var/run/docker.sock` | Docker Engine socket. |
 
-Example (piapps2):
+Example (node2):
 ```
 PIDECK_AGENT_LOGS=on
-PIDECK_HOST_LOGS=syslog:Syslog=/var/log/syslog,auth:Auth log=/var/log/auth.log,agentmail:Agentmail send=/home/zk/logs/agentmail-send.log,wulfreport:Wulfreport=/home/zk/logs/wulfreport/%Y-%m.log
+PIDECK_HOST_LOGS=syslog:Syslog=/var/log/syslog,auth:Auth log=/var/log/auth.log,app:App log=/home/pideck/logs/app.log,report:Monthly report=/home/pideck/logs/reports/%Y-%m.log
 PIDECK_AGENT_JOURNAL_UNITS=pideck-agent
 PIDECK_AGENT_DOCKER_LOGS=on
 ```
-Example (DS920+, after `synogroup --memberadd log zk`):
+Example (Synology NAS, after `synogroup --memberadd log pideck`):
 ```
 PIDECK_AGENT_LOGS=on
-PIDECK_HOST_LOGS=messages:Messages=/var/log/messages,agent:PiDeck agent=/var/services/homes/zk/logs/pideck-agent-*.log
+PIDECK_HOST_LOGS=messages:Messages=/var/log/messages,agent:PiDeck agent=/var/services/homes/pideck/logs/pideck-agent-*.log
 PIDECK_AGENT_DOCKER_LOGS=on
 ```
 `start-agent.sh` names its log after the day the supervisor started and keeps
 writing to it, so use the newest-match `*` here, not `%Y%m%d` (which finds
 no file from the day after a start).
 
-Example (Ubuntu VPS over WireGuard, after `sudo usermod -aG adm zk`):
+Example (Ubuntu VPS over WireGuard, after `sudo usermod -aG adm pideck`):
 ```
 PIDECK_AGENT_LOGS=on
 PIDECK_HOST_LOGS=syslog:Syslog=/var/log/syslog,auth:Auth log=/var/log/auth.log,ufw:UFW=/var/log/ufw.log,fail2ban:Fail2ban=/var/log/fail2ban.log,nginx_access:Nginx access=/var/log/nginx/access.log,nginx_error:Nginx error=/var/log/nginx/error.log
@@ -687,7 +687,7 @@ PIDECK_SERVICES=nginx,ssh,Database=postgresql@18-main,wg-quick@wg-pideck,user:sy
   needs lingering (`sudo loginctl enable-linger <user>`); without it the card
   says so and those units show as unknown.
 - A **listed** unit that isn't active for `PIDECK_SERVICE_ALERT_MINUTES` (3)
-  raises an alert and a toast ("piapps4: vnstat is inactive since 16:26"):
+  raises an alert and a toast ("vps1: vnstat is inactive since 16:26"):
   critical when failed or not found, warning otherwise; it resolves when the
   unit is active again. Unlisted failed units are shown, never alerted. A
   oneshot like `wg-quick@…` is healthy as "active (exited)".
@@ -706,10 +706,10 @@ PIDECK_SERVICES=nginx,ssh,Database=postgresql@18-main,wg-quick@wg-pideck,user:sy
 
 ### Synology DSM (agent only, by hand)
 
-A Synology NAS (tested: DS920+, DSM 7.4.1, x86_64) runs the agent, not the
+A Synology NAS (tested: DSM 7.x, x86_64) runs the agent, not the
 hub. `install.sh` has **no** DSM mode: DSM has no apt, systemd or git, so the
-steps are manual. The agent runs as an admin user (here `zk`) from
-`/var/services/homes/zk/pideck-agent`, started at boot by
+steps are manual. The agent runs as a non-root user (here `pideck`) from
+`/var/services/homes/pideck/pideck-agent`, started at boot by
 [`deploy/dsm/start-agent.sh`](../deploy/dsm/start-agent.sh).
 
 1. **Node.js**: install the *Node.js v22* package in Package Center. It has
@@ -725,16 +725,16 @@ steps are manual. The agent runs as an admin user (here `zk`) from
    # on the build machine, in the checkout at the release tag
    npm ci && npm run build
    { git archive --format=tar HEAD; tar -cf - dist; } | gzip \
-     | ssh -p <port> root@<nas> 'mkdir -p /var/services/homes/zk/pideck-agent &&
-         tar -xzif - -C /var/services/homes/zk/pideck-agent &&
-         chown -R zk: /var/services/homes/zk/pideck-agent'
+     | ssh -p <port> root@<nas> 'mkdir -p /var/services/homes/pideck/pideck-agent &&
+         tar -xzif - -C /var/services/homes/pideck/pideck-agent &&
+         chown -R pideck: /var/services/homes/pideck/pideck-agent'
    ```
    The stream holds **two** tar archives in a row (the release, then
    `dist/`). Plain `tar -x` stops at the end of the first one and leaves
    `dist/` out without an error, so keep the `-i` (`--ignore-zeros`), and
    check that `dist/index.js` is there afterwards.
 
-   Then, as `zk` on the NAS, install the runtime dependencies (native
+   Then, as `pideck` on the NAS, install the runtime dependencies (native
    modules build there for x86_64):
    ```bash
    cd ~/pideck-agent
@@ -744,10 +744,10 @@ steps are manual. The agent runs as an admin user (here `zk`) from
    The Node.js v22 package ships npm 10, and its `npm ci` rejects the npm 11
    `package-lock.json` (`EUSAGE … Missing: <pkg> from lock file`). `npm exec`
    fetches npm 11 once (CI uses 11.13) and runs it with the package's node.
-3. **`.env`** next to the script, mode 0600, owned by `zk`:
+3. **`.env`** next to the script, mode 0600, owned by `pideck`:
    ```
    PIDECK_MODE=agent
-   PIDECK_AGENT_BIND=192.168.50.147
+   PIDECK_AGENT_BIND=192.0.2.20
    PIDECK_AGENT_PORT=5016
    PIDECK_AGENT_TOKEN_SHA256=<sha256 of the token>
    PIDECK_DISK_MOUNT=/volume1
@@ -758,15 +758,15 @@ steps are manual. The agent runs as an admin user (here `zk`) from
    `PIDECK_AGENT_LOGS=on`, see [Remote logs](#remote-logs-26).
 4. **Start at boot**: copy `deploy/dsm/start-agent.sh` into the app
    directory, then DSM **Control Panel › Task Scheduler › Create ›
-   Triggered Task › User-defined script**, user `zk`, event **Boot-up**,
-   script `bash /var/services/homes/zk/pideck-agent/start-agent.sh`. Run it
+   Triggered Task › User-defined script**, user `pideck`, event **Boot-up**,
+   script `bash /var/services/homes/pideck/pideck-agent/start-agent.sh`. Run it
    once by hand (`--dry-run` first). It keeps one agent running, restarts it
    with backoff and logs to `~/logs/pideck-agent-YYYYMMDD.log`.
 5. **Firewall**: DSM **Control Panel › Security › Firewall**: allow TCP 5016
    from the hub's address only, deny 5016 from everywhere else. Check from
    the hub (`curl -H "Authorization: Bearer …" http://<nas>:5016/api/agent/info`
    → 200; without the header → 401) and from another LAN machine (must time out).
-6. **Hub**: `./scripts/install.sh --add-host ds920 --url http://192.168.50.147:5016 --label "DS920+"`.
+6. **Hub**: `./scripts/install.sh --add-host nas1 --url http://192.0.2.20:5016 --label "NAS"`.
 
 What to expect on DSM:
 - **CPU temperature** comes from hwmon (`coretemp`, "Physical id 0"): DSM has
@@ -783,7 +783,7 @@ What to expect on DSM:
   root-equivalent, so the agent only ever makes two read-only Docker API calls
   (container list, container logs).
   Container Manager does not always create the group: if `/var/run/docker.sock`
-  is `root:root`, run (as root) `synogroup --add docker zk` and
+  is `root:root`, run (as root) `synogroup --add docker pideck` and
   `chgrp docker /var/run/docker.sock`. No Container Manager restart is
   needed; dockerd gives the socket the `docker` group by itself at its next
   start once the group exists.

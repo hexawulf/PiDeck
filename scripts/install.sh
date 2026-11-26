@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Author:      0xWulf (zk@hexawulf.dev)
+# Author:      0xWulf
 # Description: One-command install / re-run / update for PiDeck on Ubuntu or
 #              Debian (arm64 Raspberry Pi and amd64). Idempotent: re-running
 #              only fills in what is missing. Run as the user who will own
 #              PiDeck (not root); sudo is used only for the steps it lists
 #              up front. Start with --dry-run: it prints every action and
 #              changes nothing. Modules live under scripts/install/.
-# Modified:    2026-11-20
+# Modified:    2026-11-26
 # Usage:       scripts/install.sh --dry-run            # see what would happen
 #              scripts/install.sh                      # interactive install
 #              scripts/install.sh --yes --lan-http     # unattended, plain-HTTP LAN
 #              scripts/install.sh --update             # pull, build, restart, check
 #              scripts/install.sh --agent --dry-run    # read-only agent (multi-host)
-#              scripts/install.sh --add-host piapps2 --url http://192.168.50.120:5016
+#              scripts/install.sh --add-host node2 --url http://192.0.2.10:5016
 #              scripts/install.sh --help               # all flags
 set -euo pipefail
 
