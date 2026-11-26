@@ -64,7 +64,7 @@ app.use(
     resave: false,
     saveUninitialized: false,
     rolling: true,
-    proxy: true,
+    // Inherit app.get("trust proxy") so TRUST_PROXY=false is respected (AUTHN-006).
     cookie: {
       httpOnly: true,
       // Secure in production; PIDECK_INSECURE_HTTP=1 lets a plain-HTTP LAN install log in.

@@ -1,4 +1,9 @@
 // PIDECK_BIND (2.13.1): the hub's listen address, validated like PIDECK_AGENT_BIND.
+import fs from "node:fs";
+import path from "node:path";
+import type { AddressInfo } from "node:net";
+import express from "express";
+import session from "express-session";
 import { describe, expect, it } from "vitest";
 import { hubBind, trustProxy } from "../../server/config";
 
@@ -26,6 +31,44 @@ describe("hubBind", () => {
   it("refuses anything that isn't an address", () => {
     for (const bad of ["example.com", "127.0.0.1:5006", "0.0.0.0; rm -rf /", "*"]) {
       expect(hubBind({ PIDECK_BIND: bad })).toHaveProperty("error");
+    }
+  });
+});
+
+describe("express-session proxy alignment (AUTHN-006)", () => {
+  it("does not hardcode proxy: true in server/hub.ts", () => {
+    const src = fs.readFileSync(path.resolve("server/hub.ts"), "utf8");
+    expect(src).not.toMatch(/\bproxy\s*:\s*true\b/);
+  });
+
+  it("ignores spoofed X-Forwarded-Proto when trust proxy is false", async () => {
+    const app = express();
+    app.set("trust proxy", false);
+    app.use(
+      session({
+        name: "pideck.sid",
+        secret: "a".repeat(40),
+        resave: false,
+        saveUninitialized: false,
+        cookie: { secure: true, httpOnly: true, sameSite: "strict" },
+      }),
+    );
+    app.get("/login", (req, res) => {
+      (req.session as unknown as { ok?: boolean }).ok = true;
+      res.json({ ok: true });
+    });
+
+    const srv = app.listen(0, "127.0.0.1");
+    await new Promise((r) => srv.once("listening", r));
+    try {
+      const port = (srv.address() as AddressInfo).port;
+      const res = await fetch(`http://127.0.0.1:${port}/login`, {
+        headers: { "X-Forwarded-Proto": "https" },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("set-cookie")).toBeNull();
+    } finally {
+      await new Promise((r) => srv.close(r));
     }
   });
 });
