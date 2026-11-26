@@ -2,7 +2,8 @@
 // same scheme as PiDeck:
 //   startup: read <staticDir>/index.html ─► sha256 of each inline <script>
 //                                         ─► script-src 'self' 'sha256-…'
-//   request: every response gets the CSP (Report-Only while CSP_ENFORCE !== "true");
+//   request: every response gets the CSP (enforcing by default in production;
+//            opt into Report-Only via CSP_ENFORCE=false or CSP_REPORT_ONLY=true);
 //            violations are POSTed to /csp-report and logged as one line.
 import crypto from "crypto";
 import fs from "fs";
@@ -115,6 +116,7 @@ export function securityHeaderOptions(opts: { https: boolean }) {
   return {
     contentSecurityPolicy: false as const,
     crossOriginEmbedderPolicy: false as const,
+    xFrameOptions: { action: "deny" as const },
     // Google sign-in uses signInWithPopup, which needs to talk to its popup.
     crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" as const },
     // Firebase's calls to identitytoolkit must keep the origin in Referer
@@ -190,10 +192,16 @@ export function createCspReportHandler(opts: CspReportHandlerOptions = {}) {
   return handler;
 }
 
+export function isCspReportOnly(env: NodeJS.ProcessEnv = process.env): boolean {
+  const enforce = (env.CSP_ENFORCE || "").trim().toLowerCase();
+  const reportOnly = (env.CSP_REPORT_ONLY || "").trim().toLowerCase();
+  return enforce === "false" || enforce === "0" || reportOnly === "true" || reportOnly === "1";
+}
+
 export function installCsp(app: Express, staticDir: string): void {
   const html = fs.readFileSync(path.join(staticDir, "index.html"), "utf8");
   const hashes = inlineScriptHashes(html);
-  const reportOnly = process.env.CSP_ENFORCE !== "true";
+  const reportOnly = isCspReportOnly();
   app.post(
     "/csp-report",
     express.json({ type: ["application/csp-report", "application/reports+json", "application/json"], limit: "8kb" }),

@@ -64,6 +64,7 @@ describe("hub static wiring", () => {
     expect(r.headers.get("x-content-type-options")).toBe("nosniff");
     expect(r.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
     expect(r.headers.get("cross-origin-opener-policy")).toBe("same-origin-allow-popups");
+    expect(r.headers.get("x-frame-options")).toBe("DENY");
   });
 
   it("caches hashed assets for a year, immutable", async () => {

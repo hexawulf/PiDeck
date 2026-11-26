@@ -1,6 +1,12 @@
 import type { Request, Response } from "express";
 import { describe, expect, it } from "vitest";
-import { createCspReportHandler, cspDirectives, resolveFirebaseAuthOrigin } from "../../server/security";
+import {
+  createCspReportHandler,
+  cspDirectives,
+  isCspReportOnly,
+  resolveFirebaseAuthOrigin,
+  securityHeaderOptions,
+} from "../../server/security";
 import { sanitizeLogValue } from "../../server/services/log-sanitize";
 import { authLogLine } from "../../server/services/login-lockout";
 
@@ -40,6 +46,15 @@ describe("cspDirectives", () => {
     expect(resolveFirebaseAuthOrigin({ FIREBASE_PROJECT_ID: "proj-123" })).toBe("https://proj-123.firebaseapp.com");
     expect(resolveFirebaseAuthOrigin({ FIREBASE_CLIENT_AUTH_DOMAIN: "*.firebaseapp.com" })).toBeNull();
     expect(resolveFirebaseAuthOrigin({ FIREBASE_CLIENT_AUTH_DOMAIN: "evil.example/foo" })).toBeNull();
+  });
+
+  it("defaults CSP to enforcing mode and X-Frame-Options to DENY (WEB-002)", () => {
+    expect(isCspReportOnly({})).toBe(false);
+    expect(isCspReportOnly({ CSP_ENFORCE: "true" })).toBe(false);
+    expect(isCspReportOnly({ CSP_ENFORCE: "false" })).toBe(true);
+    expect(isCspReportOnly({ CSP_ENFORCE: "0" })).toBe(true);
+    expect(isCspReportOnly({ CSP_REPORT_ONLY: "true" })).toBe(true);
+    expect(securityHeaderOptions({ https: true }).xFrameOptions).toEqual({ action: "deny" });
   });
 });
 
