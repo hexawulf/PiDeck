@@ -53,6 +53,110 @@ const passwordChangeSchema = z.object({
   path: ["confirmNewPassword"],
 });
 
+export interface ChangePasswordDeps {
+  lockout?: Pick<typeof loginLockout, "lockedFor" | "failure" | "success">;
+  validatePassword?: typeof AuthService.validatePassword;
+  validatePasswordStrength?: typeof AuthService.validatePasswordStrength;
+  hashPassword?: typeof AuthService.hashPassword;
+  updateUser?: (user: NonNullable<Awaited<ReturnType<typeof AuthService.validatePassword>>["user"]>) => Promise<unknown>;
+  markPasswordChanged?: () => void;
+  deleteOtherSessions?: (keepSid: string) => Promise<{ rowCount?: number | null }>;
+}
+
+export function createChangePasswordHandler(deps: ChangePasswordDeps = {}) {
+  const lockout = deps.lockout ?? loginLockout;
+  const validatePassword = deps.validatePassword ?? AuthService.validatePassword.bind(AuthService);
+  const validatePasswordStrength =
+    deps.validatePasswordStrength ?? AuthService.validatePasswordStrength.bind(AuthService);
+  const hashPassword = deps.hashPassword ?? AuthService.hashPassword.bind(AuthService);
+
+  return async (req: Request, res: Response) => {
+    try {
+      const ip = clientKey(req);
+      const lockedMs = lockout.lockedFor(ip);
+      if (lockedMs > 0) {
+        console.warn(authLogLine({ method: "password", result: "change-locked", ip }));
+        return res.status(403).json({
+          message: `Too many failed attempts from this address. Please try again in about ${Math.ceil(lockedMs / 60000)} minutes.`,
+        });
+      }
+
+      const parsed = passwordChangeSchema.parse(req.body);
+
+      const validation = await validatePassword(parsed.currentPassword);
+      if (!validation.isValid) {
+        const nowLocked = validation.error === "invalid_password" && lockout.failure(ip);
+        console.warn(
+          authLogLine({
+            method: "password",
+            result: nowLocked ? "change-bad-password-locked" : "change-bad-password",
+            ip,
+          }),
+        );
+        return res.status(401).json({ message: "Current password is incorrect." });
+      }
+      lockout.success(ip);
+
+      const strengthCheck = validatePasswordStrength(parsed.newPassword);
+      if (!strengthCheck.isValid) {
+        return res.status(400).json({ message: strengthCheck.message });
+      }
+
+      const user = validation.user;
+      if (!user) {
+        return res.status(500).json({ message: "User not found." });
+      }
+
+      const newHash = await hashPassword(parsed.newPassword);
+      user.password_hash = newHash;
+      user.last_password_change = new Date();
+      if (deps.updateUser) {
+        await deps.updateUser(user);
+        deps.markPasswordChanged?.();
+      } else {
+        const { storage, markAdminPasswordChanged } = await import("./storage");
+        await storage.updateUser(user);
+        markAdminPasswordChanged();
+      }
+
+      // Regenerate caller's session ID so pre-change session IDs cannot be reused.
+      const prevSession = req.session as AuthSession;
+      const preserved = {
+        userId: prevSession.userId ?? user.id,
+        createdAt: Date.now(),
+        authMethod: prevSession.authMethod,
+        email: prevSession.email,
+      };
+      await new Promise<void>((resolve, reject) => {
+        req.session.regenerate((err) => {
+          if (err) return reject(err);
+          const nextSession = req.session as AuthSession;
+          nextSession.authenticated = true;
+          nextSession.userId = preserved.userId;
+          nextSession.createdAt = preserved.createdAt;
+          if (preserved.authMethod) nextSession.authMethod = preserved.authMethod;
+          if (preserved.email) nextSession.email = preserved.email;
+          req.session.save((saveErr) => (saveErr ? reject(saveErr) : resolve()));
+        });
+      });
+
+      // Every other session ends with the old password (PD-18); this regenerated one stays.
+      const { rowCount } = deps.deleteOtherSessions
+        ? await deps.deleteOtherSessions(req.sessionID)
+        : await pool.query("DELETE FROM user_sessions WHERE sid <> $1", [req.sessionID]);
+      console.log(`[auth] password changed; ended ${rowCount ?? 0} other session(s) ip=${ip}`);
+
+      res.json({ message: "Password changed successfully." });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid input", errors: error.issues });
+      }
+      console.error("Change password error:", error);
+      res.status(500).json({ message: "Failed to change password." });
+    }
+  };
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Instance fingerprint header
   app.use((_req, res, next) => {
@@ -436,45 +540,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- Password change (protected) ---
-  app.post("/api/auth/change-password", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const parsed = passwordChangeSchema.parse(req.body);
-
-      const validation = await AuthService.validatePassword(parsed.currentPassword);
-      if (!validation.isValid) {
-        return res.status(401).json({ message: "Current password is incorrect." });
-      }
-
-      const strengthCheck = AuthService.validatePasswordStrength(parsed.newPassword);
-      if (!strengthCheck.isValid) {
-        return res.status(400).json({ message: strengthCheck.message });
-      }
-
-      const user = validation.user;
-      if (!user) {
-        return res.status(500).json({ message: "User not found." });
-      }
-
-      const newHash = await AuthService.hashPassword(parsed.newPassword);
-      user.password_hash = newHash;
-      user.last_password_change = new Date();
-      const { storage, markAdminPasswordChanged } = await import("./storage");
-      await storage.updateUser(user);
-      markAdminPasswordChanged();
-
-      // Every other session ends with the old password (PD-18); this one stays.
-      const { rowCount } = await pool.query("DELETE FROM user_sessions WHERE sid <> $1", [req.sessionID]);
-      console.log(`[auth] password changed; ended ${rowCount ?? 0} other session(s) ip=${clientKey(req)}`);
-
-      res.json({ message: "Password changed successfully." });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid input", errors: error.issues });
-      }
-      console.error("Change password error:", error);
-      res.status(500).json({ message: "Failed to change password." });
-    }
-  });
+  app.post("/api/auth/change-password", requireAuth, rateLimitLogin, createChangePasswordHandler());
 
   const httpServer = createServer(app);
   return httpServer;
