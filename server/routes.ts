@@ -43,7 +43,6 @@ type AuthSession = Request["session"] & {
   authMethod?: string;
   email?: string;
 };
-type AuthRequest = Request & { __loginBypass?: boolean; session: AuthSession };
 
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
@@ -179,19 +178,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Health (public): database reachable and schema migrated (PD-21).
   app.get("/api/health", createHealthHandler({ ping: () => pool.query("SELECT 1"), schemaReady }));
-
-  // --- Auth bypass marker (belt & suspenders) ---
-  // Mark ONLY the login POST to bypass any stray guards mounted elsewhere.
-  app.use((req, _res, next) => {
-    const url = (req.originalUrl || req.url || "").toLowerCase();
-    if (
-      req.method === "POST" &&
-      (url.startsWith("/api/auth/login") || url.startsWith("/auth/login") || url.startsWith("/api/auth/firebase-login"))
-    ) {
-      (req as AuthRequest).__loginBypass = true;
-    }
-    next();
-  });
 
   // --- Auth routes (OPEN): must be defined BEFORE protected mounts ---
 
@@ -370,10 +356,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- Auth middleware & wrapper ---
+  // --- Auth middleware & fail-closed /api barrier (AUTHZ-001) ---
   const DEFAULT_PW_ALLOWED = new Set(["/api/auth/me", "/api/auth/logout", "/api/auth/change-password"]);
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
-    if ((req as AuthRequest).__loginBypass) return next(); // hard bypass for POST /api/auth/login or /api/auth/firebase-login
     if (!(req.session as AuthSession | undefined)?.authenticated || !sessionStillValid(req)) {
       return res.status(401).json({ message: "Authentication required" });
     }
@@ -388,25 +373,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   };
 
-  const requireAuthUnlessLogin = (req: Request, res: Response, next: NextFunction) => {
-    const url = (req.originalUrl || req.url || "").toLowerCase();
-    if (
-      url.startsWith("/api/auth/login") ||
-      url.startsWith("/auth/login") ||
-      url.startsWith("/api/auth/firebase-login")
-    ) {
-      return next();
-    }
-    return requireAuth(req, res, next);
-  };
+  // Single fail-closed barrier for all /api/* routes mounted below public auth/health routes.
+  app.use("/api", requireAuth);
 
-  // --- Protected mounts (USE the skip-wrapper) ---
-  app.use("/api", requireAuthUnlessLogin, systemRouter);
-  app.use("/api", requireAuthUnlessLogin, metricsRouter);
-  app.use("/api", requireAuthUnlessLogin, networkRouter);
-  app.use("/api", requireAuthUnlessLogin, dockerRouter);
-  app.use("/api", requireAuthUnlessLogin, pm2Router);
-  app.use("/api/hostlogs", requireAuthUnlessLogin, hostLogsRouter);
+  // --- Protected mounts ---
+  app.use("/api", requireAuth, systemRouter);
+  app.use("/api", requireAuth, metricsRouter);
+  app.use("/api", requireAuth, networkRouter);
+  app.use("/api", requireAuth, dockerRouter);
+  app.use("/api", requireAuth, pm2Router);
+  app.use("/api/hostlogs", requireAuth, hostLogsRouter);
   // These two routers declare full /api/metrics/* paths; app.get keeps req.url intact.
   app.get("/api/metrics/thermal-zones", requireAuth, thermalZonesRouter);
   app.get("/api/metrics/power-status", requireAuth, powerStatusRouter);
