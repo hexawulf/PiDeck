@@ -3,7 +3,7 @@
 # Description: Hub installation steps (preflight, packages, .env, Postgres,
 #              migrations, admin password, build, service, sudoers, health,
 #              summary) sourced by scripts/install.sh.
-# Modified:    2026-11-20
+# Modified:    2026-11-26
 
 # ── 1. preflight (read-only) ───────────────────────────────────────────
 MISSING_REQ=(); APT_PKGS=()
@@ -248,7 +248,7 @@ sudoers() {
 health() {
   step "Health check"
   if [ "$SKIP_HEALTH" = 1 ] || [ "$SERVICE" = none ]; then info "skipped"; return; fi
-  if [ "$DRY_RUN" = 1 ]; then dry "poll http://127.0.0.1:$PORT/healthz, then log in with $PW_FILE and GET /api/auth/me"; return; fi
+  if [ "$DRY_RUN" = 1 ]; then dry "poll http://127.0.0.1:$PORT/healthz, then log in with the password set in this run (if any) and GET /api/auth/me"; return; fi
   local base="http://127.0.0.1:$PORT" code=""
   for _ in $(seq 1 60); do
     code="$(curl -s -o /dev/null -w '%{http_code}' "$base/healthz" || true)"
@@ -261,7 +261,7 @@ health() {
   local pwf="$PW_FILE"
   if [ "$(helper admin-state "$PW_FILE")" != matches ]; then
     if [ "$CHECK_LOGIN" != 1 ]; then
-      warn "admin password differs from $PW_FILE (changed in the UI): skipping the login round-trip — NOT verified; re-run with --check-login to test it"
+      warn "admin password not set by this run (it is never stored): skipping the login round-trip — NOT verified; re-run with --check-login to test it"
       return
     fi
     pwf="$TMP_DIR/check-login"
@@ -313,7 +313,7 @@ summary() {
   fi
   info "Open:      $url"
   info "Service:   $SERVICE $([ "$SERVICE" = pm2 ] && echo "(pm2 status / pm2 logs pideck)")$([ "$SERVICE" = systemd ] && echo "(systemctl status pideck / journalctl -u pideck)")"
-  info "Config:    $ENV_FILE (0600) · admin password file: $PW_FILE (0600)"
+  info "Config:    $ENV_FILE (0600) · admin password: not stored on disk"
   info "Install log: $LOG"
   if [ "$LAN_HTTP" != 1 ] && [ "$(env_get PIDECK_INSECURE_HTTP)" != 1 ]; then
     info "HTTPS:     put PiDeck behind a TLS proxy — see deploy/nginx/pideck.conf.example and docs/INSTALL.md."
@@ -321,7 +321,7 @@ summary() {
   fi
   if [ "$GENERATED_PW" = 1 ] && [ "$DRY_RUN" != 1 ]; then
     # Straight to the terminal (fd 3), never into the log.
-    printf '\n  %sAdmin password (shown once; also in %s):%s %s\n' "$B" "$PW_FILE" "$RST" "$(cat "$PW_FILE")" >&3
+    printf '\n  %sAdmin password (shown once — save it in your password manager; it is not stored):%s %s\n' "$B" "$RST" "$(cat "$PW_FILE")" >&3
     info "(password printed to the terminal only; it is not in the log)"
   fi
 }

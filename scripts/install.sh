@@ -250,7 +250,10 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 RUN_USER="$(id -un)"
 ENV_FILE="$APP_DIR/.env"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pideck"
-PW_FILE="$CONFIG_DIR/admin-password"
+# The admin password is never kept on disk (CRYPTO-002): it lives in TMP_DIR
+# (removed on exit) for this run only. LEGACY_PW_FILE is where <= 2.14.0 kept it.
+PW_FILE="$TMP_DIR/admin-password"
+LEGACY_PW_FILE="$CONFIG_DIR/admin-password"
 DB_MARKER="$CONFIG_DIR/install-db"
 
 # ── modules ────────────────────────────────────────────────────────────

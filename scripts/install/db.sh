@@ -2,7 +2,7 @@
 # Author:      0xWulf (zk@hexawulf.dev)
 # Description: PostgreSQL provisioning, migrations, backups, and admin
 #              password helpers sourced by scripts/install.sh.
-# Modified:    2026-11-20
+# Modified:    2026-11-26
 
 # ── 3b. database ───────────────────────────────────────────────────────
 DB_NAME="${PIDECK_DB_NAME:-pideck}"
@@ -112,15 +112,28 @@ restore_hint() {
 
 # ── 5. admin password ──────────────────────────────────────────────────
 GENERATED_PW=0
+# Up to 2.14.0 the installer kept the admin password in plaintext in
+# $LEGACY_PW_FILE. Delete it; if it still matches the database, keep a copy in
+# TMP_DIR so this run's health check can still log in.
+legacy_password_file() {
+  [ -e "$LEGACY_PW_FILE" ] || return 0
+  if [ "$(helper admin-state "$LEGACY_PW_FILE")" = matches ]; then
+    ( umask 077; cp "$LEGACY_PW_FILE" "$PW_FILE" )
+  fi
+  if command -v shred >/dev/null 2>&1; then shred -u "$LEGACY_PW_FILE"; else rm -f "$LEGACY_PW_FILE"; fi
+  ok "deleted the stored plaintext admin password file $LEGACY_PW_FILE (no longer kept on disk)"
+}
 admin_password() {
   step "Admin password"
   if [ "$DRY_RUN" = 1 ]; then
-    dry "make sure the DB admin isn't on the seeded 'admin' password: use ${PW_SOURCE:-a prompted or generated password}, store it in $PW_FILE (0600)"
-    return
+    dry "make sure the DB admin isn't on the seeded 'admin' password: use ${PW_SOURCE:-a prompted or generated password} for this run only (never stored on disk)"
+    if [ -e "$LEGACY_PW_FILE" ]; then dry "delete the stored plaintext password file $LEGACY_PW_FILE"; fi
+    return 0
   fi
+  legacy_password_file
   local state; state="$(helper admin-state "$PW_FILE")"
   if [ "$state" = custom ] && [ "$RESET_PW" != 1 ]; then ok "admin password was changed in the UI — keeping it (use --reset-password to replace)"; return; fi
-  if [ "$state" = matches ] && [ "$RESET_PW" != 1 ]; then ok "admin password matches $PW_FILE"; return; fi
+  if [ "$state" = matches ] && [ "$RESET_PW" != 1 ]; then ok "admin password unchanged"; return; fi
 
   install -d -m 700 "$CONFIG_DIR"
   local src="$PW_SOURCE" tmp="$TMP_DIR/pw"
@@ -152,7 +165,7 @@ admin_password() {
   local force=(); [ "$RESET_PW" = 1 ] && force=(--force)
   local result; result="$(helper set-admin "$PW_FILE" "${force[@]}")"
   case "$result" in
-    set) ok "admin password set (stored in $PW_FILE, mode 0600)" ;;
+    set) ok "admin password set (not stored on disk)" ;;
     unchanged*) ok "admin password unchanged" ;;
   esac
 }

@@ -5,6 +5,12 @@ All notable changes to PiDeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.1] - 2026-11-26
+
+### Security
+- **`CRYPTO-002`: the installer no longer stores the admin password.** It is kept in the installer's temporary directory for the current run only (enough for the health check's login round-trip) and a generated password is printed once. A `~/.config/pideck/admin-password` file left by 2.14.0 or older is deleted on the next run (`shred -u` when available), after being used for that run's login check if it still matches. Later runs skip the login round-trip with a warning unless `--check-login` is given.
+- **`CONTAINERS-002`:** host step closed as an accepted risk for installs whose service user is already in the `docker` group; the audit report explains when a read-only socket proxy still helps.
+
 ## [2.14.0] - 2026-11-26
 
 Security hardening release from the 2026-11-26 full-stack security audit (#103, report in `docs/security/SECURITY_AUDIT_2026-11-26.md`).

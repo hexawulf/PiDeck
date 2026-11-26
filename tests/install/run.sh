@@ -199,7 +199,7 @@ mode() { stat -c %a "$1"; }
 latest_log() { find "$W/home/logs" -name 'pideck-install-*.log' 2>/dev/null | sort | tail -n 1; }
 secrets_absent() { # secrets_absent FILE… — none of the secrets appear in any FILE
   local s f
-  local list=("$(sed -n 's/^SESSION_SECRET=//p' "$APP/.env")" "$(cat "$W/home/.config/pideck/admin-password")")
+  local list=("$(sed -n 's/^SESSION_SECRET=//p' "$APP/.env")" "$(cat "$W/adminpw")")
   local dbpw; dbpw="$(sed -n "s/.*PASSWORD '\([^']*\)'.*/\1/p" "$W/state/psql.sql" 2>/dev/null | head -n 1)"
   [ -n "$dbpw" ] && list+=("$dbpw")
   for s in "${list[@]}"; do
@@ -234,7 +234,10 @@ cleanup
 new_sandbox "fresh install, then idempotent re-run"
 inst "${STD[@]}" --sudoers --nvme-device /dev/nvme0 || { bad "install exit $?"; tail -n 20 "$W/out"; }
 check ".env is 0600" test "$(mode "$APP/.env")" = 600
-check "password file is 0600 in a 0700 dir" test "$(mode "$W/home/.config/pideck/admin-password")$(mode "$W/home/.config/pideck")" = 600700
+# The generated password is shown once on the terminal and never stored (CRYPTO-002).
+grep 'shown once' "$W/out" | awk '{print $NF}' | tr -d '\n' > "$W/adminpw"
+check "generated password is 20 chars" test "$(wc -c < "$W/adminpw")" = 20
+check "no admin password file on disk" bash -c "test ! -e '$W/home/.config/pideck/admin-password' && ! grep -rqF \"\$(cat '$W/adminpw')\" '$W/home' '$APP/.env'"
 check ".env has the installer keys" grep -qE '^SESSION_SECRET=[0-9a-f]{64}$' "$APP/.env"
 check ".env keeps the example as comments only" bash -c "! grep -q CHANGE_ME '$APP/.env' || ! grep -qE '^[A-Z_]+=.*CHANGE_ME' '$APP/.env'"
 check "DATABASE_URL points at the created role/db" grep -qE '^DATABASE_URL=postgresql://pideck:[0-9a-f]{48}@localhost:5432/pideck$' "$APP/.env"
@@ -248,21 +251,28 @@ check "sudoers has exactly the four commands" test "$(grep -c NOPASSWD "$W/etc/s
 check "sudoers smartctl rule uses the device" grep -qE "^tester ALL=\(root\) NOPASSWD: $W/bin/smartctl -a /dev/nvme0$" "$W/etc/sudoers.d/pideck"
 check "sudoers validates (visudo -cf)" bash -c "\"$W/bin/visudo\" -cf \"$W/etc/sudoers.d/pideck\" >/dev/null"
 check "health check logged in" grep -q 'login round-trip' "$W/out"
-check "password shown once on the terminal" test "$(grep -cF "$(cat "$W/home/.config/pideck/admin-password")" "$W/out")" = 1
+check "password shown once on the terminal" test "$(grep -cF "$(cat "$W/adminpw")" "$W/out")" = 1
 log="$(latest_log)"
 check "run logged to ~/logs/pideck-install-*.log" test -s "$log"
 check "no secret in the log" secrets_absent "$log"
 grep -vF 'shown once' "$W/out" > "$W/out.rest" || true
 check "no secret elsewhere on the terminal" secrets_absent "$W/out.rest"
-sums="$(sha256sum "$APP/.env" "$W/home/.config/pideck/admin-password" "$W/etc/sudoers.d/pideck" "$W/state/admin")"
+sums="$(sha256sum "$APP/.env" "$W/etc/sudoers.d/pideck" "$W/state/admin")"
 : > "$W/state/calls"
 inst "${STD[@]}" --sudoers --nvme-device /dev/nvme0 || bad "re-run exit $?"
-check "re-run: .env, password, sudoers, DB admin unchanged" test "$sums" = "$(sha256sum "$APP/.env" "$W/home/.config/pideck/admin-password" "$W/etc/sudoers.d/pideck" "$W/state/admin")"
+check "re-run: .env, sudoers, DB admin unchanged" test "$sums" = "$(sha256sum "$APP/.env" "$W/etc/sudoers.d/pideck" "$W/state/admin")"
+check "re-run: password not known → login skipped with a warning" grep -q 'skipping the login round-trip' "$W/out"
 check "re-run: no backups made" bash -c "! ls '$APP'/.env.bak.* '$W'/etc/sudoers.d/*.bak.* 2>/dev/null | grep -q ."
 check "re-run: still one pm2 app (restarted, not started)" bash -c "test \"\$(grep -cx pideck '$W/state/pm2')\" = 1 && grep -q '^pm2 restart pideck' '$W/state/calls' && ! grep -q '^pm2 start' '$W/state/calls'"
 check "re-run: no psql; db:migrate is a no-op (up to date)" bash -c "! grep -qE '^(psql|npx)' '$W/state/calls' && grep -q 'up to date' '$W/out'"
 check "re-run: no password printed" bash -c "! grep -q 'shown once' '$W/out'"
 check "re-run with --service systemd refuses (single instance)" bash -c "! (cd '$APP' && env -i PATH='$W/bin:$PATH' HOME='$W/home' TMPDIR='$W/tmp' PIDECK_ETC_DIR='$W/etc' PIDECK_TEST_STATE='$W/state' '$APP/scripts/install.sh' --yes --service systemd </dev/null >/dev/null 2>&1)"
+# Legacy (<= 2.14.0) plaintext password file: used for this run's login, then deleted.
+mkdir -p "$W/home/.config/pideck" && ( umask 077; cp "$W/adminpw" "$W/home/.config/pideck/admin-password" )
+inst "${STD[@]}" || bad "re-run with legacy password file exit $?"
+check "legacy password file deleted" test ! -e "$W/home/.config/pideck/admin-password"
+check "…says so" grep -q 'deleted the stored plaintext admin password file' "$W/out"
+check "…and still did the login round-trip with it" grep -q 'login round-trip: /api/auth/me 200' "$W/out"
 # UI password change → kept; --reset-password replaces it.
 echo "changed-in-ui" > "$W/state/admin"
 inst "${STD[@]}" || bad "re-run after UI change exit $?"
@@ -290,7 +300,7 @@ check "--reset-password replaces it and logs in" bash -c "test \"\$(cat '$W/stat
 # Uninstall keeps data; --purge removes it.
 uninst --yes || bad "uninstall exit $?"
 check "uninstall: pm2 app and sudoers gone" bash -c "! grep -qx pideck '$W/state/pm2' && test ! -e '$W/etc/sudoers.d/pideck'"
-check "uninstall: .env and password kept" test -f "$APP/.env" -a -f "$W/home/.config/pideck/admin-password"
+check "uninstall: .env kept" test -f "$APP/.env"
 check "uninstall: pm2 save --force (boot won't resurrect it)" grep -q '^pm2 save --force' "$W/state/calls"
 mkdir -p "$W/home/backups/pideck-dist-20260101-000000"
 uninst --yes --purge || bad "purge without confirmation exit $?"

@@ -2,13 +2,13 @@
 # Author:      0xWulf (zk@hexawulf.dev)
 # Description: Remove what scripts/install.sh set up: the pm2 app or systemd
 #              unit (hub) or the pideck-agent unit and the ufw rule the
-#              installer added (agent), and /etc/sudoers.d/pideck. Keeps the database, .env, the
-#              admin password file and ~/backups unless --purge, which always
+#              installer added (agent), and /etc/sudoers.d/pideck. Keeps the database, .env
+#              (and a legacy admin password file) and ~/backups unless --purge, which always
 #              asks you to type "purge" and drops only the database/role that
 #              install.sh recorded as created by it. Backups are deleted only
 #              with --purge-backups. Never deletes the checkout itself. Run as
 #              the owning user (not root); start with --dry-run.
-# Modified:    2026-09-30
+# Modified:    2026-11-26
 # Usage:       scripts/uninstall.sh --dry-run          # see what would be removed
 #              scripts/uninstall.sh                    # remove service + sudoers
 #              scripts/uninstall.sh --purge            # also installer-created DB, .env, password
@@ -32,7 +32,7 @@ PiDeck uninstaller — scripts/uninstall.sh [options]
   --yes       no prompts (does NOT skip the --purge confirmation)
   --purge     also drop the database and role *that install.sh created*
               (recorded in ~/.config/pideck/install-db; anything that already
-              existed is left alone), delete .env and the admin password file.
+              existed is left alone), delete .env and any legacy admin password file.
               Always asks you to type "purge"; for scripts, set
               PIDECK_PURGE_CONFIRM=purge instead.
   --purge-backups  with --purge: also delete ~/backups/pideck-dist-*
