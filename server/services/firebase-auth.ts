@@ -135,7 +135,7 @@ export async function verifyFirebaseLogin(
 
   let decoded: DecodedIdToken;
   try {
-    decoded = await getAuth(app).verifyIdToken(idToken.trim());
+    decoded = await getAuth(app).verifyIdToken(idToken.trim(), true);
   } catch (e: unknown) {
     console.warn("[Firebase] Failed to verify ID token:", sanitizeLogValue(e instanceof Error ? e.message : e, 200));
     throw new HttpError(401, "Invalid or expired Firebase ID token.", { cause: e });

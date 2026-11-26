@@ -1,4 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const verifyIdTokenMock = vi.hoisted(() => vi.fn());
+vi.mock("firebase-admin/app", () => ({
+  getApps: () => [{}],
+  initializeApp: vi.fn(() => ({})),
+  cert: vi.fn(),
+  applicationDefault: vi.fn(),
+}));
+vi.mock("firebase-admin/auth", () => ({
+  getAuth: () => ({ verifyIdToken: verifyIdTokenMock }),
+}));
+
 import {
   getFirebaseAllowedEmails,
   getFirebasePublicConfig,
@@ -71,6 +83,36 @@ describe("firebase-auth service", () => {
       await expect(verifyFirebaseLogin("", { FIREBASE_ENABLED: "true" })).rejects.toMatchObject({
         status: 400,
       });
+    });
+
+    it("passes checkRevoked=true to verifyIdToken (AUTHN-007)", async () => {
+      verifyIdTokenMock.mockReset();
+      verifyIdTokenMock.mockResolvedValueOnce({
+        uid: "uid-1",
+        email: "allowed@example.com",
+        email_verified: true,
+        name: "Allowed User",
+      });
+
+      const user = await verifyFirebaseLogin("  tok-123  ", {
+        FIREBASE_ENABLED: "true",
+        FIREBASE_ALLOWED_EMAILS: "allowed@example.com",
+      });
+      expect(verifyIdTokenMock).toHaveBeenCalledWith("tok-123", true);
+      expect(user).toEqual({
+        uid: "uid-1",
+        email: "allowed@example.com",
+        name: "Allowed User",
+      });
+
+      verifyIdTokenMock.mockRejectedValueOnce(new Error("auth/id-token-revoked"));
+      await expect(
+        verifyFirebaseLogin("revoked-tok", {
+          FIREBASE_ENABLED: "true",
+          FIREBASE_ALLOWED_EMAILS: "allowed@example.com",
+        }),
+      ).rejects.toMatchObject({ status: 401 });
+      expect(verifyIdTokenMock).toHaveBeenLastCalledWith("revoked-tok", true);
     });
   });
 });
