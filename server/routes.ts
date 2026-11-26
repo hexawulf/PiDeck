@@ -431,9 +431,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   app.post("/api/docker/containers/:id/restart", requireAuth, async (req, res) => {
-    const target = sanitizeLogValue(req.params.id, 80);
+    const id = String(req.params.id);
+    const target = sanitizeLogValue(id, 80);
     try {
-      await SystemService.restartDockerContainer(req.params.id);
+      await SystemService.restartDockerContainer(id);
       console.log(`[audit] docker action=restart container=${target} result=ok ${auditActor(req)}`);
       res.json({ message: "Container restarted successfully" });
     } catch (error) {
@@ -444,9 +445,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/docker/containers/:id/stop", requireAuth, async (req, res) => {
-    const target = sanitizeLogValue(req.params.id, 80);
+    const id = String(req.params.id);
+    const target = sanitizeLogValue(id, 80);
     try {
-      await SystemService.stopDockerContainer(req.params.id);
+      await SystemService.stopDockerContainer(id);
       console.log(`[audit] docker action=stop container=${target} result=ok ${auditActor(req)}`);
       res.json({ message: "Container stopped successfully" });
     } catch (error) {
@@ -457,9 +459,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/docker/containers/:id/start", requireAuth, async (req, res) => {
-    const target = sanitizeLogValue(req.params.id, 80);
+    const id = String(req.params.id);
+    const target = sanitizeLogValue(id, 80);
     try {
-      await SystemService.startDockerContainer(req.params.id);
+      await SystemService.startDockerContainer(id);
       console.log(`[audit] docker action=start container=${target} result=ok ${auditActor(req)}`);
       res.json({ message: "Container started successfully" });
     } catch (error) {
@@ -473,9 +476,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // 400 bad name · 404 not a pm2 process · 409 PiDeck stopping itself (services/system.ts).
   for (const action of ["restart", "stop"] as const) {
     app.post(`/api/pm2/processes/:name/${action}`, requireAuth, async (req, res) => {
-      const target = sanitizeLogValue(req.params.name, 80);
+      const name = String(req.params.name);
+      const target = sanitizeLogValue(name, 80);
       try {
-        await SystemService.pm2Action(action, req.params.name);
+        await SystemService.pm2Action(action, name);
         console.log(`[audit] pm2 action=${action} name=${target} result=ok ${auditActor(req)}`);
         res.json({ message: action === "stop" ? "Process stopped successfully" : "Process restarted successfully" });
       } catch (error) {
