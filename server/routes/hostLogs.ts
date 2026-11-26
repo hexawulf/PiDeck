@@ -193,6 +193,8 @@ async function getAllLogs(): Promise<LogItem[]> {
 }
 
 let listCache: { at: number; logs: Promise<LogItem[]> } | null = null;
+let lastForcedRefresh = 0;
+export const LOG_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
 
 /** getAllLogs(), shared for LIST_CACHE_MS (an in-flight scan is shared too). */
 function cachedLogs(fresh = false): Promise<LogItem[]> {
@@ -209,13 +211,18 @@ function cachedLogs(fresh = false): Promise<LogItem[]> {
 /** Test hook: forget the cached list. */
 export function resetLogListCache(): void {
   listCache = null;
+  lastForcedRefresh = 0;
 }
 
-// Get log file by ID. An id missing from the cached list gets one fresh scan
-// before it is called unknown (a log created in the last few seconds).
+// Get log file by ID. Reject malformed IDs early and throttle forced cache
+// refreshes so unknown-ID sprays cannot bypass the 5s scan cache (API-005).
 async function getLogById(id: string): Promise<LogItem | null> {
+  if (!LOG_ID_RE.test(id)) return null;
   const hit = (await cachedLogs()).find(log => log.id === id);
   if (hit) return hit;
+  const now = Date.now();
+  if (now - lastForcedRefresh < LIST_CACHE_MS) return null;
+  lastForcedRefresh = now;
   return (await cachedLogs(true)).find(log => log.id === id) || null;
 }
 
