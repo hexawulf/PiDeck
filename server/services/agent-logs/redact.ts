@@ -27,6 +27,18 @@ const RULES: Rule[] = [
     replace: (_m, key, sep) => `${key}${sep}${REDACTED}`,
   },
   {
+    // HTTP Cookie and Set-Cookie headers (e.g., session cookies).
+    name: "cookie-header",
+    re: /\b((?:set-)?cookie)(["']?\s*[:=]\s*["']?)([^\r\n"']+)/gi,
+    replace: (_m, key, sep) => `${key}${sep}${REDACTED}`,
+  },
+  {
+    // PEM private key markers and inline key blocks.
+    name: "pem-private-key",
+    re: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[^\r\n]*(?:-----END [A-Z0-9 ]*PRIVATE KEY-----)?/g,
+    replace: () => REDACTED,
+  },
+  {
     name: "bearer",
     re: /\b(bearer)(\s+)([A-Za-z0-9._~+/=-]{6,})/gi,
     replace: (_m, word, sp) => `${word}${sp}${REDACTED}`,
@@ -40,7 +52,7 @@ const RULES: Rule[] = [
     // key (ending in a secret word) = or : value; the key may be quoted (JSON),
     // and a quoted value is redacted up to its closing quote (spaces included).
     name: "key-value",
-    re: /(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]*(?:password|passwd|passphrase|token|secret|api[_-]?key))(["']?\s*[=:]\s*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s"',;&}[\]]+)/gi,
+    re: /(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]*(?:password|passwd|passphrase|token|secret|api[_-]?key|private[_-]?key|session[_-]?id))(["']?\s*[=:]\s*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s"',;&}[\]]+)/gi,
     replace: (m, key, sep, value) => {
       const quote = value[0] === '"' || value[0] === "'" ? value[0] : "";
       const inner = quote ? value.slice(1, -1) : value;
