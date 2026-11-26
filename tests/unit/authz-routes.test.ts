@@ -105,3 +105,31 @@ describe("privileged hub route authz (AUTHZ-002)", () => {
     }
   });
 });
+
+describe("APP_PASSWORD-only login lockout (LOGIC-003)", () => {
+  it("locks out after 5 wrong passwords even when no DB admin row exists", async () => {
+    const prev = process.env.APP_PASSWORD;
+    process.env.APP_PASSWORD = "correct-bootstrap-password";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 5; i++) {
+        const res = await fetch(base + "/api/auth/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ password: "wrong-password" }),
+        });
+        expect(res.status, `attempt ${i + 1}`).toBe(401);
+      }
+      const locked = await fetch(base + "/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password: "wrong-password" }),
+      });
+      expect(locked.status).toBe(403);
+    } finally {
+      warn.mockRestore();
+      if (prev === undefined) delete process.env.APP_PASSWORD;
+      else process.env.APP_PASSWORD = prev;
+    }
+  });
+});

@@ -23,7 +23,7 @@ import { clientKey, rateLimitLogin } from "./middleware/rateLimitLogin";
 import { authLogLine, loginLockout } from "./services/login-lockout";
 import { checkSession } from "./session-policy";
 import { requireSameOrigin } from "./middleware/sameOrigin";
-import { envPasswordMatches } from "./services/env-password";
+import { envPasswordMatches, expectedEnvPassword } from "./services/env-password";
 import { cookieSecure, insecureHttp } from "./config";
 import { hubRuntime } from "./runtime";
 import { createRemoteLogAudit } from "./agent-api";
@@ -196,7 +196,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : await AuthService.validatePassword(password);
 
       if (!validationResult.isValid) {
-        const nowLocked = validationResult.error === "invalid_password" && loginLockout.failure(ip);
+        const shouldCountFailure =
+          validationResult.error === "invalid_password" || expectedEnvPassword() !== "";
+        const nowLocked = shouldCountFailure && loginLockout.failure(ip);
         console.warn(authLogLine({ method: "password", result: nowLocked ? "bad-password-locked" : validationResult.error ?? "failed", ip }));
         return res.status(401).json({ message: "Invalid username or password." });
       }
