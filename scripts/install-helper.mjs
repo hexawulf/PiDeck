@@ -16,8 +16,10 @@
 //   db-dump <out>                → pg_dump -Fc of DATABASE_URL into <out> (mode 0600);
 //                                   the password goes to pg_dump in PGPASSWORD, never argv
 import fs from "node:fs";
+import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const DEFAULT_ADMIN_PASSWORD = "admin"; // what server/storage.ts seeds
@@ -72,6 +74,29 @@ async function adminState(client, pw) {
   return "custom";
 }
 
+export async function setAdminPassword(client, pw, { force = false } = {}) {
+  const state = await adminState(client, pw);
+  if (state === "matches") return "unchanged";
+  if (state === "custom" && !force) return "unchanged-custom";
+  const hash = await require("bcrypt").hash(pw, 10);
+  await client.query(
+    `INSERT INTO users (username, password_hash, last_password_change, failed_login_attempts, account_locked_until)
+     VALUES ('admin', $1, now(), 0, NULL)
+     ON CONFLICT (username) DO UPDATE
+       SET password_hash = EXCLUDED.password_hash, last_password_change = now(),
+           failed_login_attempts = 0, account_locked_until = NULL`,
+    [hash],
+  );
+  const { rows: sessionTable } = await client.query(
+    "SELECT to_regclass('public.user_sessions') AS tbl",
+  );
+  if (sessionTable[0]?.tbl) {
+    await client.query("DELETE FROM user_sessions");
+  }
+  return "set";
+}
+
+async function main() {
 const [cmd, ...args] = process.argv.slice(2);
 switch (cmd) {
   case "db-check":
@@ -97,21 +122,7 @@ switch (cmd) {
     const force = args.includes("--force");
     const problem = strengthProblem(pw);
     if (problem) fail(`password needs ${problem}`);
-    const result = await withDb(async (c) => {
-      const state = await adminState(c, pw);
-      if (state === "matches") return "unchanged";
-      if (state === "custom" && !force) return "unchanged-custom";
-      const hash = await require("bcrypt").hash(pw, 10);
-      await c.query(
-        `INSERT INTO users (username, password_hash, last_password_change, failed_login_attempts, account_locked_until)
-         VALUES ('admin', $1, now(), 0, NULL)
-         ON CONFLICT (username) DO UPDATE
-           SET password_hash = EXCLUDED.password_hash, last_password_change = now(),
-               failed_login_attempts = 0, account_locked_until = NULL`,
-        [hash],
-      );
-      return "set";
-    });
+    const result = await withDb((c) => setAdminPassword(c, pw, { force }));
     console.log(result);
     break;
   }
@@ -151,4 +162,9 @@ switch (cmd) {
   }
   default:
     fail(`unknown command "${cmd ?? ""}"`, 64);
+}
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
 }
