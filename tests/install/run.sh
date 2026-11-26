@@ -183,6 +183,7 @@ EOF
 inst() { (cd "$APP" && env -i PATH="$W/bin:$PATH" HOME="$W/home" TMPDIR="$W/tmp" TERM=dumb \
   PIDECK_ETC_DIR="$W/etc" PIDECK_TEST_STATE="$W/state" FAKE_UID="${FAKE_UID:-1000}" \
   PIDECK_ADD_HOST_TOKEN="${PIDECK_ADD_HOST_TOKEN:-}" PIDECK_CHECK_LOGIN_FILE="${PIDECK_CHECK_LOGIN_FILE:-}" \
+  PIDECK_DB_NAME="${PIDECK_DB_NAME:-}" PIDECK_DB_USER="${PIDECK_DB_USER:-}" \
   "$APP/scripts/install.sh" "$@" </dev/null > "$W/out" 2>&1); }
 uninst() { (cd "$APP" && env -i PATH="$W/bin:$PATH" HOME="$W/home" TMPDIR="$W/tmp" TERM=dumb \
   PIDECK_ETC_DIR="$W/etc" PIDECK_TEST_STATE="$W/state" FAKE_UID="${FAKE_UID:-1000}" \
@@ -601,6 +602,13 @@ for bad_args in "--add-host Bad --url http://h:1" "--add-host local --url http:/
   # shellcheck disable=SC2086  # word splitting of the case is intended
   if inst $bad_args --dry-run; then bad "accepted: $bad_args"; else ok "rejects: $bad_args"; fi
 done
+cleanup
+
+new_sandbox "rejects invalid PIDECK_DB_NAME and PIDECK_DB_USER (INJECTION-003)"
+if PIDECK_DB_NAME="pideck'; DROP TABLE users;--" inst "${STD[@]}"; then bad "bad DB_NAME accepted"; else ok "rejects SQLi PIDECK_DB_NAME"; fi
+check "says invalid PIDECK_DB_NAME and never runs psql" bash -c "grep -q 'invalid PIDECK_DB_NAME' '$W/out' && ! grep -q psql '$W/state/calls' 2>/dev/null"
+if PIDECK_DB_USER="1bad-user" inst "${STD[@]}"; then bad "bad DB_USER accepted"; else ok "rejects invalid PIDECK_DB_USER"; fi
+check "says invalid PIDECK_DB_USER and never runs psql" bash -c "grep -q 'invalid PIDECK_DB_USER' '$W/out' && ! grep -q psql '$W/state/calls' 2>/dev/null"
 cleanup
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
