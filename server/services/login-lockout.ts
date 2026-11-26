@@ -5,12 +5,16 @@
 // every address at 10 attempts per 10 minutes on top of this).
 export const MAX_FAILURES = 5;
 export const LOCK_MS = 15 * 60 * 1000;
+export const MAX_LOCKOUT_ENTRIES = 10_000;
 const FORGET_MS = 60 * 60 * 1000; // a failure streak older than this starts over
+const PRUNE_INTERVAL_MS = 60 * 1000; // throttle full-map prune to avoid O(N^2) on floods
 
 type Entry = { failures: number; lockedUntil: number; last: number };
 
-export function createLoginLockout(now: () => number = Date.now) {
+export function createLoginLockout(now: () => number = Date.now, opts?: { maxEntries?: number }) {
   const entries = new Map<string, Entry>();
+  const maxEntries = opts?.maxEntries ?? MAX_LOCKOUT_ENTRIES;
+  let lastPrune = -Infinity;
 
   function prune(t: number) {
     for (const [k, e] of entries) if (e.lockedUntil <= t && t - e.last > FORGET_MS) entries.delete(k);
@@ -25,7 +29,10 @@ export function createLoginLockout(now: () => number = Date.now) {
     /** A wrong password from `key`. Returns true when this one locked it. */
     failure(key: string): boolean {
       const t = now();
-      prune(t);
+      if (t - lastPrune >= PRUNE_INTERVAL_MS) {
+        prune(t);
+        lastPrune = t;
+      }
       const e = entries.get(key);
       const cur = e && t - e.last <= FORGET_MS && e.lockedUntil <= t ? e : { failures: 0, lockedUntil: 0, last: t };
       cur.failures += 1;
@@ -35,6 +42,12 @@ export function createLoginLockout(now: () => number = Date.now) {
         cur.lockedUntil = t + LOCK_MS;
         cur.failures = 0;
         locked = true;
+      }
+      if (e) {
+        entries.delete(key);
+      } else if (entries.size >= maxEntries) {
+        const oldest = entries.keys().next().value;
+        if (oldest !== undefined) entries.delete(oldest);
       }
       entries.set(key, cur);
       return locked;
