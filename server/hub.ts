@@ -2,7 +2,7 @@
 // server/index.ts unless PIDECK_MODE=agent. SPA public, /api protected.
 import "./env";
 import path from "path";
-import express, { type Request, type Response, type NextFunction } from "express";
+import express from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import cors from "cors";
@@ -15,6 +15,7 @@ import { startSampler } from "./services/sampler";
 import { initializeStorage, pool } from "./storage";
 import { checkSchema, schemaReady, schemaState } from "./db-schema";
 import { installCsp, installSecurityHeaders } from "./security";
+import { createErrorHandler } from "./middleware/errorHandler";
 import { throttleTouch } from "./session-touch";
 import { cookieSecure, corsOrigins, hubBind, insecureHttp, resolveSessionSecret, trustProxy } from "./config";
 
@@ -148,17 +149,7 @@ app.get("/healthz", (_req, res) => res.sendStatus(204));
   }
 
   // ---------- Error handler ----------
-  app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
-    const httpErr = err as { status?: number; statusCode?: number; message?: string } | null;
-    const status = httpErr?.status || httpErr?.statusCode || 500;
-    const message = httpErr?.message || "Internal Server Error";
-    if (req.path.startsWith("/api")) {
-      res.status(status).json({ message });
-    } else {
-      res.status(status).send("Internal error");
-    }
-    console.error(err);
-  });
+  app.use(createErrorHandler());
 
   server.listen({ port: PORT, host: BIND }, () => log(`serving on ${BIND}:${PORT}`));
 
