@@ -1,10 +1,28 @@
-# PiDeck - Raspberry Pi Admin Dashboard
+# PiDeck — Multi-Host Linux & Raspberry Pi Fleet Dashboard
 
-A sleek, full-stack web application for monitoring and managing Raspberry Pi servers. Built with modern technologies, PiDeck provides a centralized control hub for system monitoring, service management, and log analysis.
+A lightweight, full-stack control hub for monitoring and managing Linux servers, Raspberry Pi nodes, cloud VPSes (over WireGuard), and Synology NAS devices from one dashboard. Built with React 19, Express 5, TypeScript, and PostgreSQL, PiDeck pairs a single hub with small, DB-free read-only agents.
 
 **Current version: 2.14.1** — public landing page for signed-out visitors, Google Firebase Authentication (Sign in with Google) with strict server-side email allowlisting & offline break-glass fallback, multi-host (LAN machines and cloud VPSes over WireGuard) with remote logs (files, journald, Docker; secrets redacted on the agent), read-only systemd services with alerts, per-host history and alerts, an "All hosts" overview and Synology DSM support, through small read-only agents, plus the one-command installer with schema migrations. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
 
-![PiDeck 2.2 dashboard (light theme)](./docs/screenshots/dashboard.png)
+![PiDeck dashboard (light theme)](./docs/screenshots/dashboard.png)
+
+## 🏗️ Architecture
+
+PiDeck runs in two modes from a single TypeScript codebase: a **Hub** that serves the UI, persists 60-second history and alerts in PostgreSQL, and proxies requests to remote nodes, and a **Read-Only Agent** (`PIDECK_MODE=agent`) with no database, an exact `GET`-only route allowlist, and SHA-256 `timingSafeEqual` Bearer auth.
+
+```mermaid
+flowchart LR
+    Browser["Browser (React 19 SPA)"] -->|HTTPS| Proxy["Reverse Proxy (Nginx / Caddy)"]
+    Proxy --> Hub["PiDeck Hub (Express 5 · 127.0.0.1:5006)"]
+
+    Hub --> PG[("PostgreSQL 18 (Sessions · History · Alerts)")]
+    Hub -.->|Optional Sign-In| Firebase["Firebase Auth (Email Allowlist)"]
+    Hub --> Local["Hub Host (Metrics · Docker · PM2 · Cron · Logs)"]
+
+    Hub -->|"Bearer Token (GET-only)"| LAN["LAN Linux Nodes (Read-Only Agent)"]
+    Hub -->|"WireGuard + Bearer"| VPS["Cloud VPSes (Read-Only Agent)"]
+    Hub -->|"Bearer Token (GET-only)"| NAS["Synology DSM (Read-Only Agent)"]
+```
 
 ## ✨ What's new in 2.0
 
