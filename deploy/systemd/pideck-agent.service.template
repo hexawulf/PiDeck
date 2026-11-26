@@ -16,11 +16,19 @@ Environment=PIDECK_MODE=agent
 ExecStart=@NODE@ @APP_DIR@/dist/index.js
 Restart=on-failure
 RestartSec=5
-# The agent only reads: keep /usr, /boot and /etc read-only for it and give
-# it a private /tmp. No NoNewPrivileges=: the optional sudoers rule
-# (smartctl, ufw) needs setuid sudo.
+# The agent only reads: keep /usr, /boot and /etc read-only, use a private /tmp,
+# and apply baseline sandboxing (override NoNewPrivileges=false in a drop-in if using --sudoers).
+NoNewPrivileges=true
 ProtectSystem=full
 PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

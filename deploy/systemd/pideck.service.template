@@ -15,7 +15,16 @@ Environment=NODE_ENV=production
 ExecStart=@NODE@ @APP_DIR@/dist/index.js
 Restart=on-failure
 RestartSec=5
-# No NoNewPrivileges=: the optional sudoers rule (smartctl, ufw, apt-get) needs setuid sudo.
+# Baseline sandboxing (override NoNewPrivileges=false in a drop-in if using --sudoers for smartctl/ufw/apt-get).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictRealtime=true
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target
