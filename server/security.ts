@@ -21,20 +21,35 @@ export const CLOUDFLARE_INSIGHTS = {
 export const FIREBASE_CSP = {
   script: [
     "https://apis.google.com",
-    "https://*.firebaseapp.com",
     "https://www.gstatic.com",
   ],
   connect: [
     "https://apis.google.com",
     "https://*.googleapis.com",
-    "https://*.firebaseio.com",
-    "https://*.firebaseapp.com",
     "https://identitytoolkit.googleapis.com",
     "https://securetoken.googleapis.com",
   ],
-  frame: ["https://*.firebaseapp.com", "https://accounts.google.com"],
+  frame: ["https://accounts.google.com"],
   img: ["https://*.googleusercontent.com", "https://www.gstatic.com"],
 };
+
+const VALID_HOSTNAME_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
+
+/**
+ * Resolve the exact Firebase auth origin (no wildcards) from
+ * FIREBASE_CLIENT_AUTH_DOMAIN or FIREBASE_PROJECT_ID.
+ */
+export function resolveFirebaseAuthOrigin(env: NodeJS.ProcessEnv = process.env): string | null {
+  const rawDomain = (env.FIREBASE_CLIENT_AUTH_DOMAIN || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "");
+  const projectId = (env.FIREBASE_PROJECT_ID || "").trim();
+  const candidate =
+    rawDomain || (projectId && /^[a-z0-9-]+$/i.test(projectId) ? `${projectId}.firebaseapp.com` : "");
+  if (!candidate || candidate.includes("*") || !VALID_HOSTNAME_RE.test(candidate)) return null;
+  return `https://${candidate.toLowerCase()}`;
+}
 
 export function inlineScriptHashes(html: string): string[] {
   const hashes: string[] = [];
@@ -44,11 +59,15 @@ export function inlineScriptHashes(html: string): string[] {
   return hashes;
 }
 
-export function cspDirectives(scriptHashes: string[], opts?: { firebase?: boolean }): Record<string, string[]> {
+export function cspDirectives(
+  scriptHashes: string[],
+  opts?: { firebase?: boolean; env?: NodeJS.ProcessEnv },
+): Record<string, string[]> {
+  const env = opts?.env ?? process.env;
   const allowFirebase = opts?.firebase ?? (
-    (process.env.FIREBASE_ENABLED || "").trim().toLowerCase() === "true" ||
-    (process.env.FIREBASE_ENABLED || "").trim().toLowerCase() === "1" ||
-    (process.env.FIREBASE_ENABLED || "").trim().toLowerCase() === "yes"
+    (env.FIREBASE_ENABLED || "").trim().toLowerCase() === "true" ||
+    (env.FIREBASE_ENABLED || "").trim().toLowerCase() === "1" ||
+    (env.FIREBASE_ENABLED || "").trim().toLowerCase() === "yes"
   );
   const scriptSrc = ["'self'", ...scriptHashes, CLOUDFLARE_INSIGHTS.script];
   const connectSrc = ["'self'", CLOUDFLARE_INSIGHTS.connect];
@@ -60,6 +79,11 @@ export function cspDirectives(scriptHashes: string[], opts?: { firebase?: boolea
     connectSrc.push(...FIREBASE_CSP.connect);
     frameSrc.push(...FIREBASE_CSP.frame);
     imgSrc.push(...FIREBASE_CSP.img);
+    const firebaseOrigin = resolveFirebaseAuthOrigin(env);
+    if (firebaseOrigin) {
+      connectSrc.push(firebaseOrigin);
+      frameSrc.push(firebaseOrigin);
+    }
   }
 
   return {

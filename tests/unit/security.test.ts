@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cspDirectives } from "../../server/security";
+import { cspDirectives, resolveFirebaseAuthOrigin } from "../../server/security";
 
 describe("cspDirectives", () => {
   it("builds a baseline CSP with script hashes", () => {
@@ -19,5 +19,23 @@ describe("cspDirectives", () => {
     expect(d["connect-src"]).toContain("https://identitytoolkit.googleapis.com");
     expect(d["frame-src"]).toContain("https://accounts.google.com");
     expect(d["img-src"]).toContain("https://*.googleusercontent.com");
+  });
+
+  it("scopes Firebase CSP to configured auth domain without wildcards (WEB-001)", () => {
+    const d = cspDirectives(["'sha256-abc'"], {
+      firebase: true,
+      env: { FIREBASE_CLIENT_AUTH_DOMAIN: "my-pideck.firebaseapp.com" },
+    });
+    expect(d["script-src"]).not.toContain("https://*.firebaseapp.com");
+    expect(d["script-src"]).not.toContain("https://my-pideck.firebaseapp.com");
+    expect(d["connect-src"]).not.toContain("https://*.firebaseapp.com");
+    expect(d["connect-src"]).not.toContain("https://*.firebaseio.com");
+    expect(d["frame-src"]).not.toContain("https://*.firebaseapp.com");
+    expect(d["connect-src"]).toContain("https://my-pideck.firebaseapp.com");
+    expect(d["frame-src"]).toContain("https://my-pideck.firebaseapp.com");
+
+    expect(resolveFirebaseAuthOrigin({ FIREBASE_PROJECT_ID: "proj-123" })).toBe("https://proj-123.firebaseapp.com");
+    expect(resolveFirebaseAuthOrigin({ FIREBASE_CLIENT_AUTH_DOMAIN: "*.firebaseapp.com" })).toBeNull();
+    expect(resolveFirebaseAuthOrigin({ FIREBASE_CLIENT_AUTH_DOMAIN: "evil.example/foo" })).toBeNull();
   });
 });
