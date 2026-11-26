@@ -7,8 +7,9 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import helmet from "helmet";
+import { clientKey } from "./middleware/rateLimitLogin";
 
 const INLINE_SCRIPT_RE = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
 
@@ -126,6 +127,68 @@ export function installSecurityHeaders(app: Express, opts: { https: boolean }): 
   app.use(helmet(securityHeaderOptions(opts)));
 }
 
+export interface CspReportHandlerOptions {
+  reportOnly?: boolean;
+  perIpLimit?: number;
+  globalLimit?: number;
+  windowMs?: number;
+  maxEntries?: number;
+  now?: () => number;
+  warn?: (msg: string) => void;
+}
+
+/**
+ * Rate-limited handler for unauthenticated POST /csp-report (API-002).
+ * Enforces bounded per-IP and global budgets and silently returns 204
+ * without logging when throttled to prevent log flooding / disk exhaustion.
+ */
+export function createCspReportHandler(opts: CspReportHandlerOptions = {}) {
+  const reportOnly = opts.reportOnly ?? true;
+  const perIpLimit = opts.perIpLimit ?? 20;
+  const globalLimit = opts.globalLimit ?? 100;
+  const windowMs = opts.windowMs ?? 60_000;
+  const maxEntries = opts.maxEntries ?? 10_000;
+  const nowFn = opts.now ?? Date.now;
+  const warn = opts.warn ?? ((msg: string) => console.warn(msg));
+
+  const perIp = new Map<string, { count: number; reset: number }>();
+  let globalWindow = { count: 0, reset: 0 };
+
+  const handler = (req: Request, res: Response) => {
+    const t = nowFn();
+    if (t > globalWindow.reset) {
+      globalWindow = { count: 0, reset: t + windowMs };
+    }
+    globalWindow.count += 1;
+
+    const ip = clientKey(req);
+    const existing = perIp.get(ip);
+    const entry = existing && t <= existing.reset ? existing : { count: 0, reset: t + windowMs };
+    entry.count += 1;
+    if (existing) {
+      perIp.delete(ip);
+    } else if (perIp.size >= maxEntries) {
+      const oldest = perIp.keys().next().value;
+      if (oldest !== undefined) perIp.delete(oldest);
+    }
+    perIp.set(ip, entry);
+
+    if (globalWindow.count > globalLimit || entry.count > perIpLimit) {
+      return res.sendStatus(204);
+    }
+
+    const r = (req.body && (req.body["csp-report"] ?? req.body)) || {};
+    const pick = (k: string) => String(r[k] ?? "").replace(/[\r\n]/g, " ").slice(0, 200);
+    warn(
+      `[csp] ${reportOnly ? "report-only" : "blocked"} directive=${pick("violated-directive")} blocked=${pick("blocked-uri")} page=${pick("document-uri")}`,
+    );
+    return res.sendStatus(204);
+  };
+
+  handler.trackedIps = () => perIp.size;
+  return handler;
+}
+
 export function installCsp(app: Express, staticDir: string): void {
   const html = fs.readFileSync(path.join(staticDir, "index.html"), "utf8");
   const hashes = inlineScriptHashes(html);
@@ -133,12 +196,7 @@ export function installCsp(app: Express, staticDir: string): void {
   app.post(
     "/csp-report",
     express.json({ type: ["application/csp-report", "application/reports+json", "application/json"], limit: "8kb" }),
-    (req, res) => {
-      const r = (req.body && (req.body["csp-report"] ?? req.body)) || {};
-      const pick = (k: string) => String(r[k] ?? "").replace(/[\r\n]/g, " ").slice(0, 200);
-      console.warn(`[csp] ${reportOnly ? "report-only" : "blocked"} directive=${pick("violated-directive")} blocked=${pick("blocked-uri")} page=${pick("document-uri")}`);
-      res.sendStatus(204);
-    },
+    createCspReportHandler({ reportOnly }),
   );
   app.use(helmet.contentSecurityPolicy({ useDefaults: false, reportOnly, directives: cspDirectives(hashes) }));
   console.log(`[csp] ${reportOnly ? "Report-Only" : "enforcing"}; ${hashes.length} inline script hash(es)`);

@@ -1,5 +1,6 @@
+import type { Request, Response } from "express";
 import { describe, expect, it } from "vitest";
-import { cspDirectives, resolveFirebaseAuthOrigin } from "../../server/security";
+import { createCspReportHandler, cspDirectives, resolveFirebaseAuthOrigin } from "../../server/security";
 
 describe("cspDirectives", () => {
   it("builds a baseline CSP with script hashes", () => {
@@ -37,5 +38,54 @@ describe("cspDirectives", () => {
     expect(resolveFirebaseAuthOrigin({ FIREBASE_PROJECT_ID: "proj-123" })).toBe("https://proj-123.firebaseapp.com");
     expect(resolveFirebaseAuthOrigin({ FIREBASE_CLIENT_AUTH_DOMAIN: "*.firebaseapp.com" })).toBeNull();
     expect(resolveFirebaseAuthOrigin({ FIREBASE_CLIENT_AUTH_DOMAIN: "evil.example/foo" })).toBeNull();
+  });
+});
+
+describe("createCspReportHandler (API-002)", () => {
+  const makeReq = (ip: string) =>
+    ({
+      ip,
+      headers: {},
+      body: { "csp-report": { "violated-directive": "script-src", "blocked-uri": "https://evil.example", "document-uri": "/" } },
+    }) as unknown as Request;
+
+  const makeRes = () => {
+    const res = { status: 0, sendStatus(code: number) { this.status = code; return this; } };
+    return res;
+  };
+
+  it("throttles per-IP and global report floods while returning 204 silently", () => {
+    let t = 1_000_000;
+    const logs: string[] = [];
+    const handler = createCspReportHandler({
+      perIpLimit: 2,
+      globalLimit: 3,
+      windowMs: 60_000,
+      maxEntries: 2,
+      now: () => t,
+      warn: (m) => logs.push(m),
+    });
+
+    for (let i = 0; i < 4; i++) {
+      const res = makeRes();
+      handler(makeReq("198.51.100.1"), res as unknown as Response);
+      expect(res.status).toBe(204);
+    }
+    expect(logs).toHaveLength(2); // capped at perIpLimit=2
+
+    // Different IP hits globalLimit=3 on its first call (global count was already 4 > 3)
+    const res2 = makeRes();
+    handler(makeReq("198.51.100.2"), res2 as unknown as Response);
+    expect(res2.status).toBe(204);
+    expect(logs).toHaveLength(2);
+
+    // Bounded IP map size
+    handler(makeReq("198.51.100.3"), makeRes() as unknown as Response);
+    expect(handler.trackedIps()).toBe(2);
+
+    // After window expires, logging resumes
+    t += 61_000;
+    handler(makeReq("198.51.100.1"), makeRes() as unknown as Response);
+    expect(logs).toHaveLength(3);
   });
 });
