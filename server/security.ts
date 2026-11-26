@@ -126,8 +126,14 @@ export function securityHeaderOptions(opts: { https: boolean }) {
   };
 }
 
+export const PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
+
 export function installSecurityHeaders(app: Express, opts: { https: boolean }): void {
   app.use(helmet(securityHeaderOptions(opts)));
+  app.use((_req, res, next) => {
+    res.setHeader("Permissions-Policy", PERMISSIONS_POLICY);
+    next();
+  });
 }
 
 export interface CspReportHandlerOptions {

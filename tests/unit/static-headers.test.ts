@@ -6,7 +6,7 @@ import os from "os";
 import path from "path";
 import type { AddressInfo } from "net";
 import type { Server } from "http";
-import { installSecurityHeaders, securityHeaderOptions } from "../../server/security";
+import { installSecurityHeaders, PERMISSIONS_POLICY, securityHeaderOptions } from "../../server/security";
 import { serveStatic, staticCacheControl } from "../../server/vite";
 
 describe("securityHeaderOptions", () => {
@@ -65,6 +65,7 @@ describe("hub static wiring", () => {
     expect(r.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
     expect(r.headers.get("cross-origin-opener-policy")).toBe("same-origin-allow-popups");
     expect(r.headers.get("x-frame-options")).toBe("DENY");
+    expect(r.headers.get("permissions-policy")).toBe(PERMISSIONS_POLICY);
   });
 
   it("caches hashed assets for a year, immutable", async () => {
