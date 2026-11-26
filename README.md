@@ -4,6 +4,12 @@ A lightweight, full-stack control hub for monitoring and managing Linux servers,
 
 **Current version: 2.14.1** — public landing page for signed-out visitors, Google Firebase Authentication (Sign in with Google) with strict server-side email allowlisting & offline break-glass fallback, multi-host (LAN machines and cloud VPSes over WireGuard) with remote logs (files, journald, Docker; secrets redacted on the agent), read-only systemd services with alerts, per-host history and alerts, an "All hosts" overview and Synology DSM support, through small read-only agents, plus the one-command installer with schema migrations. See the [Changelog](./CHANGELOG.md) and the [2.0 plan](./docs/plans/2.0-gui.md).
 
+### Public Landing Page
+
+![PiDeck public landing page (light theme)](./docs/screenshots/landing.png)
+
+### Live Dashboard
+
 ![PiDeck dashboard (light theme)](./docs/screenshots/dashboard.png)
 
 ## 🏗️ Architecture
