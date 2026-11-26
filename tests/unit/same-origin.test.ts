@@ -52,7 +52,16 @@ describe("same-origin guard (CSRF)", () => {
     const allowedOrigins = ["https://admin.example.dev"];
     expect(post({ origin: "https://admin.example.dev", allowedOrigins })).toBe(true);
     expect(post({ origin: "https://admin.example.dev/", allowedOrigins })).toBe(true);
+    expect(post({ origin: "https://admin.example.dev", secFetchSite: "cross-site", allowedOrigins })).toBe(true);
     expect(post({ origin: "http://admin.example.dev", allowedOrigins })).toBe(false);
+  });
+
+  it("enforces Sec-Fetch-Site even when Origin is present and rejects non-http(s) Origin schemes (WEB-004)", () => {
+    expect(post({ origin: `http://${HOST}`, secFetchSite: "cross-site" })).toBe(false);
+    expect(post({ origin: `https://${HOST}`, secFetchSite: "same-site" })).toBe(false);
+    expect(post({ origin: `https://${HOST}`, secFetchSite: "same-origin" })).toBe(true);
+    expect(post({ origin: `ftp://${HOST}` })).toBe(false);
+    expect(post({ origin: `file://${HOST}` })).toBe(false);
   });
 
   it("the middleware answers 403 JSON and logs one line, or calls next", () => {
