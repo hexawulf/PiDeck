@@ -1,8 +1,40 @@
 import { Router } from "express";
-import Dockerode, { type ContainerInfo } from "dockerode";
+import Dockerode, { type ContainerInfo, type DockerOptions } from "dockerode";
 import type { DockerContainer, DockerContainersResponse } from "@shared/schema";
 
-const docker = new Dockerode({ socketPath: "/var/run/docker.sock" });
+const DEFAULT_DOCKER_SOCKET = "/var/run/docker.sock";
+
+/**
+ * Resolve Dockerode connection options from PIDECK_DOCKER_SOCKET,
+ * PIDECK_AGENT_DOCKER_SOCKET, or DOCKER_HOST (supporting unix://, tcp://,
+ * http://, https://, or a filesystem socket path). Defaults to
+ * /var/run/docker.sock.
+ */
+export function resolveDockerOptions(env: NodeJS.ProcessEnv = process.env): DockerOptions {
+  const raw = (
+    env.PIDECK_DOCKER_SOCKET ||
+    env.PIDECK_AGENT_DOCKER_SOCKET ||
+    env.DOCKER_HOST ||
+    ""
+  ).trim();
+  if (!raw) return { socketPath: DEFAULT_DOCKER_SOCKET };
+  if (/^unix:\/\//i.test(raw)) {
+    const socketPath = raw.slice("unix://".length).trim();
+    return { socketPath: socketPath || DEFAULT_DOCKER_SOCKET };
+  }
+  if (/^(?:tcp|https?):\/\//i.test(raw)) {
+    const normalized = raw.replace(/^tcp:\/\//i, "http://");
+    const parsed = new URL(normalized);
+    return {
+      protocol: parsed.protocol === "https:" ? "https" : "http",
+      host: parsed.hostname,
+      port: parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 2376 : 2375,
+    };
+  }
+  return { socketPath: raw };
+}
+
+const docker = new Dockerode(resolveDockerOptions());
 
 export const dockerRouter = Router();
 

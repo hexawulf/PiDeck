@@ -59,7 +59,7 @@ shown once on the terminal only.
 | lm-sensors | optional | CPU temperature on non-Pi hosts. |
 | smartmontools + an NVMe drive | optional | NVMe Health (needs `--sudoers`). |
 | ufw | optional | Firewall widget (needs `--sudoers`). |
-| Docker | optional | Apps › Docker. The user must be in the `docker` group. |
+| Docker | optional | Apps › Docker. Either point `PIDECK_DOCKER_SOCKET` / `DOCKER_HOST` at a loopback read-only Docker socket proxy (recommended, avoids `docker` group membership) or add the service user to the `docker` group. |
 | vcgencmd | optional | Power Status, Raspberry Pi only. |
 
 Missing optional pieces don't break anything: their widgets show a calm
@@ -775,9 +775,13 @@ What to expect on DSM:
 - **NVMe/SMART, firewall, power status and system update** say
   "Not available on DSM" (they need root or Synology's own tools; Storage
   Manager and Control Panel have them).
-- **Docker** widgets and Docker logs work when the agent user is in the
-  `docker` group. That group is root-equivalent, so the agent only ever makes
-  two read-only Docker API calls (container list, container logs).
+- **Docker** widgets and Docker logs work either via a loopback read-only
+  Docker socket proxy (recommended: set `PIDECK_DOCKER_SOCKET` /
+  `PIDECK_AGENT_DOCKER_SOCKET` or `DOCKER_HOST=http://127.0.0.1:2375` so the
+  service user does not need `docker` group membership) or when the agent user
+  is in the `docker` group. Direct socket access via the `docker` group is
+  root-equivalent, so the agent only ever makes two read-only Docker API calls
+  (container list, container logs).
   Container Manager does not always create the group: if `/var/run/docker.sock`
   is `root:root`, run (as root) `synogroup --add docker zk` and
   `chgrp docker /var/run/docker.sock`. No Container Manager restart is
