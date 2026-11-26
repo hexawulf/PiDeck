@@ -31,13 +31,30 @@ export function bearerToken(header: string | undefined): string | null {
  * token is fixed. (The token is 256 bits: the limit exists to cut noise and
  * log spam, not to make guessing feasible or not.)
  */
-export function createFailureLimiter({ max = 10, windowMs = 10 * 60 * 1000, now = Date.now } = {}) {
+export function createFailureLimiter({ max = 10, windowMs = 10 * 60 * 1000, maxEntries = 10_000, now = Date.now } = {}) {
   const failures = new Map<string, { count: number; reset: number }>();
+  const evictIfFull = (t: number) => {
+    if (failures.size < maxEntries) return;
+    for (const [k, v] of failures) {
+      if (t > v.reset) failures.delete(k);
+    }
+    while (failures.size >= maxEntries) {
+      const oldest = failures.keys().next().value;
+      if (oldest === undefined) break;
+      failures.delete(oldest);
+    }
+  };
   const entry = (key: string) => {
     const t = now();
     let e = failures.get(key);
     if (!e || t > e.reset) {
+      if (e) failures.delete(key);
+      else evictIfFull(t);
       e = { count: 0, reset: t + windowMs };
+      failures.set(key, e);
+    } else {
+      // Refresh recency so active offenders are not evicted before idle entries.
+      failures.delete(key);
       failures.set(key, e);
     }
     return e;
@@ -49,12 +66,12 @@ export function createFailureLimiter({ max = 10, windowMs = 10 * 60 * 1000, now 
     },
     fail: (key: string) => {
       entry(key).count += 1;
-      if (failures.size > 10_000) failures.clear(); // bounded memory under a spray
     },
     reset: (key: string) => {
       failures.delete(key);
     },
     retryAfterSec: (key: string) => Math.max(1, Math.ceil(((failures.get(key)?.reset ?? now()) - now()) / 1000)),
+    size: () => failures.size,
   };
 }
 
