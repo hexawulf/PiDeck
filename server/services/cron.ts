@@ -133,6 +133,21 @@ export function cronEnvironment(entry: CronEntry, user = os.userInfo()): Record<
 
 export const CRON_LOG_PREFIX = "pideck-cron-run-";
 export const WAIT_MS = 10_000;
+export const MAX_CONCURRENT_CRON_RUNS = 4;
+
+export class CronRunConflictError extends Error {
+  status = 409;
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+const activeCronRuns = new Set<string>();
+
+/** Test hook: clear tracked in-flight cron runs. */
+export function resetActiveCronRuns(): void {
+  activeCronRuns.clear();
+}
 
 export type CronRunResult =
   | { state: "finished"; exitCode: number | null; log: string | null }
@@ -150,17 +165,52 @@ const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace("T", "-"
 
 export function runCronEntry(
   entry: CronEntry,
-  { logsDir = PIDECK_LOGS_DIR, spawn = nodeSpawn as unknown as Spawn, now = () => new Date(), waitMs = WAIT_MS, user = os.userInfo() }:
-    { logsDir?: string; spawn?: Spawn; now?: () => Date; waitMs?: number; user?: os.UserInfo<string> } = {},
+  {
+    logsDir = PIDECK_LOGS_DIR,
+    spawn = nodeSpawn as unknown as Spawn,
+    now = () => new Date(),
+    waitMs = WAIT_MS,
+    user = os.userInfo(),
+    activeRuns = activeCronRuns,
+    maxConcurrent = MAX_CONCURRENT_CRON_RUNS,
+  }: {
+    logsDir?: string;
+    spawn?: Spawn;
+    now?: () => Date;
+    waitMs?: number;
+    user?: os.UserInfo<string>;
+    activeRuns?: Set<string>;
+    maxConcurrent?: number;
+  } = {},
 ): Promise<CronRunResult> {
+  if (activeRuns.has(entry.command)) {
+    return Promise.reject(new CronRunConflictError("This cron job is already running."));
+  }
+  if (activeRuns.size >= maxConcurrent) {
+    return Promise.reject(new CronRunConflictError("Too many cron jobs are already running."));
+  }
+  activeRuns.add(entry.command);
+  const release = () => {
+    activeRuns.delete(entry.command);
+  };
+
+  let out: number;
+  let file: string;
+  let log: string;
+  let headerSize: number;
   const { command, stdin } = splitPercent(entry.command);
   const env = cronEnvironment(entry, user);
-  const log = `${CRON_LOG_PREFIX}${stamp(now())}-${process.hrtime.bigint().toString(36).slice(-4)}.log`;
-  const file = path.join(logsDir, log);
-  fs.mkdirSync(logsDir, { recursive: true });
-  const out = fs.openSync(file, "a", 0o640);
-  fs.writeSync(out, `[pideck] run ${now().toISOString()}: ${entry.command.slice(0, 500)}\n`);
-  const headerSize = fs.fstatSync(out).size;
+  try {
+    log = `${CRON_LOG_PREFIX}${stamp(now())}-${process.hrtime.bigint().toString(36).slice(-4)}.log`;
+    file = path.join(logsDir, log);
+    fs.mkdirSync(logsDir, { recursive: true });
+    out = fs.openSync(file, "a", 0o640);
+    fs.writeSync(out, `[pideck] run ${now().toISOString()}: ${entry.command.slice(0, 500)}\n`);
+    headerSize = fs.fstatSync(out).size;
+  } catch (err) {
+    release();
+    return Promise.reject(err);
+  }
 
   return new Promise<CronRunResult>((resolve, reject) => {
     let settled = false;
@@ -169,6 +219,7 @@ export function runCronEntry(
       child = spawn(env.SHELL, ["-c", command], { env, cwd: env.HOME, detached: true, stdio: [stdin === null ? "ignore" : "pipe", out, out] });
     } catch (err) {
       fs.closeSync(out);
+      release();
       return reject(err);
     }
     fs.closeSync(out); // the child holds its own copy of the descriptor
@@ -184,12 +235,14 @@ export function runCronEntry(
     }, waitMs);
     child.on("error", (err) => {
       clearTimeout(timer);
+      release();
       if (settled) return;
       settled = true;
       reject(err);
     });
     child.on("exit", (code) => {
       clearTimeout(timer);
+      release();
       let keep = true;
       try {
         // Most jobs redirect their own output: don't leave a header-only file behind.

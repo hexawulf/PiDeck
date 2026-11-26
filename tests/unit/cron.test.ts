@@ -2,7 +2,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cronEnvironment, parseCrontab, runCronEntry, splitPercent, toCronJob } from "../../server/services/cron";
+import {
+  cronEnvironment,
+  CronRunConflictError,
+  parseCrontab,
+  runCronEntry,
+  splitPercent,
+  toCronJob,
+} from "../../server/services/cron";
 
 describe("crontab parser", () => {
   it("reads plain five-field entries", () => {
@@ -125,5 +132,54 @@ describe("running a job", () => {
   it("uses the crontab's SHELL when it sets one", async () => {
     const r = await runCronEntry({ schedule: "@daily", command: "echo $0", env: { SHELL: "/bin/bash" } }, { logsDir: dir, user });
     expect(fs.readFileSync(path.join(dir, (r as { log: string }).log), "utf8")).toContain("/bin/bash");
+  });
+
+  it("rejects duplicate concurrent runs of the same job and enforces global concurrency cap (LOGIC-004)", async () => {
+    const activeRuns = new Set<string>();
+    const exitCallbacks: Array<(code: number | null) => void> = [];
+    const fakeSpawn = () => ({
+      on(ev: string, cb: (arg: never) => void) {
+        if (ev === "exit") exitCallbacks.push(cb as (code: number | null) => void);
+      },
+      unref() {},
+    });
+
+    const p1 = runCronEntry(
+      { schedule: "@daily", command: "job-one", env: {} },
+      { logsDir: dir, user, spawn: fakeSpawn, waitMs: 20, activeRuns, maxConcurrent: 2 },
+    );
+    expect((await p1).state).toBe("running");
+
+    // Duplicate same job -> 409 conflict
+    await expect(
+      runCronEntry(
+        { schedule: "@daily", command: "job-one", env: {} },
+        { logsDir: dir, user, spawn: fakeSpawn, waitMs: 20, activeRuns, maxConcurrent: 2 },
+      ),
+    ).rejects.toBeInstanceOf(CronRunConflictError);
+
+    // Second distinct job allowed (up to maxConcurrent=2)
+    const p2 = runCronEntry(
+      { schedule: "@daily", command: "job-two", env: {} },
+      { logsDir: dir, user, spawn: fakeSpawn, waitMs: 20, activeRuns, maxConcurrent: 2 },
+    );
+    expect((await p2).state).toBe("running");
+
+    // Third distinct job hits global cap -> 409 conflict
+    await expect(
+      runCronEntry(
+        { schedule: "@daily", command: "job-three", env: {} },
+        { logsDir: dir, user, spawn: fakeSpawn, waitMs: 20, activeRuns, maxConcurrent: 2 },
+      ),
+    ).rejects.toBeInstanceOf(CronRunConflictError);
+
+    // Once job-one exits, it can be run again
+    exitCallbacks[0](0);
+    const p1Again = runCronEntry(
+      { schedule: "@daily", command: "job-one", env: {} },
+      { logsDir: dir, user, spawn: fakeSpawn, waitMs: 20, activeRuns, maxConcurrent: 2 },
+    );
+    expect((await p1Again).state).toBe("running");
+    exitCallbacks.slice(1).forEach((cb) => cb(0));
   });
 });

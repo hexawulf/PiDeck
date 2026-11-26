@@ -16,7 +16,7 @@ import thermalZonesRouter from "./routes/thermalZones";
 import powerStatusRouter from "./routes/powerStatus";
 import { createSystemUpdateHandler, createSystemUpdateStatusHandler } from "./routes/system-update";
 import { updateRunner } from "./services/system-update";
-import { readCrontab, runCronEntry } from "./services/cron";
+import { CronRunConflictError, readCrontab, runCronEntry } from "./services/cron";
 
 import { loginSchema } from "@shared/schema";
 import { clientKey, rateLimitLogin } from "./middleware/rateLimitLogin";
@@ -526,6 +526,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (result.exitCode === 0) return res.json({ message: "Cron job executed successfully", ...result });
       res.status(500).json({ message: `Cron job failed (exit code ${result.exitCode ?? "none: killed"})`, ...result });
     } catch (error) {
+      if (error instanceof CronRunConflictError) {
+        console.warn(`[audit] cron action=run result=conflict ${auditActor(req)}`);
+        return res.status(error.status).json({ message: error.message });
+      }
       console.error("Run cron job error:", error);
       console.warn(`[audit] cron action=run result=error ${auditActor(req)}`);
       res.status(500).json({ message: "Failed to execute cron job" });
